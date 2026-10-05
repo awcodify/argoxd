@@ -24,10 +24,14 @@ type options struct {
 	context    string
 	namespace  string
 	refresh    time.Duration
+	demo       bool
 }
 
 func main() {
-	options := parseOptions(os.Args[1:])
+	options, err := parseOptions(os.Args[1:])
+	if err != nil {
+		log.Fatal(err)
+	}
 	source, err := buildSource(options)
 	if err != nil {
 		log.Fatal(err)
@@ -40,22 +44,46 @@ func main() {
 	}
 }
 
-func parseOptions(arguments []string) options {
-	var options options
+// parseOptions resolves settings in increasing priority: built-in defaults,
+// the config file, environment variables, then command-line flags.
+func parseOptions(arguments []string) (options, error) {
+	options := options{
+		source:    "kubeconfig",
+		server:    os.Getenv("ARGOCD_SERVER"),
+		token:     os.Getenv("ARGOCD_AUTH_TOKEN"),
+		namespace: "argocd",
+		refresh:   5 * time.Second,
+	}
+	config, err := loadConfig(configPath())
+	if err != nil {
+		return options, err
+	}
+	envServer := options.server
+	if options, err = config.apply(options); err != nil {
+		return options, err
+	}
+	if envServer != "" {
+		options.server = envServer
+	}
+
 	flags := flag.NewFlagSet("argoxd", flag.ExitOnError)
-	flags.StringVar(&options.source, "source", "kubeconfig", "Data source: kubeconfig or api")
-	flags.StringVar(&options.server, "server", os.Getenv("ARGOCD_SERVER"), "Argo CD API server URL")
-	flags.StringVar(&options.token, "auth-token", os.Getenv("ARGOCD_AUTH_TOKEN"), "Argo CD API token")
-	flags.BoolVar(&options.insecure, "insecure", false, "Skip TLS certificate verification for API connections")
-	flags.StringVar(&options.kubeconfig, "kubeconfig", "", "Path to kubeconfig (uses default loading rules when empty)")
-	flags.StringVar(&options.context, "context", "", "Kubeconfig context (uses current context when empty)")
-	flags.StringVar(&options.namespace, "namespace", "argocd", "Namespace where Argo CD is installed")
-	flags.DurationVar(&options.refresh, "refresh", 5*time.Second, "How often to reload resources; 0 disables auto-refresh")
+	flags.StringVar(&options.source, "source", options.source, "Data source: kubeconfig or api")
+	flags.StringVar(&options.server, "server", options.server, "Argo CD API server URL")
+	flags.StringVar(&options.token, "auth-token", options.token, "Argo CD API token")
+	flags.BoolVar(&options.insecure, "insecure", options.insecure, "Skip TLS certificate verification for API connections")
+	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")
+	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")
+	flags.StringVar(&options.namespace, "namespace", options.namespace, "Namespace where Argo CD is installed")
+	flags.DurationVar(&options.refresh, "refresh", options.refresh, "How often to reload resources; 0 disables auto-refresh")
+	flags.BoolVar(&options.demo, "demo", false, "Show built-in sample data instead of connecting to Argo CD")
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
-	return options
+	return options, nil
 }
 
 func buildSource(options options) (argocd.Source, error) {
+	if options.demo {
+		return argocd.NewDemoSource(), nil
+	}
 	switch options.source {
 	case "kubeconfig":
 		return argocd.NewKubernetesSource(options.kubeconfig, options.context, options.namespace), nil
@@ -70,6 +98,9 @@ func buildSource(options options) (argocd.Source, error) {
 }
 
 func connectionDescription(options options) string {
+	if options.demo {
+		return "Demo data (not connected)"
+	}
 	if options.source == "api" {
 		return "Argo CD API: " + options.server
 	}
