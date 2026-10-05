@@ -24,7 +24,9 @@ argoxd --context production --namespace argocd
 argoxd --kubeconfig ~/.kube/config --context production
 ```
 
-The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets.
+The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`.
+
+Resources reload every 5 seconds. Change this with `--refresh 30s`, or turn it off with `--refresh 0`. Requests that take longer than 15 seconds are abandoned and reported as errors.
 
 ## Connect to the Argo CD API
 
@@ -46,9 +48,11 @@ Use `--insecure` only when connecting to a development instance with an untruste
 
 The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
 
-Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its managed resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card.
+Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to filter the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. From a card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), or a Pod's recent logs (`l`).
 
 ## Commands
+
+Press `/` on a list to filter it by name as you type: Enter keeps the filter, Esc clears it.
 
 Press `:` to open the command bar. Matching commands are suggested as you type: Tab or Right accepts the highlighted suggestion, Up/Down picks another, Enter runs what you typed, Esc closes it.
 
@@ -67,15 +71,18 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `0` | Show Applications from every project |
 | `1`–`9` | Show Applications from the project listed under that number in the header |
 | `:` | Open the command bar |
-| `j` / Down | Move selection down |
-| `k` / Up | Move selection up |
+| `/` | Filter the list by name, or the dependency cards by `kind/name` |
+| `j` / Down, `k` / Up | Move the selection, or scroll a YAML, diff or log view |
+| `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies |
+| `y` / `d` / `l` | Show the selected card's YAML, diff, or logs |
 | Space / Left / Right | Expand or collapse the selected inventory node |
-| Esc | Return to the resource list |
-| `s` | Sync the selected Application |
-| `d`, then `y` | Delete the selected Application and its managed resources |
-| `r` | Refresh resources |
+| Esc | Go back, or clear the filter |
+| `s` | Sync the selected Application; toggle `p` prune and `r` dry run, then Enter |
+| `R` | Hard refresh the selected Application, bypassing Argo CD's manifest cache |
+| `D`, then `y` | Delete the selected Application and its managed resources |
+| `r` | Reload resources now |
 | `q` / Ctrl+C | Quit |
 
 ## Development

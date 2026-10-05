@@ -2,9 +2,14 @@ package argocd
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/awcodify/argoxd/internal/explorer"
 )
 
 func TestAPISourceLoadsArgoCDResources(t *testing.T) {
@@ -79,7 +84,7 @@ func TestAPISourceSyncsAndDeletesApplication(t *testing.T) {
 	defer server.Close()
 
 	source := NewAPISource(server.URL, "", false)
-	if err := source.SyncApplication(context.Background(), "payments"); err != nil {
+	if err := source.SyncApplication(context.Background(), "payments", SyncOptions{}); err != nil {
 		t.Fatalf("SyncApplication() error = %v", err)
 	}
 	if err := source.DeleteApplication(context.Background(), "payments"); err != nil {
@@ -99,5 +104,133 @@ func TestAPISourceReturnsEndpointErrors(t *testing.T) {
 	_, err := NewAPISource(server.URL, "", false).Load(context.Background())
 	if err == nil {
 		t.Fatal("Load() error = nil, want error")
+	}
+}
+
+func TestAPISourceReadsApplicationDetailsAndResourceVersions(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/applications":
+			_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"checkout"},"spec":{"sources":[{"targetRevision":"v1.2.0"}],"destination":{"name":"in-cluster","namespace":"store"}},"status":{"operationState":{"finishedAt":"2026-10-05T10:00:00Z"}}}]}`))
+		case "/api/v1/applications/checkout/resource-tree":
+			_, _ = w.Write([]byte(`{"nodes":[{"group":"apps","version":"v1","kind":"Deployment","namespace":"store","name":"web"}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"items":[]}`))
+		}
+	}))
+	defer server.Close()
+	source := NewAPISource(server.URL, "", false)
+
+	snapshot, err := source.Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	application := snapshot.Applications[0]
+	if application.Revision != "v1.2.0" || application.Destination != "in-cluster/store" || application.LastSync.IsZero() {
+		t.Fatalf("application = %+v, want revision, destination and last sync", application)
+	}
+
+	tree, err := source.LoadResourceTree(context.Background(), "checkout")
+	if err != nil {
+		t.Fatalf("LoadResourceTree() error = %v", err)
+	}
+	if tree.Nodes[0].Version != "v1" {
+		t.Fatalf("version = %q, want v1", tree.Nodes[0].Version)
+	}
+}
+
+func TestAPISourceSyncsWithOptionsAndRefreshes(t *testing.T) {
+	var requests []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests = append(requests, r.Method+" "+r.URL.RequestURI()+" "+string(body))
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+	source := NewAPISource(server.URL, "", false)
+
+	if err := source.SyncApplication(context.Background(), "payments", SyncOptions{Prune: true, DryRun: true}); err != nil {
+		t.Fatalf("SyncApplication() error = %v", err)
+	}
+	if err := source.RefreshApplication(context.Background(), "payments"); err != nil {
+		t.Fatalf("RefreshApplication() error = %v", err)
+	}
+
+	want := []string{
+		`POST /api/v1/applications/payments/sync {"prune":true,"dryRun":true}`,
+		`GET /api/v1/applications/payments?refresh=hard `,
+	}
+	if !slices.Equal(requests, want) {
+		t.Fatalf("requests = %q, want %q", requests, want)
+	}
+}
+
+func TestAPISourceInspectsResources(t *testing.T) {
+	deployment := explorer.ResourceNode{Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "store", Name: "web"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		switch r.URL.Path {
+		case "/api/v1/applications/checkout/resource":
+			if query.Get("resourceName") != "web" || query.Get("kind") != "Deployment" || query.Get("version") != "v1" {
+				t.Errorf("resource query = %v", query)
+			}
+			_, _ = w.Write([]byte(`{"manifest":"{\"kind\":\"Deployment\",\"spec\":{\"replicas\":2}}"}`))
+		case "/api/v1/applications/checkout/managed-resources":
+			_, _ = w.Write([]byte(`{"items":[{"normalizedLiveState":"{\"spec\":{\"replicas\":1}}","predictedLiveState":"{\"spec\":{\"replicas\":2}}"}]}`))
+		case "/api/v1/applications/checkout/logs":
+			if query.Get("podName") != "web-1-abc" || query.Get("follow") != "false" {
+				t.Errorf("logs query = %v", query)
+			}
+			_, _ = w.Write([]byte("{\"result\":{\"content\":\"starting\"}}\n{\"result\":{\"content\":\"ready\"}}\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	source := NewAPISource(server.URL, "", false)
+
+	manifest, err := source.ResourceManifest(context.Background(), "checkout", deployment)
+	if err != nil || !strings.Contains(manifest, "kind: Deployment") || !strings.Contains(manifest, "replicas: 2") {
+		t.Fatalf("ResourceManifest() = %q, %v", manifest, err)
+	}
+
+	diff, err := source.ResourceDiff(context.Background(), "checkout", deployment)
+	if err != nil || !strings.Contains(diff, "-   replicas: 1") || !strings.Contains(diff, "+   replicas: 2") {
+		t.Fatalf("ResourceDiff() = %q, %v", diff, err)
+	}
+
+	pod := explorer.ResourceNode{Version: "v1", Kind: "Pod", Namespace: "store", Name: "web-1-abc"}
+	logs, err := source.ResourceLogs(context.Background(), "checkout", pod)
+	if err != nil || logs != "starting\nready" {
+		t.Fatalf("ResourceLogs() = %q, %v", logs, err)
+	}
+}
+
+func TestAPISourceReportsResourcesWithoutDesiredState(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	}))
+	defer server.Close()
+
+	_, err := NewAPISource(server.URL, "", false).ResourceDiff(context.Background(), "checkout", explorer.ResourceNode{Kind: "Pod", Name: "web-1-abc"})
+	if err == nil {
+		t.Fatal("ResourceDiff() error = nil, want an error for an unmanaged resource")
+	}
+}
+
+func TestAPISourceErrorsIncludeArgoCDMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":"Deployment apps web not found as part of application checkout","code":3,"message":"Deployment apps web not found as part of application checkout"}`))
+	}))
+	defer server.Close()
+
+	_, err := NewAPISource(server.URL, "", false).ResourceManifest(context.Background(), "checkout", explorer.ResourceNode{Kind: "Deployment", Name: "web"})
+
+	if err == nil || !strings.Contains(err.Error(), "Deployment apps web not found as part of application checkout") {
+		t.Fatalf("error = %v, want Argo CD's explanation", err)
+	}
+	if strings.Count(err.Error(), "not found as part of") != 1 {
+		t.Fatalf("error repeats the explanation: %v", err)
 	}
 }

@@ -69,15 +69,28 @@ func (m Model) projectHints() []keyHint {
 }
 
 func (m Model) keyHints() []keyHint {
+	switch m.view {
+	case textViewMode:
+		return []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}, {"esc", "Back"}, {"q", "Quit"}}
+	case applicationTreeView:
+		return []keyHint{
+			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
+			{"s", "Sync"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"/", "Filter"}, {"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
+		}
+	}
+
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}
-	if m.view != listView {
+	if m.view == listView {
+		hints = append(hints, keyHint{"/", "Filter"})
+	} else {
 		hints = append(hints, keyHint{"esc", "Back"})
 	}
 	if m.selectedApplication() != "" {
 		if m.view == listView {
 			hints = append(hints, keyHint{"enter", "Dependencies"})
 		}
-		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"d", "Delete"})
+		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }

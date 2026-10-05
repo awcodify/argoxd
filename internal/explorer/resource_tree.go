@@ -1,5 +1,7 @@
 package explorer
 
+import "strings"
+
 // Reference returns the identity of a resource node.
 func (n ResourceNode) Reference() ResourceReference {
 	return ResourceReference{Group: n.Group, Kind: n.Kind, Namespace: n.Namespace, Name: n.Name}
@@ -55,4 +57,26 @@ func firstKnownParent(node ResourceNode, present map[ResourceReference]bool) (Re
 		}
 	}
 	return ResourceReference{}, false
+}
+
+// MatchesFilter reports whether the resource's "kind/name" contains the query, ignoring case.
+func (n ResourceNode) MatchesFilter(query string) bool {
+	return strings.Contains(strings.ToLower(n.Kind+"/"+n.Name), strings.ToLower(query))
+}
+
+// FilterHierarchy keeps the resources that match the query together with the
+// resources on their path, so a match is never shown without its owners.
+func FilterHierarchy(roots []ResourceNode, query string) []ResourceNode {
+	if query == "" {
+		return roots
+	}
+	var kept []ResourceNode
+	for _, node := range roots {
+		children := FilterHierarchy(node.Children, query)
+		if node.MatchesFilter(query) || len(children) > 0 {
+			node.Children = children
+			kept = append(kept, node)
+		}
+	}
+	return kept
 }

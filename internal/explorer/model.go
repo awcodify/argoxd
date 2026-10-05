@@ -1,5 +1,10 @@
 package explorer
 
+import (
+	"strings"
+	"time"
+)
+
 // Screen identifies the resource displayed in the main pane.
 type Screen int
 
@@ -19,11 +24,14 @@ type Snapshot struct {
 
 // Application is an Argo CD application summary.
 type Application struct {
-	Name      string
-	Namespace string
-	Project   string
-	Sync      string
-	Health    string
+	Name        string
+	Namespace   string
+	Project     string
+	Sync        string
+	Health      string
+	Revision    string
+	Destination string
+	LastSync    time.Time
 }
 
 // Project is an Argo CD project summary.
@@ -47,6 +55,7 @@ type ResourceTree struct {
 // ResourceNode is a managed Kubernetes resource.
 type ResourceNode struct {
 	Group     string
+	Version   string
 	Kind      string
 	Namespace string
 	Name      string
@@ -70,6 +79,7 @@ type Model struct {
 	screen   Screen
 	cursor   int
 	project  string
+	filter   string
 }
 
 // NewModel creates an explorer with Applications selected.
@@ -87,9 +97,10 @@ func (m Model) Cursor() int {
 	return m.cursor
 }
 
-// SetScreen selects a screen and resets its row selection.
+// SetScreen selects a screen, clears its filter and resets its row selection.
 func (m *Model) SetScreen(screen Screen) {
 	m.screen = screen
+	m.filter = ""
 	m.cursor = 0
 }
 
@@ -127,51 +138,85 @@ func (m *Model) SetProject(project string) {
 	m.cursor = 0
 }
 
-// Applications returns the Applications in the selected project.
+// Filter returns the text rows on the current screen are filtered by.
+func (m Model) Filter() string {
+	return m.filter
+}
+
+// SetFilter narrows the current screen to rows whose name contains the text,
+// ignoring case, and resets the selection.
+func (m *Model) SetFilter(text string) {
+	m.filter = text
+	m.cursor = 0
+}
+
+// Applications returns the Applications in the selected project that match the filter.
 func (m Model) Applications() []Application {
-	if m.project == "" {
-		return m.snapshot.Applications
-	}
-	var filtered []Application
+	var matches []Application
 	for _, application := range m.snapshot.Applications {
-		if application.Project == m.project {
-			filtered = append(filtered, application)
+		if (m.project == "" || application.Project == m.project) && m.matches(application.Name) {
+			matches = append(matches, application)
 		}
 	}
-	return filtered
+	return matches
+}
+
+// Projects returns the projects that match the filter.
+func (m Model) Projects() []Project {
+	var matches []Project
+	for _, project := range m.snapshot.Projects {
+		if m.matches(project.Name) {
+			matches = append(matches, project)
+		}
+	}
+	return matches
+}
+
+// Clusters returns the clusters that match the filter.
+func (m Model) Clusters() []Cluster {
+	var matches []Cluster
+	for _, cluster := range m.snapshot.Clusters {
+		if m.matches(cluster.Name) {
+			matches = append(matches, cluster)
+		}
+	}
+	return matches
+}
+
+func (m Model) matches(name string) bool {
+	return strings.Contains(strings.ToLower(name), strings.ToLower(m.filter))
 }
 
 // RowCount returns the number of selectable rows on the current screen.
 func (m Model) RowCount() int {
-	switch m.screen {
-	case ApplicationsScreen:
-		return len(m.Applications())
-	case ProjectsScreen:
-		return len(m.snapshot.Projects)
-	case ClustersScreen:
-		return len(m.snapshot.Clusters)
-	default:
-		return 0
-	}
+	return len(m.rowNames())
 }
 
 // SelectedName returns the selected resource name, if the screen has a selection.
 func (m Model) SelectedName() string {
-	switch m.screen {
-	case ApplicationsScreen:
-		if applications := m.Applications(); len(applications) > 0 {
-			return applications[m.cursor].Name
-		}
-	case ProjectsScreen:
-		if len(m.snapshot.Projects) > 0 {
-			return m.snapshot.Projects[m.cursor].Name
-		}
-	case ClustersScreen:
-		if len(m.snapshot.Clusters) > 0 {
-			return m.snapshot.Clusters[m.cursor].Name
-		}
+	if names := m.rowNames(); m.cursor < len(names) {
+		return names[m.cursor]
 	}
 	return ""
+}
+
+func (m Model) rowNames() []string {
+	var names []string
+	switch m.screen {
+	case ApplicationsScreen:
+		for _, application := range m.Applications() {
+			names = append(names, application.Name)
+		}
+	case ProjectsScreen:
+		for _, project := range m.Projects() {
+			names = append(names, project.Name)
+		}
+	case ClustersScreen:
+		for _, cluster := range m.Clusters() {
+			names = append(names, cluster.Name)
+		}
+	}
+	return names
 }
 
 // Snapshot returns the current resource state.
@@ -179,10 +224,16 @@ func (m Model) Snapshot() Snapshot {
 	return m.snapshot
 }
 
-// ReplaceSnapshot updates resource state and keeps the selection valid.
+// ReplaceSnapshot updates resource state, keeping the selected resource
+// selected when it still exists.
 func (m *Model) ReplaceSnapshot(snapshot Snapshot) {
+	selected := m.SelectedName()
 	m.snapshot = snapshot
-	if m.cursor >= m.RowCount() {
-		m.cursor = max(0, m.RowCount()-1)
+	for index, name := range m.rowNames() {
+		if name == selected {
+			m.cursor = index
+			return
+		}
 	}
+	m.cursor = min(m.cursor, max(0, m.RowCount()-1))
 }

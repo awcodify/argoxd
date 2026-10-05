@@ -28,19 +28,10 @@ type card struct {
 // renderDependencies shows a status summary, the Application and its managed
 // resources as a tree of cards, and the details of the selected card.
 func (m Model) renderDependencies(width, height int) []string {
-	application := m.application()
-	root := explorer.ResourceNode{
-		Group:     "argoproj.io",
-		Kind:      "Application",
-		Namespace: application.Namespace,
-		Name:      application.Name,
-		Sync:      application.Sync,
-		Health:    application.Health,
-		Children:  m.resourceTree.Hierarchy(),
-	}
+	root := m.dependencyRoot()
 
 	index := 0
-	tree := renderBranch(root, m.treeCursor, &index)
+	tree := renderBranch(root, m.treeCursor, m.treeFilter, &index)
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
@@ -67,14 +58,40 @@ func (m Model) renderDependencies(width, height int) []string {
 	return lines
 }
 
+// dependencyRoot is the Application card with its resources nested beneath it.
+func (m Model) dependencyRoot() explorer.ResourceNode {
+	application := m.application()
+	return explorer.ResourceNode{
+		Group:     "argoproj.io",
+		Kind:      "Application",
+		Namespace: application.Namespace,
+		Name:      application.Name,
+		Sync:      application.Sync,
+		Health:    application.Health,
+		Children:  explorer.FilterHierarchy(m.resourceTree.Hierarchy(), m.treeFilter),
+	}
+}
+
+// cardCount is the number of cards shown, after filtering.
+func (m Model) cardCount() int {
+	return len(flatten(m.dependencyRoot(), ""))
+}
+
+// selectedCard returns the resource of the selected card.
+func (m Model) selectedCard() explorer.ResourceNode {
+	return flatten(m.dependencyRoot(), "")[m.treeCursor].node
+}
+
 // renderBranch renders a card followed by its children, numbering cards in
-// the same depth-first order the cursor moves through them.
-func renderBranch(node explorer.ResourceNode, selected int, index *int) []string {
-	lines := strings.Split(resourceCard(node, *index == selected), "\n")
+// the same depth-first order the cursor moves through them. While filtering,
+// cards shown only to give a match its context are dimmed.
+func renderBranch(node explorer.ResourceNode, selected int, filter string, index *int) []string {
+	context := filter != "" && *index > 0 && !node.MatchesFilter(filter)
+	lines := strings.Split(resourceCard(node, *index == selected, context), "\n")
 	*index++
 	for position, child := range node.Children {
 		last := position == len(node.Children)-1
-		for row, line := range renderBranch(child, selected, index) {
+		for row, line := range renderBranch(child, selected, filter, index) {
 			lines = append(lines, "  "+mutedStyle.Render(connector(row, last))+line)
 		}
 	}
@@ -96,15 +113,20 @@ func connector(row int, last bool) string {
 
 // resourceCard shows the kind in a border colored by status, the name with
 // its namespace, and the health and sync status.
-func resourceCard(node explorer.ResourceNode, selected bool) string {
+func resourceCard(node explorer.ResourceNode, selected, context bool) string {
 	color := statusColor(node.Health, node.Sync)
 	border := lipgloss.RoundedBorder()
-	if selected {
+	nameStyle := brightStyle
+	switch {
+	case selected:
 		color = colorAccent
 		border = lipgloss.ThickBorder()
+	case context:
+		color = colorBorder
+		nameStyle = mutedStyle
 	}
 	inner := cardWidth - 4
-	name := brightStyle.Render(ansi.Truncate(node.Name, inner, "…"))
+	name := nameStyle.Render(ansi.Truncate(node.Name, inner, "…"))
 	status := joinNonEmpty(statusBadge(node.Health), statusBadge(node.Sync))
 	if status == "" {
 		status = mutedStyle.Render("no status reported")

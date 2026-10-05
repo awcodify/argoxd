@@ -55,3 +55,33 @@ func countNodes(nodes []ResourceNode) int {
 	}
 	return count
 }
+
+func TestFilterHierarchyKeepsMatchesWithTheirAncestors(t *testing.T) {
+	roots := []ResourceNode{
+		{Kind: "Deployment", Name: "web", Children: []ResourceNode{
+			{Kind: "ReplicaSet", Name: "web-1", Children: []ResourceNode{{Kind: "Pod", Name: "web-1-abc"}}},
+		}},
+		{Kind: "Service", Name: "web"},
+		{Kind: "ConfigMap", Name: "settings"},
+	}
+
+	got := FilterHierarchy(roots, "POD")
+
+	if len(got) != 1 || got[0].Kind != "Deployment" {
+		t.Fatalf("roots = %+v, want only the Deployment leading to the Pod", got)
+	}
+	if pod := got[0].Children[0].Children; len(pod) != 1 || pod[0].Name != "web-1-abc" {
+		t.Fatalf("path = %+v, want Deployment → ReplicaSet → Pod", got[0])
+	}
+}
+
+func TestFilterHierarchyMatchesKindAndName(t *testing.T) {
+	roots := []ResourceNode{{Kind: "Service", Name: "web"}, {Kind: "Deployment", Name: "web"}}
+
+	if got := FilterHierarchy(roots, "service/web"); len(got) != 1 || got[0].Kind != "Service" {
+		t.Fatalf("kind/name filter = %+v, want the Service", got)
+	}
+	if got := FilterHierarchy(roots, ""); len(got) != 2 {
+		t.Fatalf("empty filter = %+v, want every resource", got)
+	}
+}

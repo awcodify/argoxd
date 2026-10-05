@@ -3,7 +3,11 @@ package argocd
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -11,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -28,17 +33,23 @@ var (
 
 // KubernetesSource loads Argo CD custom resources from a kubeconfig context.
 type KubernetesSource struct {
-	kubeconfig string
-	context    string
-	namespace  string
+	namespace string
+	clients   func() (kubernetesClients, error)
+}
+
+// kubernetesClients are created once and shared by every request.
+type kubernetesClients struct {
+	dynamic dynamic.Interface
+	typed   kubernetes.Interface
 }
 
 // NewKubernetesSource creates a source backed by an Argo CD installation in Kubernetes.
 func NewKubernetesSource(kubeconfig, context, namespace string) *KubernetesSource {
 	return &KubernetesSource{
-		kubeconfig: kubeconfig,
-		context:    context,
-		namespace:  namespace,
+		namespace: namespace,
+		clients: sync.OnceValues(func() (kubernetesClients, error) {
+			return connect(kubeconfig, context)
+		}),
 	}
 }
 
@@ -66,7 +77,8 @@ func (s *KubernetesSource) Load(ctx context.Context) (explorer.Snapshot, error) 
 	return snapshotFromKubernetesResources(applications.Items, projects.Items, clusters.Items), nil
 }
 
-// LoadResourceTree returns resources reported in the Application status.
+// LoadResourceTree returns the resources reported in the Application status
+// together with the ReplicaSets, Jobs and Pods they own.
 func (s *KubernetesSource) LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error) {
 	client, err := s.client()
 	if err != nil {
@@ -78,26 +90,66 @@ func (s *KubernetesSource) LoadResourceTree(ctx context.Context, application str
 	}
 	tree := resourceTreeFromApplication(*resource)
 	tree.Application = application
-	return tree, nil
+	return attachOwnedResources(tree, s.listOwnedResources(ctx, client, tree)), nil
+}
+
+// listOwnedResources lists the owned kinds in every namespace the Application
+// deploys to. Kinds the identity may not list are skipped, not reported as errors.
+func (s *KubernetesSource) listOwnedResources(ctx context.Context, client dynamic.Interface, tree explorer.ResourceTree) []unstructured.Unstructured {
+	namespaces := make(map[string]bool)
+	for _, node := range tree.Nodes {
+		if node.Namespace != "" {
+			namespaces[node.Namespace] = true
+		}
+	}
+	var objects []unstructured.Unstructured
+	for namespace := range namespaces {
+		for _, resource := range ownedResources {
+			list, err := client.Resource(resource).Namespace(namespace).List(ctx, metav1.ListOptions{})
+			if err != nil {
+				continue
+			}
+			objects = append(objects, list.Items...)
+		}
+	}
+	return objects
 }
 
 // SyncApplication requests a sync through the Application operation field.
-func (s *KubernetesSource) SyncApplication(ctx context.Context, application string) error {
+func (s *KubernetesSource) SyncApplication(ctx context.Context, application string, options SyncOptions) error {
+	patch := map[string]any{"operation": map[string]any{"sync": map[string]any{
+		"prune":  options.Prune,
+		"dryRun": options.DryRun,
+	}}}
+	if err := s.patchApplication(ctx, application, patch); err != nil {
+		return fmt.Errorf("sync application %q: %w", application, err)
+	}
+	return nil
+}
+
+// RefreshApplication asks Argo CD to compare the Application with Git again,
+// bypassing its manifest cache.
+func (s *KubernetesSource) RefreshApplication(ctx context.Context, application string) error {
+	patch := map[string]any{"metadata": map[string]any{"annotations": map[string]any{
+		"argocd.argoproj.io/refresh": "hard",
+	}}}
+	if err := s.patchApplication(ctx, application, patch); err != nil {
+		return fmt.Errorf("refresh application %q: %w", application, err)
+	}
+	return nil
+}
+
+func (s *KubernetesSource) patchApplication(ctx context.Context, application string, patch map[string]any) error {
 	client, err := s.client()
 	if err != nil {
 		return err
 	}
-	_, err = client.Resource(applicationsResource).Namespace(s.namespace).Patch(
-		ctx,
-		application,
-		types.MergePatchType,
-		[]byte(`{"operation":{"sync":{}}}`),
-		metav1.PatchOptions{},
-	)
+	body, err := json.Marshal(patch)
 	if err != nil {
-		return fmt.Errorf("sync application %q: %w", application, err)
+		return err
 	}
-	return nil
+	_, err = client.Resource(applicationsResource).Namespace(s.namespace).Patch(ctx, application, types.MergePatchType, body, metav1.PatchOptions{})
+	return err
 }
 
 // DeleteApplication deletes an Application and its managed resources.
@@ -116,21 +168,30 @@ func (s *KubernetesSource) DeleteApplication(ctx context.Context, application st
 }
 
 func (s *KubernetesSource) client() (dynamic.Interface, error) {
+	clients, err := s.clients()
+	return clients.dynamic, err
+}
+
+func connect(kubeconfig, context string) (kubernetesClients, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
-	loadingRules.ExplicitPath = s.kubeconfig
+	loadingRules.ExplicitPath = kubeconfig
 	clientConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		loadingRules,
-		&clientcmd.ConfigOverrides{CurrentContext: s.context},
+		&clientcmd.ConfigOverrides{CurrentContext: context},
 	)
 	config, err := clientConfig.ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("load kubeconfig: %w", err)
+		return kubernetesClients{}, fmt.Errorf("load kubeconfig: %w", err)
 	}
-	client, err := dynamic.NewForConfig(config)
+	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
-		return nil, fmt.Errorf("create Kubernetes client: %w", err)
+		return kubernetesClients{}, fmt.Errorf("create Kubernetes client: %w", err)
 	}
-	return client, nil
+	typedClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return kubernetesClients{}, fmt.Errorf("create Kubernetes client: %w", err)
+	}
+	return kubernetesClients{dynamic: dynamicClient, typed: typedClient}, nil
 }
 
 func snapshotFromKubernetesResources(applications, projects, clusters []unstructured.Unstructured) explorer.Snapshot {
@@ -141,11 +202,14 @@ func snapshotFromKubernetesResources(applications, projects, clusters []unstruct
 	}
 	for _, application := range applications {
 		snapshot.Applications = append(snapshot.Applications, explorer.Application{
-			Name:      application.GetName(),
-			Namespace: application.GetNamespace(),
-			Project:   nestedString(application.Object, "spec", "project"),
-			Sync:      nestedString(application.Object, "status", "sync", "status"),
-			Health:    nestedString(application.Object, "status", "health", "status"),
+			Name:        application.GetName(),
+			Namespace:   application.GetNamespace(),
+			Project:     nestedString(application.Object, "spec", "project"),
+			Sync:        nestedString(application.Object, "status", "sync", "status"),
+			Health:      nestedString(application.Object, "status", "health", "status"),
+			Revision:    targetRevision(application.Object),
+			Destination: destination(nestedString(application.Object, "spec", "destination", "name"), nestedString(application.Object, "spec", "destination", "server"), nestedString(application.Object, "spec", "destination", "namespace")),
+			LastSync:    parseTime(nestedString(application.Object, "status", "operationState", "finishedAt")),
 		})
 	}
 	for _, project := range projects {
@@ -171,6 +235,38 @@ func nestedString(object map[string]any, fields ...string) string {
 	return value
 }
 
+// targetRevision reads the revision of a single-source Application, or of the
+// first source of a multi-source one.
+func targetRevision(application map[string]any) string {
+	if revision := nestedString(application, "spec", "source", "targetRevision"); revision != "" {
+		return revision
+	}
+	sources, _, _ := unstructured.NestedSlice(application, "spec", "sources")
+	if len(sources) > 0 {
+		if source, ok := sources[0].(map[string]any); ok {
+			return nestedString(source, "targetRevision")
+		}
+	}
+	return ""
+}
+
+// destination describes where an Application deploys, e.g. "in-cluster/store".
+func destination(name, server, namespace string) string {
+	target := name
+	if target == "" {
+		target = server
+	}
+	return strings.Trim(target+"/"+namespace, "/")
+}
+
+func parseTime(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
 func secretValue(object map[string]any, key string) string {
 	value := nestedString(object, "data", key)
 	decoded, err := base64.StdEncoding.DecodeString(value)
@@ -194,6 +290,7 @@ func resourceTreeFromApplication(application unstructured.Unstructured) explorer
 		}
 		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
 			Group:     nestedString(object, "group"),
+			Version:   nestedString(object, "version"),
 			Kind:      nestedString(object, "kind"),
 			Namespace: nestedString(object, "namespace"),
 			Name:      nestedString(object, "name"),

@@ -2,9 +2,8 @@
 package tui
 
 import (
-	"context"
-	"fmt"
 	"strings"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
@@ -13,28 +12,35 @@ import (
 )
 
 const (
-	defaultWidth  = 120
-	defaultHeight = 40
+	defaultWidth          = 120
+	defaultHeight         = 40
+	defaultRequestTimeout = 15 * time.Second
 )
 
 // Model is the Bubble Tea model for argoxd.
 type Model struct {
-	explorer     explorer.Model
-	source       argocd.Source
-	connection   string
-	namespace    string
-	loading      bool
-	err          error
-	width        int
-	height       int
-	view         viewMode
-	tree         []treeItem
-	resourceTree explorer.ResourceTree
-	treeCursor   int
-	expanded     map[string]bool
-	confirming   string
-	prompt       prompt
-	status       string
+	explorer        explorer.Model
+	source          argocd.Source
+	connection      string
+	namespace       string
+	requestTimeout  time.Duration
+	refreshInterval time.Duration
+	loading         bool
+	refreshing      bool
+	err             error
+	width           int
+	height          int
+	view            viewMode
+	tree            []treeItem
+	resourceTree    explorer.ResourceTree
+	treeCursor      int
+	treeFilter      string
+	expanded        map[string]bool
+	viewer          textView
+	prompt          prompt
+	confirming      string
+	syncing         syncDialog
+	status          string
 }
 
 type viewMode int
@@ -43,6 +49,7 @@ const (
 	listView viewMode = iota
 	inventoryTreeView
 	applicationTreeView
+	textViewMode
 )
 
 type treeItem struct {
@@ -55,17 +62,30 @@ type treeItem struct {
 	expandable  bool
 }
 
+// syncDialog asks how to sync an Application before starting the sync.
+type syncDialog struct {
+	application string
+	options     argocd.SyncOptions
+}
+
 // New creates the TUI from an initial resource snapshot.
 func New(source argocd.Source, connection, namespace string, snapshot explorer.Snapshot) Model {
 	return Model{
-		explorer:   explorer.NewModel(snapshot),
-		source:     source,
-		connection: connection,
-		namespace:  namespace,
-		width:      defaultWidth,
-		height:     defaultHeight,
-		expanded:   make(map[string]bool),
+		explorer:       explorer.NewModel(snapshot),
+		source:         source,
+		connection:     connection,
+		namespace:      namespace,
+		requestTimeout: defaultRequestTimeout,
+		width:          defaultWidth,
+		height:         defaultHeight,
+		expanded:       make(map[string]bool),
 	}
+}
+
+// WithRefresh reloads resources every interval; zero disables auto-refresh.
+func (m Model) WithRefresh(interval time.Duration) Model {
+	m.refreshInterval = interval
+	return m
 }
 
 // Init loads live data when a source is configured.
@@ -73,89 +93,35 @@ func (m Model) Init() tea.Cmd {
 	if m.source == nil {
 		return nil
 	}
-	return m.load()
+	return tea.Batch(m.load(), m.scheduleRefresh())
 }
 
 // Update handles TUI messages.
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
-		if m.confirming != "" {
-			switch message.String() {
-			case "y":
-				application := m.confirming
-				m.confirming = ""
-				m.loading = true
-				return m, m.operate("delete", application)
-			case "n", "esc":
-				m.confirming = ""
-			}
-			return m, nil
-		}
-		if m.prompt.active {
-			return m.updatePrompt(message)
-		}
-		switch message.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "up", "k":
-			m.moveUp()
-		case "down", "j":
-			m.moveDown()
-		case ":":
-			m.prompt = prompt{active: true}
-		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
-			m.selectProject(message.String())
-		case "t":
-			m.openInventoryTree()
-		case "enter":
-			if m.view == listView && m.explorer.Screen() == explorer.ApplicationsScreen {
-				application := m.explorer.SelectedName()
-				if application == "" {
-					return m, nil
-				}
-				if _, ok := m.source.(argocd.ApplicationOperator); !ok {
-					m.err = fmt.Errorf("the active source does not support application trees")
-					return m, nil
-				}
-				m.loading = true
-				return m, m.loadApplicationTree(application)
-			}
-			m.toggleTreeItem()
-		case " ", "right", "left":
-			m.toggleTreeItem()
-		case "esc":
-			m.closeTree()
-		case "s":
-			if application := m.selectedApplication(); application != "" {
-				m.loading = true
-				return m, m.operate("sync", application)
-			}
-		case "d":
-			if application := m.selectedApplication(); application != "" {
-				m.confirming = application
-			}
-		case "r":
-			if m.source != nil && !m.loading {
-				m.loading = true
-				m.err = nil
-				return m, m.load()
-			}
-		}
+		return m.updateKey(message)
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height
+	case refreshTick:
+		return m.autoRefresh()
 	case loadedSnapshot:
 		m.loading = false
+		m.refreshing = false
 		m.err = message.err
 		if message.err == nil {
 			m.explorer.ReplaceSnapshot(message.snapshot)
 		}
 	case loadedTree:
 		m.loading = false
+		m.applyTree(message)
+	case loadedText:
+		m.loading = false
 		m.err = message.err
 		if message.err == nil {
-			m.setApplicationTree(message.tree)
+			m.viewer = newTextView(message.kind, message.subject, message.text)
+			m.view = textViewMode
 		}
 	case operationCompleted:
 		m.loading = false
@@ -169,81 +135,139 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View renders the header, the optional command prompt, the framed resource
-// view, the breadcrumbs and the status line.
+// updateKey routes a key to the dialog or prompt that has focus, or else to the active view.
+func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case m.confirming != "":
+		return m.updateDeleteConfirmation(message)
+	case m.syncing.application != "":
+		return m.updateSyncDialog(message)
+	case m.prompt.active:
+		return m.updatePrompt(message)
+	case m.view == textViewMode:
+		return m.updateViewer(message)
+	}
+
+	switch key := message.String(); key {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "up", "k":
+		m.moveUp()
+	case "down", "j":
+		m.moveDown()
+	case ":":
+		m.prompt = prompt{active: true}
+	case "/":
+		switch m.view {
+		case listView:
+			m.prompt = prompt{active: true, filter: true, input: m.explorer.Filter()}
+		case applicationTreeView:
+			m.prompt = prompt{active: true, filter: true, input: m.treeFilter}
+		}
+	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+		m.selectProject(key)
+	case "t":
+		m.openInventoryTree()
+	case "enter":
+		if m.view == listView && m.explorer.Screen() == explorer.ApplicationsScreen {
+			return m.openDependencies()
+		}
+		m.toggleTreeItem()
+	case " ", "right", "left":
+		m.toggleTreeItem()
+	case "esc":
+		if m.filter() != "" {
+			m.applyFilter("")
+			break
+		}
+		m.closeTree()
+	case "y", "d", "l":
+		if m.view == applicationTreeView {
+			return m.inspect(key)
+		}
+	case "s":
+		if application := m.selectedApplication(); application != "" {
+			m.syncing = syncDialog{application: application}
+		}
+	case "R":
+		if application := m.selectedApplication(); application != "" {
+			m.loading = true
+			return m, m.hardRefresh(application)
+		}
+	case "D":
+		if application := m.selectedApplication(); application != "" {
+			m.confirming = application
+		}
+	case "r":
+		if m.source != nil && !m.loading {
+			m.loading = true
+			m.err = nil
+			return m, m.load()
+		}
+	}
+	return m, nil
+}
+
+func (m Model) updateDeleteConfirmation(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch message.String() {
+	case "y":
+		application := m.confirming
+		m.confirming = ""
+		m.loading = true
+		return m, m.deleteApplication(application)
+	case "n", "esc":
+		m.confirming = ""
+	}
+	return m, nil
+}
+
+func (m Model) updateSyncDialog(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch message.String() {
+	case "p":
+		m.syncing.options.Prune = !m.syncing.options.Prune
+	case "r":
+		m.syncing.options.DryRun = !m.syncing.options.DryRun
+	case "enter":
+		dialog := m.syncing
+		m.syncing = syncDialog{}
+		m.loading = true
+		return m, m.sync(dialog.application, dialog.options)
+	case "esc", "n":
+		m.syncing = syncDialog{}
+	}
+	return m, nil
+}
+
+// View renders the header, the optional prompt, the framed view, the
+// breadcrumbs and the status line.
 func (m Model) View() string {
 	sections := []string{m.renderHeader(m.width)}
-	frameHeight := max(3, m.height-headerHeight-2)
 	if m.prompt.active {
 		sections = append(sections, m.renderPrompt(m.width))
-		frameHeight = max(3, frameHeight-promptHeight)
 	}
-	title, lines := m.renderContent(m.width-2, frameHeight-2)
+	title, lines := m.renderContent(m.width-2, m.bodyHeight())
 	main := box{
 		border: lipgloss.RoundedBorder(),
 		color:  colorBorder,
 		title:  title,
 		width:  m.width,
-		height: frameHeight,
+		height: m.bodyHeight() + 2,
 	}.render(lines)
 	return strings.Join(append(sections, main, m.renderCrumbs(), m.renderFlash()), "\n")
+}
+
+// bodyHeight is the number of lines available inside the main frame.
+func (m Model) bodyHeight() int {
+	height := m.height - headerHeight - 2
+	if m.prompt.active {
+		height -= promptHeight
+	}
+	return max(1, height-2)
 }
 
 // Explorer returns the resource-navigation state.
 func (m Model) Explorer() explorer.Model {
 	return m.explorer
-}
-
-type loadedSnapshot struct {
-	snapshot explorer.Snapshot
-	err      error
-}
-
-type loadedTree struct {
-	tree explorer.ResourceTree
-	err  error
-}
-
-type operationCompleted struct {
-	action      string
-	application string
-	err         error
-}
-
-func (m Model) load() tea.Cmd {
-	return func() tea.Msg {
-		snapshot, err := m.source.Load(context.Background())
-		return loadedSnapshot{snapshot: snapshot, err: err}
-	}
-}
-
-func (m Model) loadApplicationTree(application string) tea.Cmd {
-	operator, ok := m.source.(argocd.ApplicationOperator)
-	if !ok {
-		return nil
-	}
-	return func() tea.Msg {
-		tree, err := operator.LoadResourceTree(context.Background(), application)
-		return loadedTree{tree: tree, err: err}
-	}
-}
-
-func (m Model) operate(action, application string) tea.Cmd {
-	operator, ok := m.source.(argocd.ApplicationOperator)
-	if !ok {
-		return func() tea.Msg {
-			return operationCompleted{action: action, application: application, err: fmt.Errorf("the active source does not support application operations")}
-		}
-	}
-	return func() tea.Msg {
-		var err error
-		if action == "sync" {
-			err = operator.SyncApplication(context.Background(), application)
-		} else {
-			err = operator.DeleteApplication(context.Background(), application)
-		}
-		return operationCompleted{action: action, application: application, err: err}
-	}
 }
 
 func (m *Model) showScreen(screen explorer.Screen) {
@@ -257,12 +281,48 @@ func (m *Model) closeTree() {
 	m.tree = nil
 	m.resourceTree = explorer.ResourceTree{}
 	m.treeCursor = 0
+	m.treeFilter = ""
 }
 
-func (m *Model) setApplicationTree(tree explorer.ResourceTree) {
-	m.view = applicationTreeView
-	m.resourceTree = tree
-	m.treeCursor = 0
+// filter returns the filter of the active view: the list or the dependency tree.
+func (m Model) filter() string {
+	switch m.view {
+	case listView:
+		return m.explorer.Filter()
+	case applicationTreeView:
+		return m.treeFilter
+	default:
+		return ""
+	}
+}
+
+// applyFilter narrows the list or, in the dependency view, the card tree.
+func (m *Model) applyFilter(text string) {
+	if m.view == applicationTreeView {
+		m.treeFilter = text
+		m.treeCursor = 0
+		return
+	}
+	m.explorer.SetFilter(text)
+}
+
+// applyTree shows a loaded resource tree. A tree from a background refresh
+// only replaces the one on screen, keeping the selected card.
+func (m *Model) applyTree(message loadedTree) {
+	if message.background {
+		showing := m.view == applicationTreeView || m.view == textViewMode
+		if message.err == nil && showing && m.resourceTree.Application == message.tree.Application {
+			m.resourceTree = message.tree
+			m.treeCursor = min(m.treeCursor, m.cardCount()-1)
+		}
+		return
+	}
+	m.err = message.err
+	if message.err == nil {
+		m.view = applicationTreeView
+		m.resourceTree = message.tree
+		m.treeCursor = 0
+	}
 }
 
 func (m *Model) openInventoryTree() {
@@ -319,11 +379,10 @@ func (m *Model) moveDown() {
 	}
 }
 
-// treeRowCount counts the selectable rows of a tree view. The dependency
-// view has one card for the Application plus one per managed resource.
+// treeRowCount counts the selectable rows of a tree view.
 func (m Model) treeRowCount() int {
 	if m.view == applicationTreeView {
-		return 1 + len(m.resourceTree.Nodes)
+		return m.cardCount()
 	}
 	return len(m.visibleTree())
 }
@@ -340,7 +399,7 @@ func (m *Model) toggleTreeItem() {
 
 func (m Model) selectedApplication() string {
 	switch m.view {
-	case applicationTreeView:
+	case applicationTreeView, textViewMode:
 		return m.resourceTree.Application
 	case inventoryTreeView:
 		if visible := m.visibleTree(); len(visible) > 0 {

@@ -25,9 +25,10 @@ var commands = []viewCommand{
 
 var quitCommands = []string{"q", "quit"}
 
-// prompt is the command line opened with ':'.
+// prompt is the command line opened with ':', or the filter opened with '/'.
 type prompt struct {
 	active    bool
+	filter    bool
 	input     string
 	selection int
 }
@@ -73,6 +74,9 @@ func suggestions(input string, projects []string) []string {
 }
 
 func (m Model) suggestions() []string {
+	if m.prompt.filter {
+		return nil
+	}
 	projects := make([]string, 0, len(m.explorer.Snapshot().Projects))
 	for _, project := range m.explorer.Snapshot().Projects {
 		projects = append(projects, project.Name)
@@ -88,6 +92,9 @@ func (m Model) selectedSuggestion() string {
 }
 
 func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.prompt.filter {
+		return m.updateFilter(message)
+	}
 	switch message.Type {
 	case tea.KeyEsc:
 		m.prompt = prompt{}
@@ -117,6 +124,35 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyRunes:
 		m.prompt = prompt{active: true, input: m.prompt.input + string(message.Runes)}
 	}
+	return m, nil
+}
+
+// updateFilter narrows the list or dependency tree as the user types. Enter keeps the filter,
+// Esc clears it.
+func (m Model) updateFilter(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	input := m.prompt.input
+	switch message.Type {
+	case tea.KeyEsc:
+		m.prompt = prompt{}
+		m.applyFilter("")
+		return m, nil
+	case tea.KeyEnter:
+		m.prompt = prompt{}
+		return m, nil
+	case tea.KeyBackspace:
+		if input == "" {
+			m.prompt = prompt{}
+			return m, nil
+		}
+		runes := []rune(input)
+		input = string(runes[:len(runes)-1])
+	case tea.KeySpace:
+		input += " "
+	case tea.KeyRunes:
+		input += string(message.Runes)
+	}
+	m.prompt.input = input
+	m.applyFilter(input)
 	return m, nil
 }
 

@@ -82,3 +82,53 @@ func TestProjectFilterNarrowsApplications(t *testing.T) {
 		t.Fatalf("applications without a filter = %d, want 3", got)
 	}
 }
+
+func TestReplaceSnapshotKeepsTheSelectedResource(t *testing.T) {
+	model := NewModel(Snapshot{Applications: []Application{{Name: "catalog"}, {Name: "payments"}}})
+	model.MoveDown()
+
+	model.ReplaceSnapshot(Snapshot{Applications: []Application{{Name: "accounts"}, {Name: "catalog"}, {Name: "payments"}}})
+
+	if got := model.SelectedName(); got != "payments" {
+		t.Fatalf("selected after refresh = %q, want payments", got)
+	}
+}
+
+func TestReplaceSnapshotClampsSelectionWhenResourceDisappears(t *testing.T) {
+	model := NewModel(Snapshot{Applications: []Application{{Name: "catalog"}, {Name: "payments"}}})
+	model.MoveDown()
+
+	model.ReplaceSnapshot(Snapshot{Applications: []Application{{Name: "catalog"}}})
+
+	if got := model.SelectedName(); got != "catalog" {
+		t.Fatalf("selected after refresh = %q, want catalog", got)
+	}
+}
+
+func TestFilterMatchesNamesOnEveryScreen(t *testing.T) {
+	model := NewModel(Snapshot{
+		Applications: []Application{{Name: "payments-api"}, {Name: "catalog"}, {Name: "payments-worker"}},
+		Projects:     []Project{{Name: "store"}, {Name: "platform"}},
+		Clusters:     []Cluster{{Name: "production"}, {Name: "staging"}},
+	})
+
+	model.SetFilter("PAY")
+	if model.RowCount() != 2 || model.SelectedName() != "payments-api" {
+		t.Fatalf("filtered applications: rows = %d selected = %q", model.RowCount(), model.SelectedName())
+	}
+
+	model.SetScreen(ProjectsScreen)
+	if model.Filter() != "" {
+		t.Fatalf("switching screens kept filter %q", model.Filter())
+	}
+	model.SetFilter("plat")
+	if got := model.Projects(); len(got) != 1 || got[0].Name != "platform" {
+		t.Fatalf("filtered projects = %+v", got)
+	}
+
+	model.SetScreen(ClustersScreen)
+	model.SetFilter("stag")
+	if got := model.Clusters(); len(got) != 1 || got[0].Name != "staging" {
+		t.Fatalf("filtered clusters = %+v", got)
+	}
+}

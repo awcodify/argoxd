@@ -3,6 +3,7 @@ package tui
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
@@ -15,13 +16,15 @@ const (
 
 // renderContent returns the frame title and body lines for the active view.
 func (m Model) renderContent(width, height int) (string, []string) {
-	snapshot := m.explorer.Snapshot()
 	switch m.view {
 	case inventoryTreeView:
 		return viewTitle("inventory", "", -1), m.renderInventory(width, height)
 	case applicationTreeView:
 		application := m.application()
-		return viewTitle(application.Name, application.Project, len(m.resourceTree.Nodes)), m.renderDependencies(width, height)
+		title := viewTitle(application.Name, application.Project, len(m.resourceTree.Nodes))
+		return withFilter(title, m.treeFilter), m.renderDependencies(width, height)
+	case textViewMode:
+		return m.viewerTitle(), m.viewer.render(width, height)
 	}
 
 	switch m.explorer.Screen() {
@@ -30,11 +33,11 @@ func (m Model) renderContent(width, height int) (string, []string) {
 		if project == "" {
 			project = "all"
 		}
-		return viewTitle("applications", project, m.explorer.RowCount()), m.applicationsTable().render(m.explorer.Cursor(), width, height)
+		return m.listTitle("applications", project), m.applicationsTable().render(m.explorer.Cursor(), width, height)
 	case explorer.ProjectsScreen:
-		return viewTitle("projects", "", len(snapshot.Projects)), m.projectsTable().render(m.explorer.Cursor(), width, height)
+		return m.listTitle("projects", ""), m.projectsTable().render(m.explorer.Cursor(), width, height)
 	case explorer.ClustersScreen:
-		return viewTitle("clusters", "", len(snapshot.Clusters)), m.clustersTable().render(m.explorer.Cursor(), width, height)
+		return m.listTitle("clusters", ""), m.clustersTable().render(m.explorer.Cursor(), width, height)
 	default:
 		return viewTitle("settings", "", -1), []string{
 			"",
@@ -46,20 +49,66 @@ func (m Model) renderContent(width, height int) (string, []string) {
 	}
 }
 
+// viewerTitle names the open text, and for a diff explains which side is which.
+func (m Model) viewerTitle() string {
+	title := viewTitle(m.viewer.kind, m.viewer.subject, -1)
+	if m.viewer.kind != "diff" {
+		return title
+	}
+	return strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") +
+		diffRemovedStyle.Render(" − live ") + " " + diffAddedStyle.Render(" + desired ") + " "
+}
+
+// listTitle renders the frame title of a list, showing the active filter.
+func (m Model) listTitle(name, scope string) string {
+	return withFilter(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Filter())
+}
+
+// withFilter appends an active filter to a frame title, e.g. "· /pod".
+func withFilter(title, filter string) string {
+	if filter == "" {
+		return title
+	}
+	return strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + accentStyle.Render("/"+filter) + " "
+}
+
 func (m Model) applicationsTable() table {
-	result := table{columns: []string{"NAME", "PROJECT", "SYNC", "HEALTH"}, status: map[int]bool{2: true, 3: true}}
+	result := table{
+		columns: []string{"NAME", "PROJECT", "SYNC", "HEALTH", "REVISION", "DESTINATION", "LAST SYNC"},
+		status:  map[int]bool{2: true, 3: true},
+	}
 	for _, application := range m.explorer.Applications() {
-		result.rows = append(result.rows, []string{application.Name, application.Project, application.Sync, application.Health})
+		result.rows = append(result.rows, []string{
+			application.Name, application.Project, application.Sync, application.Health,
+			application.Revision, application.Destination, age(application.LastSync),
+		})
 	}
 	return result
 }
 
+// age describes how long ago something happened, e.g. "45s", "5m", "3h" or "2d".
+func age(moment time.Time) string {
+	if moment.IsZero() {
+		return ""
+	}
+	elapsed := time.Since(moment)
+	switch {
+	case elapsed < time.Minute:
+		return strconv.Itoa(int(elapsed.Seconds())) + "s"
+	case elapsed < time.Hour:
+		return strconv.Itoa(int(elapsed.Minutes())) + "m"
+	case elapsed < 24*time.Hour:
+		return strconv.Itoa(int(elapsed.Hours())) + "h"
+	default:
+		return strconv.Itoa(int(elapsed.Hours()/24)) + "d"
+	}
+}
+
 func (m Model) projectsTable() table {
-	snapshot := m.explorer.Snapshot()
 	result := table{columns: []string{"NAME", "APPS", "DESCRIPTION"}}
-	for _, project := range snapshot.Projects {
+	for _, project := range m.explorer.Projects() {
 		count := 0
-		for _, application := range snapshot.Applications {
+		for _, application := range m.explorer.Snapshot().Applications {
 			if application.Project == project.Name {
 				count++
 			}
@@ -71,7 +120,7 @@ func (m Model) projectsTable() table {
 
 func (m Model) clustersTable() table {
 	result := table{columns: []string{"NAME", "SERVER"}}
-	for _, cluster := range m.explorer.Snapshot().Clusters {
+	for _, cluster := range m.explorer.Clusters() {
 		result.rows = append(result.rows, []string{cluster.Name, cluster.Server})
 	}
 	return result
@@ -111,6 +160,8 @@ func (m Model) renderCrumbs() string {
 		crumbs = []string{"inventory"}
 	case applicationTreeView:
 		crumbs = append(crumbs, m.resourceTree.Application)
+	case textViewMode:
+		crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
 	}
 	rendered := make([]string, len(crumbs))
 	for index, crumb := range crumbs {
@@ -125,6 +176,12 @@ func (m Model) renderCrumbs() string {
 // renderFlash shows the most urgent message: a pending confirmation, an error, or progress.
 func (m Model) renderFlash() string {
 	switch {
+	case m.syncing.application != "":
+		return " " + accentStyle.Render("⟳ Sync "+m.syncing.application+"?") +
+			"   " + keycap("enter", "sync") +
+			"  " + keycap("p", "prune "+toggle(m.syncing.options.Prune)) +
+			"  " + keycap("r", "dry run "+toggle(m.syncing.options.DryRun)) +
+			"  " + keycap("esc", "cancel")
 	case m.confirming != "":
 		return " " + errorStyle.Render("✗ Delete "+m.confirming+" and its managed resources?") +
 			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
@@ -143,7 +200,11 @@ func (m Model) renderFlash() string {
 // ghost text after it, and the other matches alongside.
 func (m Model) renderPrompt(width int) string {
 	suggestion := m.selectedSuggestion()
-	line := " " + accentStyle.Render("❯") + " " + brightStyle.Render(m.prompt.input)
+	symbol, title := "❯", "command"
+	if m.prompt.filter {
+		symbol, title = "/", "filter"
+	}
+	line := " " + accentStyle.Render(symbol) + " " + brightStyle.Render(m.prompt.input)
 	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found {
 		line += mutedStyle.Render(ghost)
 	}
@@ -168,10 +229,17 @@ func (m Model) renderPrompt(width int) string {
 	return box{
 		border: lipgloss.RoundedBorder(),
 		color:  colorAccent,
-		title:  " " + accentStyle.Render("command") + " ",
+		title:  " " + accentStyle.Render(title) + " ",
 		width:  width,
 		height: promptHeight,
 	}.render([]string{line})
+}
+
+func toggle(on bool) string {
+	if on {
+		return "● on"
+	}
+	return "○ off"
 }
 
 func screenName(screen explorer.Screen) string {

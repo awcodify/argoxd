@@ -281,13 +281,23 @@ func TestEscapeReturnsFromApplicationDetail(t *testing.T) {
 	}
 }
 
-func TestDeletePromptsForConfirmation(t *testing.T) {
+func TestShiftDPromptsForDeleteConfirmation(t *testing.T) {
+	model := New(nil, "test", "argocd", explorer.Snapshot{Applications: applications(1)})
+
+	view := press(model, "D").View()
+
+	if !strings.Contains(view, "Delete app-00") {
+		t.Fatalf("D did not ask for confirmation:\n%s", view)
+	}
+}
+
+func TestLowercaseDDoesNotDeleteFromTheList(t *testing.T) {
 	model := New(nil, "test", "argocd", explorer.Snapshot{Applications: applications(1)})
 
 	view := press(model, "d").View()
 
-	if !strings.Contains(view, "Delete app-00") {
-		t.Fatalf("delete did not ask for confirmation:\n%s", view)
+	if strings.Contains(view, "Delete app-00") {
+		t.Fatalf("d asked to delete an Application:\n%s", view)
 	}
 }
 

@@ -1,4 +1,3 @@
-// Package argocd provides resource sources backed by Argo CD.
 package argocd
 
 import (
@@ -15,18 +14,6 @@ import (
 
 	"github.com/awcodify/argoxd/internal/explorer"
 )
-
-// Source loads the resources shown by the explorer.
-type Source interface {
-	Load(ctx context.Context) (explorer.Snapshot, error)
-}
-
-// ApplicationOperator supports interactive application operations.
-type ApplicationOperator interface {
-	LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error)
-	SyncApplication(ctx context.Context, application string) error
-	DeleteApplication(ctx context.Context, application string) error
-}
 
 // APISource loads resources from the Argo CD API.
 type APISource struct {
@@ -71,11 +58,14 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 	}
 	for _, application := range applications.Items {
 		snapshot.Applications = append(snapshot.Applications, explorer.Application{
-			Name:      application.Metadata.Name,
-			Namespace: application.Metadata.Namespace,
-			Project:   application.Spec.Project,
-			Sync:      application.Status.Sync.Status,
-			Health:    application.Status.Health.Status,
+			Name:        application.Metadata.Name,
+			Namespace:   application.Metadata.Namespace,
+			Project:     application.Spec.Project,
+			Sync:        application.Status.Sync.Status,
+			Health:      application.Status.Health.Status,
+			Revision:    application.Spec.targetRevision(),
+			Destination: destination(application.Spec.Destination.Name, application.Spec.Destination.Server, application.Spec.Destination.Namespace),
+			LastSync:    application.Status.OperationState.FinishedAt,
 		})
 	}
 	for _, project := range projects.Items {
@@ -115,6 +105,7 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 		}
 		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
 			Group:     node.Group,
+			Version:   node.Version,
 			Kind:      node.Kind,
 			Namespace: node.Namespace,
 			Name:      node.Name,
@@ -127,10 +118,24 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 }
 
 // SyncApplication starts a sync operation for an Application.
-func (s *APISource) SyncApplication(ctx context.Context, application string) error {
+func (s *APISource) SyncApplication(ctx context.Context, application string, options SyncOptions) error {
+	body, err := json.Marshal(syncRequest{Prune: options.Prune, DryRun: options.DryRun})
+	if err != nil {
+		return fmt.Errorf("encode sync request: %w", err)
+	}
 	path := "/api/v1/applications/" + url.PathEscape(application) + "/sync"
-	if err := s.request(ctx, http.MethodPost, path, bytes.NewBufferString("{}"), nil); err != nil {
+	if err := s.request(ctx, http.MethodPost, path, bytes.NewBuffer(body), nil); err != nil {
 		return fmt.Errorf("sync application: %w", err)
+	}
+	return nil
+}
+
+// RefreshApplication makes Argo CD compare the Application with Git again,
+// bypassing its manifest cache.
+func (s *APISource) RefreshApplication(ctx context.Context, application string) error {
+	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=hard"
+	if err := s.get(ctx, path, nil); err != nil {
+		return fmt.Errorf("refresh application: %w", err)
 	}
 	return nil
 }
@@ -144,10 +149,27 @@ func (s *APISource) DeleteApplication(ctx context.Context, application string) e
 	return nil
 }
 
+// request sends a request and decodes the JSON response into target, when given.
 func (s *APISource) request(ctx context.Context, method, path string, body *bytes.Buffer, target any) error {
+	response, err := s.do(ctx, method, path, body)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if target != nil {
+		if err := json.NewDecoder(response.Body).Decode(target); err != nil {
+			return fmt.Errorf("decode response: %w", err)
+		}
+	}
+	return nil
+}
+
+// do sends a request and returns the response of a successful call. The
+// caller must close the response body.
+func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
 	endpoint, err := url.Parse(s.baseURL + path)
 	if err != nil {
-		return fmt.Errorf("parse endpoint: %w", err)
+		return nil, fmt.Errorf("parse endpoint: %w", err)
 	}
 	var reader io.Reader
 	if body != nil {
@@ -155,7 +177,7 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return nil, fmt.Errorf("create request: %w", err)
 	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
@@ -166,18 +188,29 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 
 	response, err := s.client.Do(request)
 	if err != nil {
-		return fmt.Errorf("request %s: %w", path, err)
+		return nil, fmt.Errorf("request %s: %w", endpoint.Path, err)
 	}
-	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("%s returned %s", path, response.Status)
+		defer response.Body.Close()
+		return nil, fmt.Errorf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))
 	}
-	if target != nil {
-		if err := json.NewDecoder(response.Body).Decode(target); err != nil {
-			return fmt.Errorf("decode response: %w", err)
-		}
+	return response, nil
+}
+
+// errorMessage reads the explanation Argo CD puts in an error response, if any.
+func errorMessage(body io.Reader) string {
+	var failure struct {
+		Message string `json:"message"`
 	}
-	return nil
+	if err := json.NewDecoder(io.LimitReader(body, 64*1024)).Decode(&failure); err != nil || failure.Message == "" {
+		return ""
+	}
+	return ": " + failure.Message
+}
+
+type syncRequest struct {
+	Prune  bool `json:"prune"`
+	DryRun bool `json:"dryRun"`
 }
 
 type metadata struct {
@@ -187,19 +220,47 @@ type metadata struct {
 
 type applicationList struct {
 	Items []struct {
-		Metadata metadata `json:"metadata"`
-		Spec     struct {
-			Project string `json:"project"`
-		} `json:"spec"`
-		Status struct {
+		Metadata metadata        `json:"metadata"`
+		Spec     applicationSpec `json:"spec"`
+		Status   struct {
 			Sync struct {
 				Status string `json:"status"`
 			} `json:"sync"`
 			Health struct {
 				Status string `json:"status"`
 			} `json:"health"`
+			OperationState struct {
+				FinishedAt time.Time `json:"finishedAt"`
+			} `json:"operationState"`
 		} `json:"status"`
 	} `json:"items"`
+}
+
+type applicationSource struct {
+	TargetRevision string `json:"targetRevision"`
+}
+
+type applicationSpec struct {
+	Project     string              `json:"project"`
+	Source      *applicationSource  `json:"source"`
+	Sources     []applicationSource `json:"sources"`
+	Destination struct {
+		Name      string `json:"name"`
+		Server    string `json:"server"`
+		Namespace string `json:"namespace"`
+	} `json:"destination"`
+}
+
+// targetRevision reads the revision of a single-source Application, or of the
+// first source of a multi-source one.
+func (s applicationSpec) targetRevision() string {
+	if s.Source != nil {
+		return s.Source.TargetRevision
+	}
+	if len(s.Sources) > 0 {
+		return s.Sources[0].TargetRevision
+	}
+	return ""
 }
 
 type projectList struct {
@@ -223,6 +284,7 @@ type clusterList struct {
 type resourceTreeResponse struct {
 	Nodes []struct {
 		Group     string `json:"group"`
+		Version   string `json:"version"`
 		Kind      string `json:"kind"`
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
