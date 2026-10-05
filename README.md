@@ -6,6 +6,14 @@
 
 ## Install
 
+With Homebrew (macOS and Linux):
+
+```sh
+brew install awcodify/tap/argoxd
+```
+
+With Go:
+
 ```sh
 go install github.com/awcodify/argoxd/cmd/argoxd@latest
 ```
