@@ -2,6 +2,8 @@
 
 `argoxd` is an interactive terminal user interface for Argo CD, inspired by the resource-focused workflow of k9s. It lists Applications, AppProjects, destination clusters, and connection settings from either the Kubernetes API or the Argo CD API.
 
+![argoxd demo](demo/demo.gif)
+
 ## Install
 
 ```sh
