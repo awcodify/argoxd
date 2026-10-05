@@ -22,7 +22,7 @@ func (m Model) renderContent(width, height int) (string, []string) {
 	case applicationTreeView:
 		application := m.application()
 		title := viewTitle(application.Name, application.Project, len(m.resourceTree.Nodes))
-		return withFilter(title, m.treeFilter), m.renderDependencies(width, height)
+		return withSearch(title, m.treeSearch, m.treeFilter), m.renderDependencies(width, height)
 	case textViewMode:
 		return m.viewerTitle(), m.viewer.render(width, height)
 	}
@@ -59,17 +59,24 @@ func (m Model) viewerTitle() string {
 		diffRemovedStyle.Render(" − live ") + " " + diffAddedStyle.Render(" + desired ") + " "
 }
 
-// listTitle renders the frame title of a list, showing the active filter.
+// listTitle renders the frame title of a list, showing the active search and filter.
 func (m Model) listTitle(name, scope string) string {
-	return withFilter(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Filter())
+	return withSearch(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Search(), m.explorer.Filter())
 }
 
-// withFilter appends an active filter to a frame title, e.g. "· /pod".
-func withFilter(title, filter string) string {
-	if filter == "" {
+// withSearch appends the active search and filter to a frame title, e.g. "· /pod · health:Degraded".
+func withSearch(title, search string, filter explorer.Filter) string {
+	var parts []string
+	if search != "" {
+		parts = append(parts, accentStyle.Render("/"+search))
+	}
+	for _, label := range filter.Labels() {
+		parts = append(parts, accentStyle.Render(label))
+	}
+	if len(parts) == 0 {
 		return title
 	}
-	return strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + accentStyle.Render("/"+filter) + " "
+	return strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + strings.Join(parts, mutedStyle.Render(" · ")) + " "
 }
 
 func (m Model) applicationsTable() table {
@@ -201,8 +208,11 @@ func (m Model) renderFlash() string {
 func (m Model) renderPrompt(width int) string {
 	suggestion := m.selectedSuggestion()
 	symbol, title := "❯", "command"
-	if m.prompt.filter {
-		symbol, title = "/", "filter"
+	switch {
+	case m.prompt.search:
+		symbol, title = "/", "search"
+	case m.prompt.field != "":
+		symbol, title = "▾", m.prompt.field
 	}
 	line := " " + accentStyle.Render(symbol) + " " + brightStyle.Render(m.prompt.input)
 	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found {
@@ -212,15 +222,22 @@ func (m Model) renderPrompt(width int) string {
 
 	matches := m.suggestions()
 	if len(matches) > visibleSuggestion {
-		matches = matches[:visibleSuggestion]
+		// Scroll the chips so the selected one stays in view.
+		selected := m.prompt.selection % len(matches)
+		start := max(0, selected-visibleSuggestion+1)
+		matches = matches[start : start+visibleSuggestion]
 	}
 	chips := make([]string, 0, len(matches))
 	for _, match := range matches {
+		label := match
+		if command, found := findFilterCommand(match); found && !m.prompt.search && m.prompt.field == "" {
+			label += " " + mutedStyle.Render("shift+"+command.shortcut)
+		}
 		if match == suggestion {
-			chips = append(chips, keycapStyle.Render(match))
+			chips = append(chips, keycapStyle.Render(label))
 			continue
 		}
-		chips = append(chips, mutedStyle.Render(" "+match+" "))
+		chips = append(chips, mutedStyle.Render(" "+label+" "))
 	}
 	if len(chips) > 0 {
 		line += "    " + strings.Join(chips, " ") + "  " + mutedStyle.Render("⇥ complete  ↑↓ choose")

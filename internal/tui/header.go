@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -76,13 +77,17 @@ func (m Model) keyHints() []keyHint {
 		return []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
 			{"s", "Sync"}, {"R", "Hard refresh"}, {"D", "Delete"},
-			{"/", "Filter"}, {"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
+			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
+			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
 	}
 
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}
 	if m.view == listView {
-		hints = append(hints, keyHint{"/", "Filter"})
+		hints = append(hints, keyHint{"/", "Search"})
+		if m.explorer.Screen() == explorer.ApplicationsScreen {
+			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"})
+		}
 	} else {
 		hints = append(hints, keyHint{"esc", "Back"})
 	}

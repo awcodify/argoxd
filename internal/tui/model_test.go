@@ -30,6 +30,22 @@ func TestNumberFiltersApplicationsByProject(t *testing.T) {
 	}
 }
 
+func TestEnterOnProjectFiltersApplications(t *testing.T) {
+	model := command(New(nil, "test", "argocd", storeSnapshot()), ":projects")
+
+	got := press(press(model, "j"), "enter")
+
+	if got.Explorer().Screen() != explorer.ApplicationsScreen {
+		t.Fatalf("screen = %v, want %v", got.Explorer().Screen(), explorer.ApplicationsScreen)
+	}
+	if got.Explorer().Project() != "store" {
+		t.Fatalf("project = %q, want %q", got.Explorer().Project(), "store")
+	}
+	if got.Explorer().SelectedName() != "checkout" {
+		t.Fatalf("selected application = %q, want %q", got.Explorer().SelectedName(), "checkout")
+	}
+}
+
 func TestZeroShowsApplicationsFromAllProjects(t *testing.T) {
 	model := press(New(nil, "test", "argocd", storeSnapshot()), "2")
 
@@ -303,7 +319,7 @@ func TestLowercaseDDoesNotDeleteFromTheList(t *testing.T) {
 
 func key(value string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
-		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab,
+		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab,
 		"up": tea.KeyUp, "down": tea.KeyDown, "backspace": tea.KeyBackspace, " ": tea.KeySpace,
 	}
 	if keyType, found := special[value]; found {

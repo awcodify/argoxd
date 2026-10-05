@@ -105,30 +105,77 @@ func TestReplaceSnapshotClampsSelectionWhenResourceDisappears(t *testing.T) {
 	}
 }
 
-func TestFilterMatchesNamesOnEveryScreen(t *testing.T) {
+func TestSearchMatchesNamesOnEveryScreen(t *testing.T) {
 	model := NewModel(Snapshot{
 		Applications: []Application{{Name: "payments-api"}, {Name: "catalog"}, {Name: "payments-worker"}},
 		Projects:     []Project{{Name: "store"}, {Name: "platform"}},
 		Clusters:     []Cluster{{Name: "production"}, {Name: "staging"}},
 	})
 
-	model.SetFilter("PAY")
+	model.SetSearch("PAY")
 	if model.RowCount() != 2 || model.SelectedName() != "payments-api" {
-		t.Fatalf("filtered applications: rows = %d selected = %q", model.RowCount(), model.SelectedName())
+		t.Fatalf("searched applications: rows = %d selected = %q", model.RowCount(), model.SelectedName())
 	}
 
 	model.SetScreen(ProjectsScreen)
-	if model.Filter() != "" {
-		t.Fatalf("switching screens kept filter %q", model.Filter())
+	if model.Search() != "" {
+		t.Fatalf("switching screens kept search %q", model.Search())
 	}
-	model.SetFilter("plat")
+	model.SetSearch("plat")
 	if got := model.Projects(); len(got) != 1 || got[0].Name != "platform" {
-		t.Fatalf("filtered projects = %+v", got)
+		t.Fatalf("searched projects = %+v", got)
 	}
 
 	model.SetScreen(ClustersScreen)
-	model.SetFilter("stag")
+	model.SetSearch("stag")
 	if got := model.Clusters(); len(got) != 1 || got[0].Name != "staging" {
-		t.Fatalf("filtered clusters = %+v", got)
+		t.Fatalf("searched clusters = %+v", got)
+	}
+}
+
+func TestFilterNarrowsApplicationsByHealthAndSync(t *testing.T) {
+	model := NewModel(Snapshot{Applications: []Application{
+		{Name: "api", Health: "Healthy", Sync: "Synced"},
+		{Name: "worker", Health: "Degraded", Sync: "OutOfSync"},
+		{Name: "cron", Health: "Healthy", Sync: "OutOfSync"},
+	}})
+
+	model.SetFilter(Filter{Health: "healthy"})
+	if got := model.RowCount(); got != 2 {
+		t.Fatalf("healthy applications = %d, want 2", got)
+	}
+	model.SetFilter(Filter{Health: "Healthy", Sync: "OutOfSync"})
+	if model.RowCount() != 1 || model.SelectedName() != "cron" {
+		t.Fatalf("healthy and out of sync: rows = %d selected = %q", model.RowCount(), model.SelectedName())
+	}
+	model.SetSearch("api")
+	if got := model.RowCount(); got != 0 {
+		t.Fatalf("search and filter apply together: rows = %d, want 0", got)
+	}
+
+	model.SetScreen(ApplicationsScreen)
+	if model.Filter().Active() {
+		t.Fatalf("switching screens kept filter %+v", model.Filter())
+	}
+}
+
+func TestFilterWithSetsOneFieldCaseInsensitively(t *testing.T) {
+	filter, err := Filter{Sync: "Synced"}.With("health", "degraded", nil)
+	if want := (Filter{Health: "Degraded", Sync: "Synced"}); err != nil || filter != want {
+		t.Fatalf("filter = %+v, %v; want %+v", filter, err, want)
+	}
+	if filter, err = filter.With("health", "", nil); err != nil || filter != (Filter{Sync: "Synced"}) {
+		t.Fatalf("empty value = %+v, %v; want the health field cleared", filter, err)
+	}
+	if filter, err = filter.With("kind", "pod", []string{"Pod"}); err != nil || filter.Kind != "Pod" {
+		t.Fatalf("kind = %+v, %v; want Pod", filter, err)
+	}
+}
+
+func TestFilterWithRejectsUnknownValues(t *testing.T) {
+	for key, value := range map[string]string{"health": "sick", "sync": "late", "kind": "Pod"} {
+		if _, err := (Filter{}).With(key, value, nil); err == nil {
+			t.Errorf("With(%q, %q) succeeded, want an error", key, value)
+		}
 	}
 }

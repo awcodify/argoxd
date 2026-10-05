@@ -59,21 +59,39 @@ func firstKnownParent(node ResourceNode, present map[ResourceReference]bool) (Re
 	return ResourceReference{}, false
 }
 
-// MatchesFilter reports whether the resource's "kind/name" contains the query, ignoring case.
-func (n ResourceNode) MatchesFilter(query string) bool {
-	return strings.Contains(strings.ToLower(n.Kind+"/"+n.Name), strings.ToLower(query))
+// EffectiveSync is the resource's own sync status or, for resources Argo CD
+// does not track itself (such as the ReplicaSets and Pods a Deployment owns),
+// the status inherited from their owner.
+func (n ResourceNode) EffectiveSync(inherited string) string {
+	if n.Sync != "" {
+		return n.Sync
+	}
+	return inherited
 }
 
-// FilterHierarchy keeps the resources that match the query together with the
-// resources on their path, so a match is never shown without its owners.
-func FilterHierarchy(roots []ResourceNode, query string) []ResourceNode {
-	if query == "" {
+// Matches reports whether the resource's "kind/name" contains the search text,
+// ignoring case, and the resource passes the filter. The inherited sync status
+// is the owner's effective status.
+func (n ResourceNode) Matches(search string, filter Filter, inheritedSync string) bool {
+	return strings.Contains(strings.ToLower(n.Kind+"/"+n.Name), strings.ToLower(search)) &&
+		filter.Matches(n.EffectiveSync(inheritedSync), n.Health, n.Kind)
+}
+
+// FilterHierarchy keeps the resources that match the search and filter together
+// with the resources on their path, so a match is never shown without its owners.
+// The inherited sync status is that of the Application the roots belong to.
+func FilterHierarchy(roots []ResourceNode, search string, filter Filter, inheritedSync string) []ResourceNode {
+	if search == "" && !filter.Active() {
 		return roots
 	}
+	return filterBranch(roots, search, filter, inheritedSync)
+}
+
+func filterBranch(nodes []ResourceNode, search string, filter Filter, inheritedSync string) []ResourceNode {
 	var kept []ResourceNode
-	for _, node := range roots {
-		children := FilterHierarchy(node.Children, query)
-		if node.MatchesFilter(query) || len(children) > 0 {
+	for _, node := range nodes {
+		children := filterBranch(node.Children, search, filter, node.EffectiveSync(inheritedSync))
+		if node.Matches(search, filter, inheritedSync) || len(children) > 0 {
 			node.Children = children
 			kept = append(kept, node)
 		}

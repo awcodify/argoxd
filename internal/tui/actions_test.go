@@ -62,21 +62,21 @@ func TestAutoRefreshKeepsTheSelectedCard(t *testing.T) {
 	}
 }
 
-func TestSlashFiltersTheListAsYouType(t *testing.T) {
+func TestSlashSearchesTheListAsYouType(t *testing.T) {
 	model := New(nil, "test", "argocd", storeSnapshot())
 
 	filtered := typeKeys(model, "/", "c", "h")
 	if view := filtered.View(); !strings.Contains(view, "checkout") || strings.Contains(view, "grafana") {
-		t.Fatalf("filter did not narrow the list:\n%s", view)
+		t.Fatalf("search did not narrow the list:\n%s", view)
 	}
 
 	kept := press(filtered, "enter")
 	if view := kept.View(); !strings.Contains(view, "/ch") || strings.Contains(view, "grafana") {
-		t.Fatalf("enter did not keep the filter:\n%s", view)
+		t.Fatalf("enter did not keep the search:\n%s", view)
 	}
 
 	if view := press(kept, "esc").View(); !strings.Contains(view, "grafana") {
-		t.Fatalf("escape did not clear the filter:\n%s", view)
+		t.Fatalf("escape did not clear the search:\n%s", view)
 	}
 }
 
@@ -278,8 +278,8 @@ func TestHeaderHintsFollowTheActiveView(t *testing.T) {
 		view string
 		want []string
 	}{
-		"list":         {list.View(), []string{"/  Filter", "R  Hard refresh", "D  Delete"}},
-		"dependencies": {dependencies.View(), []string{"y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Filter"}},
+		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "R  Hard refresh", "D  Delete"}},
+		"dependencies": {dependencies.View(), []string{"y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Search", "K  Kind"}},
 		"viewer":       {viewer.View(), []string{"G  Bottom", "esc  Back"}},
 	} {
 		for _, want := range test.want {
@@ -300,7 +300,7 @@ func TestDiffKeyDoesNotDeleteFromTheDependencyView(t *testing.T) {
 	}
 }
 
-func TestSlashFiltersTheDependencyTree(t *testing.T) {
+func TestSlashSearchesTheDependencyTree(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: explorer.ResourceTree{Application: "checkout", Nodes: []explorer.ResourceNode{
 		{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web"},
 		{Kind: "Pod", Namespace: "store", Name: "web-abc", Parents: []explorer.ResourceReference{{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web"}}},
@@ -311,10 +311,10 @@ func TestSlashFiltersTheDependencyTree(t *testing.T) {
 	filtered := typeKeys(model, "/", "p", "o", "d", "enter")
 	view := filtered.View()
 	if !strings.Contains(view, "web-abc") || !strings.Contains(view, "Deployment") || strings.Contains(view, "frontend") {
-		t.Fatalf("filter did not keep the Pod with its Deployment and hide the Service:\n%s", view)
+		t.Fatalf("search did not keep the Pod with its Deployment and hide the Service:\n%s", view)
 	}
 	if !strings.Contains(view, "/pod") {
-		t.Fatalf("title does not show the filter:\n%s", view)
+		t.Fatalf("title does not show the search:\n%s", view)
 	}
 
 	selected := typeKeys(filtered, "j", "j").View()
@@ -324,9 +324,148 @@ func TestSlashFiltersTheDependencyTree(t *testing.T) {
 
 	cleared := press(filtered, "esc")
 	if view := cleared.View(); !strings.Contains(view, "frontend") || !strings.Contains(view, "applications › checkout") {
-		t.Fatalf("escape did not clear the filter and stay on the tree:\n%s", view)
+		t.Fatalf("escape did not clear the search and stay on the tree:\n%s", view)
 	}
 	if view := press(cleared, "esc").View(); strings.Contains(view, "› checkout") {
 		t.Fatalf("a second escape did not return to the list:\n%s", view)
+	}
+}
+
+func TestHealthKeyOpensASuggestionBarThatFiltersApplications(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", storeSnapshot()), 160, 40)
+
+	bar := press(model, "H")
+	for _, want := range []string{"health", "Healthy", "Degraded", "Progressing"} {
+		if view := bar.View(); !strings.Contains(view, want) {
+			t.Fatalf("H did not suggest %q:\n%s", want, view)
+		}
+	}
+
+	narrowed := press(bar, "d")
+	if view := narrowed.View(); strings.Contains(view, "Progressing") || !strings.Contains(view, "Degraded") {
+		t.Fatalf("typing d did not narrow the suggestions:\n%s", view)
+	}
+
+	applied := press(narrowed, "enter")
+	if view := applied.View(); !strings.Contains(view, "checkout") || strings.Contains(view, "grafana") || !strings.Contains(view, "health:Degraded") {
+		t.Fatalf("enter did not apply health:Degraded:\n%s", view)
+	}
+
+	// The sync filter combines with health. The bar starts on "all", so down and tab
+	// move on to Synced and then OutOfSync.
+	chosen := typeKeys(applied, "S", "down", "tab", "enter")
+	if view := chosen.View(); !strings.Contains(view, "sync:OutOfSync") || !strings.Contains(view, "health:Degraded") || !strings.Contains(view, "checkout") {
+		t.Fatalf("S did not add the sync filter next to health:\n%s", view)
+	}
+
+	// Choosing "all" clears just that field.
+	if view := typeKeys(chosen, "H", "a", "enter").View(); strings.Contains(view, "health:") || !strings.Contains(view, "sync:OutOfSync") {
+		t.Fatalf("choosing all did not clear only the health filter:\n%s", view)
+	}
+
+	if view := press(press(applied, "H"), "esc").View(); !strings.Contains(view, "health:Degraded") {
+		t.Fatalf("escape in the bar changed the filter:\n%s", view)
+	}
+	if view := press(applied, "esc").View(); strings.Contains(view, "health:") || !strings.Contains(view, "grafana") {
+		t.Fatalf("escape on the list did not clear the filter:\n%s", view)
+	}
+	if view := command(press(model, "H"), "zzz").View(); !strings.Contains(view, "zzz") && !strings.Contains(view, "not a known value") {
+		t.Fatalf("unknown value was not reported:\n%s", view)
+	}
+	if view := press(model, "K").View(); strings.Contains(view, "kind") {
+		t.Fatalf("K opened a kind filter on the application list:\n%s", view)
+	}
+}
+
+func TestKindAndHealthBarsFilterTheDependencyTree(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot(), tree: explorer.ResourceTree{Application: "checkout", Nodes: []explorer.ResourceNode{
+		{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web", Health: "Healthy"},
+		{Kind: "Pod", Namespace: "store", Name: "web-abc", Health: "Degraded", Parents: []explorer.ResourceReference{{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web"}}},
+		{Kind: "Service", Namespace: "store", Name: "frontend", Health: "Healthy"},
+	}}}
+	model := openCheckout(t, source)
+
+	bar := press(model, "K").View()
+	for _, want := range []string{"Deployment", "Pod", "Service"} {
+		if !strings.Contains(bar, want) {
+			t.Fatalf("K did not suggest the kind %q:\n%s", want, bar)
+		}
+	}
+
+	view := typeKeys(model, "K", "s", "enter").View()
+	if !strings.Contains(view, "kind:Service") || !strings.Contains(view, "frontend") || strings.Contains(view, "web-abc") {
+		t.Fatalf("kind:Service did not narrow the tree to Services:\n%s", view)
+	}
+
+	view = typeKeys(model, "H", "d", "enter").View()
+	if !strings.Contains(view, "health:Degraded") || !strings.Contains(view, "web-abc") || strings.Contains(view, "frontend") {
+		t.Fatalf("health:Degraded did not narrow the tree to degraded resources:\n%s", view)
+	}
+}
+
+func TestFilterCommandsWorkFromTheCommandBarAndShowTheShortcut(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", storeSnapshot()), 160, 40)
+
+	if view := typeKeys(model, ":", "h", "e").View(); !strings.Contains(view, "health shift+H") {
+		t.Fatalf("typing he did not suggest health with its shortcut:\n%s", view)
+	}
+
+	view := command(press(model, ":"), "health degraded").View()
+	if !strings.Contains(view, "health:Degraded") || strings.Contains(view, "grafana") || !strings.Contains(view, "checkout") {
+		t.Fatalf(":health degraded did not filter the list:\n%s", view)
+	}
+	if !strings.Contains(view, "shift+H") {
+		t.Fatalf("the shortcut was not shown after the command:\n%s", view)
+	}
+
+	if view := command(press(model, ":"), "health sick").View(); !strings.Contains(view, "not a known value") {
+		t.Fatalf("unknown value was not reported:\n%s", view)
+	}
+	if view := command(press(model, ":"), "kind pod").View(); !strings.Contains(view, "cannot filter by kind here") {
+		t.Fatalf("kind should not be available on the list:\n%s", view)
+	}
+	if view := command(press(command(press(model, ":"), "health degraded"), ":"), "health").View(); strings.Contains(view, "health:") {
+		t.Fatalf(":health without a value did not clear the filter:\n%s", view)
+	}
+	if view := command(press(model, ":"), "clusters").View(); strings.Contains(view, "shift+") {
+		t.Fatalf("no shortcut hint expected for a view command:\n%s", view)
+	}
+}
+
+func TestTabMovesThroughTheValuesOfTheFilter(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot(), tree: explorer.ResourceTree{Application: "checkout", Nodes: []explorer.ResourceNode{
+		{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web", Health: "Healthy"},
+		{Kind: "Pod", Namespace: "store", Name: "web-abc", Health: "Degraded", Parents: []explorer.ResourceReference{{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "web"}}},
+		{Kind: "Service", Namespace: "store", Name: "frontend", Health: "Healthy"},
+	}}}
+	model := openCheckout(t, source)
+
+	// The kinds are all, Deployment, Pod, Service: tab walks through them and wraps around.
+	for presses, want := range map[int]string{1: "kind:Deployment", 2: "kind:Pod", 3: "kind:Service"} {
+		keys := []string{"K"}
+		for range presses {
+			keys = append(keys, "tab")
+		}
+		if view := typeKeys(model, append(keys, "enter")...).View(); !strings.Contains(view, want) {
+			t.Fatalf("K and %d tabs did not select %s:\n%s", presses, want, view)
+		}
+	}
+	wrapped := typeKeys(model, "K", "tab", "tab", "tab", "tab", "enter").View()
+	if strings.Contains(wrapped, "kind:") || !strings.Contains(wrapped, "frontend") {
+		t.Fatalf("a fourth tab did not wrap around to all:\n%s", wrapped)
+	}
+	if view := typeKeys(model, "K", "shift+tab", "enter").View(); !strings.Contains(view, "kind:Service") {
+		t.Fatalf("shift+tab did not go back to the last kind:\n%s", view)
+	}
+
+	// The bar starts on the current value, so tab moves to the one after it.
+	pod := typeKeys(model, "K", "tab", "tab", "enter")
+	if view := typeKeys(pod, "K", "tab", "enter").View(); !strings.Contains(view, "kind:Service") {
+		t.Fatalf("tab from kind:Pod did not select Service:\n%s", view)
+	}
+
+	// Health works the same way: all, Healthy, Progressing, Degraded.
+	if view := typeKeys(model, "H", "tab", "tab", "tab", "enter").View(); !strings.Contains(view, "health:Degraded") || strings.Contains(view, "frontend") {
+		t.Fatalf("H and tab did not move through the health values:\n%s", view)
 	}
 }

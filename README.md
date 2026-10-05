@@ -48,11 +48,13 @@ Use `--insecure` only when connecting to a development instance with an untruste
 
 The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
 
-Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to filter the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. From a card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), or a Pod's recent logs (`l`).
+Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. From a card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), or a Pod's recent logs (`l`).
 
 ## Commands
 
-Press `/` on a list to filter it by name as you type: Enter keeps the filter, Esc clears it.
+Press `/` on a list to search it by name as you type: Enter keeps the search, Esc clears it.
+
+`H`, `S` and `K` open a bar like `:` with suggestions for one field: health (Healthy, Progressing, Degraded, Suspended, Missing, Unknown), sync status (Synced, OutOfSync, Unknown) and, on dependency cards, resource kind. The bar lists `all` followed by the values, starting on the current one. Tab or ↓ moves to the next value, Shift+Tab or ↑ to the previous one (both wrap around), and Enter applies the highlighted value. Type to narrow the list instead. Choosing `all` clears just that field. Health and sync work on Applications and on dependency cards. Filters combine with each other and with the search, and Esc clears them together. The same filters work from the command bar: `:health degraded`, `:sync outofsync` and `:kind pod` complete as you type, the suggestions show their shortcut (`shift+H`, `shift+S`, `shift+K`), and `:health all` (or `:health` alone) clears that filter.
 
 Press `:` to open the command bar. Matching commands are suggested as you type: Tab or Right accepts the highlighted suggestion, Up/Down picks another, Enter runs what you typed, Esc closes it.
 
@@ -71,14 +73,16 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `0` | Show Applications from every project |
 | `1`–`9` | Show Applications from the project listed under that number in the header |
 | `:` | Open the command bar |
-| `/` | Filter the list by name, or the dependency cards by `kind/name` |
+| `/` | Search the list by name, or the dependency cards by `kind/name` |
+| `H` / `S` | Filter by health / sync status, with suggestions (Applications and dependency cards) |
+| `K` | Filter dependency cards by resource kind, with suggestions |
 | `j` / Down, `k` / Up | Move the selection, or scroll a YAML, diff or log view |
 | `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies |
 | `y` / `d` / `l` | Show the selected card's YAML, diff, or logs |
 | Space / Left / Right | Expand or collapse the selected inventory node |
-| Esc | Go back, or clear the filter |
+| Esc | Go back, or clear the search and filters |
 | `s` | Sync the selected Application; toggle `p` prune and `r` dry run, then Enter |
 | `R` | Hard refresh the selected Application, bypassing Argo CD's manifest cache |
 | `D`, then `y` | Delete the selected Application and its managed resources |

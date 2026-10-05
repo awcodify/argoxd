@@ -25,10 +25,34 @@ var commands = []viewCommand{
 
 var quitCommands = []string{"q", "quit"}
 
-// prompt is the command line opened with ':', or the filter opened with '/'.
+// filterCommand is a ':' command that sets one filter, e.g. "health degraded".
+// Its shortcut opens the same filter from the keyboard.
+type filterCommand struct {
+	name     string
+	shortcut string
+}
+
+var filterCommands = []filterCommand{
+	{name: "health", shortcut: "H"},
+	{name: "sync", shortcut: "S"},
+	{name: "kind", shortcut: "K"},
+}
+
+func findFilterCommand(name string) (filterCommand, bool) {
+	for _, command := range filterCommands {
+		if command.name == name {
+			return command, true
+		}
+	}
+	return filterCommand{}, false
+}
+
+// prompt is the command line opened with ':', the search opened with '/',
+// or the filter of one field opened with H, S or K.
 type prompt struct {
 	active    bool
-	filter    bool
+	search    bool
+	field     string
 	input     string
 	selection int
 }
@@ -42,9 +66,10 @@ func findCommand(name string) (viewCommand, bool) {
 	return viewCommand{}, false
 }
 
-// suggestions completes the input: command names first, then the project
-// argument of commands that accept one, such as "app store".
-func suggestions(input string, projects []string) []string {
+// suggestions completes the input: command names first, then the argument of
+// commands that accept one: the project in "app store", or a value of a
+// filter that is available here, such as "health Degraded".
+func suggestions(input string, projects []string, filters map[string][]string) []string {
 	if input == "" {
 		return nil
 	}
@@ -55,6 +80,11 @@ func suggestions(input string, projects []string) []string {
 				if strings.HasPrefix(project, argument) {
 					matches = append(matches, name+" "+project)
 				}
+			}
+		}
+		for _, value := range filters[name] {
+			if strings.HasPrefix(strings.ToLower(value), strings.ToLower(argument)) {
+				matches = append(matches, name+" "+value)
 			}
 		}
 	} else {
@@ -68,20 +98,80 @@ func suggestions(input string, projects []string) []string {
 		if strings.HasPrefix("quit", input) {
 			matches = append(matches, "quit")
 		}
+		for _, command := range filterCommands {
+			if _, available := filters[command.name]; available && strings.HasPrefix(command.name, input) {
+				matches = append(matches, command.name)
+			}
+		}
 	}
 	slices.Sort(matches)
 	return matches
 }
 
+// typed returns the prompt with new input and the first suggestion selected.
+func (p prompt) typed(input string) prompt {
+	p.input = input
+	p.selection = 0
+	return p
+}
+
+// valueSuggestions lists the choices of a filter field that start with the
+// input: "all", which clears the field, then its values.
+func valueSuggestions(field, input string, kinds []string) []string {
+	var matches []string
+	for _, value := range append([]string{explorer.AllValues}, explorer.FilterValues(field, kinds)...) {
+		if strings.HasPrefix(strings.ToLower(value), strings.ToLower(input)) {
+			matches = append(matches, value)
+		}
+	}
+	return matches
+}
+
+// filterKinds lists the resource kinds a filter can select; only the
+// dependency view has any.
+func (m Model) filterKinds() []string {
+	if m.view == applicationTreeView {
+		return m.resourceTree.Kinds()
+	}
+	return nil
+}
+
 func (m Model) suggestions() []string {
-	if m.prompt.filter {
+	if m.prompt.search {
 		return nil
+	}
+	if m.prompt.field != "" {
+		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
 	projects := make([]string, 0, len(m.explorer.Snapshot().Projects))
 	for _, project := range m.explorer.Snapshot().Projects {
 		projects = append(projects, project.Name)
 	}
-	return suggestions(m.prompt.input, projects)
+	return suggestions(m.prompt.input, projects, m.availableFilters())
+}
+
+// canFilterBy reports whether the active view has a filter on the field. Only
+// the Applications list and the dependency view do, and only the latter has kinds.
+func (m Model) canFilterBy(field string) bool {
+	switch {
+	case m.view == applicationTreeView:
+		return true
+	case m.view == listView && m.explorer.Screen() == explorer.ApplicationsScreen:
+		return field != "kind"
+	default:
+		return false
+	}
+}
+
+// availableFilters maps each filter of the active view to the values it accepts.
+func (m Model) availableFilters() map[string][]string {
+	filters := make(map[string][]string)
+	for _, command := range filterCommands {
+		if m.canFilterBy(command.name) {
+			filters[command.name] = append([]string{explorer.AllValues}, explorer.FilterValues(command.name, m.filterKinds())...)
+		}
+	}
+	return filters
 }
 
 func (m Model) selectedSuggestion() string {
@@ -92,23 +182,33 @@ func (m Model) selectedSuggestion() string {
 }
 
 func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.prompt.filter {
-		return m.updateFilter(message)
+	if m.prompt.search {
+		return m.updateSearch(message)
 	}
 	switch message.Type {
 	case tea.KeyEsc:
 		m.prompt = prompt{}
 	case tea.KeyEnter:
 		input := strings.TrimSpace(m.prompt.input)
+		field, chosen := m.prompt.field, m.selectedSuggestion()
 		m.prompt = prompt{}
+		if field != "" {
+			if chosen != "" {
+				input = chosen
+			}
+			m.runFilter(field, input)
+			return m, nil
+		}
 		return m, m.runCommand(input)
 	case tea.KeyTab, tea.KeyRight:
-		if suggestion := m.selectedSuggestion(); suggestion != "" {
-			m.prompt = prompt{active: true, input: suggestion}
+		if m.prompt.field != "" {
+			m.prompt.selection++
+		} else if suggestion := m.selectedSuggestion(); suggestion != "" {
+			m.prompt = m.prompt.typed(suggestion)
 		}
 	case tea.KeyDown:
 		m.prompt.selection++
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyShiftTab:
 		if count := len(m.suggestions()); count > 0 {
 			m.prompt.selection = (m.prompt.selection + count - 1) % count
 		}
@@ -118,23 +218,23 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		runes := []rune(m.prompt.input)
-		m.prompt = prompt{active: true, input: string(runes[:len(runes)-1])}
+		m.prompt = m.prompt.typed(string(runes[:len(runes)-1]))
 	case tea.KeySpace:
-		m.prompt = prompt{active: true, input: m.prompt.input + " "}
+		m.prompt = m.prompt.typed(m.prompt.input + " ")
 	case tea.KeyRunes:
-		m.prompt = prompt{active: true, input: m.prompt.input + string(message.Runes)}
+		m.prompt = m.prompt.typed(m.prompt.input + string(message.Runes))
 	}
 	return m, nil
 }
 
-// updateFilter narrows the list or dependency tree as the user types. Enter keeps the filter,
+// updateSearch narrows the list or dependency tree as the user types. Enter keeps the search,
 // Esc clears it.
-func (m Model) updateFilter(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateSearch(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	input := m.prompt.input
 	switch message.Type {
 	case tea.KeyEsc:
 		m.prompt = prompt{}
-		m.applyFilter("")
+		m.applySearch("")
 		return m, nil
 	case tea.KeyEnter:
 		m.prompt = prompt{}
@@ -152,8 +252,35 @@ func (m Model) updateFilter(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		input += string(message.Runes)
 	}
 	m.prompt.input = input
-	m.applyFilter(input)
+	m.applySearch(input)
 	return m, nil
+}
+
+// runFilter sets one filter field to the value chosen in the filter prompt.
+// Empty input clears the field.
+func (m *Model) runFilter(field, value string) {
+	_, filter := m.searchAndFilter()
+	filter, err := filter.With(field, value, m.filterKinds())
+	if err != nil {
+		m.err = err
+		return
+	}
+	m.err = nil
+	m.status = ""
+	m.setFilter(filter)
+}
+
+// runFilterCommand handles ":health degraded" and its siblings, then points out
+// the shortcut that does the same.
+func (m *Model) runFilterCommand(command filterCommand, value string) {
+	if !m.canFilterBy(command.name) {
+		m.err = fmt.Errorf("cannot filter by %s here", command.name)
+		return
+	}
+	m.runFilter(command.name, value)
+	if m.err == nil {
+		m.status = "Shortcut: press shift+" + command.shortcut + " to filter by " + command.name
+	}
 }
 
 // runCommand opens the view named by the input, e.g. "app store" or "clusters".
@@ -164,6 +291,10 @@ func (m *Model) runCommand(input string) tea.Cmd {
 	name, project, _ := strings.Cut(input, " ")
 	if slices.Contains(quitCommands, name) {
 		return tea.Quit
+	}
+	if filter, found := findFilterCommand(name); found {
+		m.runFilterCommand(filter, strings.TrimSpace(project))
+		return nil
 	}
 	command, found := findCommand(name)
 	if !found {

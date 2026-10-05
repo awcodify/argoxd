@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,8 @@ type Model struct {
 	tree            []treeItem
 	resourceTree    explorer.ResourceTree
 	treeCursor      int
-	treeFilter      string
+	treeSearch      string
+	treeFilter      explorer.Filter
 	expanded        map[string]bool
 	viewer          textView
 	prompt          prompt
@@ -160,24 +162,32 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		switch m.view {
 		case listView:
-			m.prompt = prompt{active: true, filter: true, input: m.explorer.Filter()}
+			m.prompt = prompt{active: true, search: true, input: m.explorer.Search()}
 		case applicationTreeView:
-			m.prompt = prompt{active: true, filter: true, input: m.treeFilter}
+			m.prompt = prompt{active: true, search: true, input: m.treeSearch}
 		}
+	case "H", "S", "K":
+		m.openFilter(key)
 	case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
 		m.selectProject(key)
 	case "t":
 		m.openInventoryTree()
 	case "enter":
-		if m.view == listView && m.explorer.Screen() == explorer.ApplicationsScreen {
-			return m.openDependencies()
+		if m.view == listView {
+			switch m.explorer.Screen() {
+			case explorer.ApplicationsScreen:
+				return m.openDependencies()
+			case explorer.ProjectsScreen:
+				m.openProjectApplications()
+				return m, nil
+			}
 		}
 		m.toggleTreeItem()
 	case " ", "right", "left":
 		m.toggleTreeItem()
 	case "esc":
-		if m.filter() != "" {
-			m.applyFilter("")
+		if m.searching() {
+			m.clearSearchAndFilter()
 			break
 		}
 		m.closeTree()
@@ -206,6 +216,16 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// openProjectApplications filters Applications to the selected Project.
+func (m *Model) openProjectApplications() {
+	project := m.explorer.SelectedName()
+	if project == "" {
+		return
+	}
+	m.explorer.SetProject(project)
+	m.showScreen(explorer.ApplicationsScreen)
 }
 
 func (m Model) updateDeleteConfirmation(message tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -281,29 +301,70 @@ func (m *Model) closeTree() {
 	m.tree = nil
 	m.resourceTree = explorer.ResourceTree{}
 	m.treeCursor = 0
-	m.treeFilter = ""
+	m.treeSearch = ""
+	m.treeFilter = explorer.Filter{}
 }
 
-// filter returns the filter of the active view: the list or the dependency tree.
-func (m Model) filter() string {
+// searchAndFilter returns the search text and status filter of the active view:
+// the list or the dependency tree.
+func (m Model) searchAndFilter() (string, explorer.Filter) {
 	switch m.view {
 	case listView:
-		return m.explorer.Filter()
+		return m.explorer.Search(), m.explorer.Filter()
 	case applicationTreeView:
-		return m.treeFilter
+		return m.treeSearch, m.treeFilter
 	default:
-		return ""
+		return "", explorer.Filter{}
 	}
 }
 
-// applyFilter narrows the list or, in the dependency view, the card tree.
-func (m *Model) applyFilter(text string) {
+// searching reports whether the active view is narrowed by a search or filter.
+func (m Model) searching() bool {
+	search, filter := m.searchAndFilter()
+	return search != "" || filter.Active()
+}
+
+// applySearch narrows the list or, in the dependency view, the card tree.
+func (m *Model) applySearch(text string) {
 	if m.view == applicationTreeView {
-		m.treeFilter = text
+		m.treeSearch = text
 		m.treeCursor = 0
 		return
 	}
-	m.explorer.SetFilter(text)
+	m.explorer.SetSearch(text)
+}
+
+// clearSearchAndFilter removes the search and status filter of the active view.
+func (m *Model) clearSearchAndFilter() {
+	m.applySearch("")
+	m.setFilter(explorer.Filter{})
+}
+
+func (m *Model) setFilter(filter explorer.Filter) {
+	if m.view == applicationTreeView {
+		m.treeFilter = filter
+		m.treeCursor = 0
+		return
+	}
+	m.explorer.SetFilter(filter)
+}
+
+// openFilter opens the prompt that sets the health (H), sync (S) or kind (K)
+// filter. Applications have no kind, so K only applies to the dependency view.
+func (m *Model) openFilter(key string) {
+	_, filter := m.searchAndFilter()
+	field, current := "health", filter.Health
+	switch key {
+	case "S":
+		field, current = "sync", filter.Sync
+	case "K":
+		field, current = "kind", filter.Kind
+	}
+	if m.canFilterBy(field) {
+		// Start on the current value so Tab moves on to the next one.
+		options := valueSuggestions(field, "", m.filterKinds())
+		m.prompt = prompt{active: true, field: field, selection: max(0, slices.Index(options, current))}
+	}
 }
 
 // applyTree shows a loaded resource tree. A tree from a background refresh

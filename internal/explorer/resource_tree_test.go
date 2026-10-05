@@ -65,7 +65,7 @@ func TestFilterHierarchyKeepsMatchesWithTheirAncestors(t *testing.T) {
 		{Kind: "ConfigMap", Name: "settings"},
 	}
 
-	got := FilterHierarchy(roots, "POD")
+	got := FilterHierarchy(roots, "POD", Filter{}, "")
 
 	if len(got) != 1 || got[0].Kind != "Deployment" {
 		t.Fatalf("roots = %+v, want only the Deployment leading to the Pod", got)
@@ -78,10 +78,55 @@ func TestFilterHierarchyKeepsMatchesWithTheirAncestors(t *testing.T) {
 func TestFilterHierarchyMatchesKindAndName(t *testing.T) {
 	roots := []ResourceNode{{Kind: "Service", Name: "web"}, {Kind: "Deployment", Name: "web"}}
 
-	if got := FilterHierarchy(roots, "service/web"); len(got) != 1 || got[0].Kind != "Service" {
-		t.Fatalf("kind/name filter = %+v, want the Service", got)
+	if got := FilterHierarchy(roots, "service/web", Filter{}, ""); len(got) != 1 || got[0].Kind != "Service" {
+		t.Fatalf("kind/name search = %+v, want the Service", got)
 	}
-	if got := FilterHierarchy(roots, ""); len(got) != 2 {
-		t.Fatalf("empty filter = %+v, want every resource", got)
+	if got := FilterHierarchy(roots, "", Filter{}, ""); len(got) != 2 {
+		t.Fatalf("empty search = %+v, want every resource", got)
+	}
+}
+
+func TestFilterHierarchyFiltersByStatusAndKind(t *testing.T) {
+	roots := []ResourceNode{
+		{Kind: "Deployment", Name: "web", Health: "Healthy", Children: []ResourceNode{
+			{Kind: "Pod", Name: "web-1", Health: "Degraded"},
+			{Kind: "Pod", Name: "web-2", Health: "Healthy"},
+		}},
+		{Kind: "Service", Name: "web", Sync: "OutOfSync"},
+	}
+
+	got := FilterHierarchy(roots, "", Filter{Health: "Degraded"}, "")
+	if len(got) != 1 || len(got[0].Children) != 1 || got[0].Children[0].Name != "web-1" {
+		t.Fatalf("degraded = %+v, want the Deployment leading to web-1", got)
+	}
+	if got := FilterHierarchy(roots, "", Filter{Sync: "OutOfSync"}, ""); len(got) != 1 || got[0].Kind != "Service" {
+		t.Fatalf("out of sync = %+v, want the Service", got)
+	}
+	if got := FilterHierarchy(roots, "web-2", Filter{Kind: "pod"}, ""); len(got) != 1 || len(got[0].Children) != 1 {
+		t.Fatalf("search and kind = %+v, want only web-2 under its Deployment", got)
+	}
+}
+
+func TestResourceTreeKindsAreDistinctAndSorted(t *testing.T) {
+	tree := ResourceTree{Nodes: []ResourceNode{{Kind: "Service"}, {Kind: "Pod"}, {Kind: "Pod"}, {}}}
+	if got := tree.Kinds(); len(got) != 2 || got[0] != "Pod" || got[1] != "Service" {
+		t.Fatalf("kinds = %v, want [Pod Service]", got)
+	}
+}
+
+func TestFilterHierarchyInheritsSyncStatusFromTheOwner(t *testing.T) {
+	roots := []ResourceNode{
+		{Kind: "Deployment", Name: "web", Sync: "Synced", Children: []ResourceNode{
+			{Kind: "ReplicaSet", Name: "web-1", Children: []ResourceNode{{Kind: "Pod", Name: "web-1-abc"}}},
+		}},
+		{Kind: "Service", Name: "web", Sync: "OutOfSync"},
+	}
+
+	got := FilterHierarchy(roots, "", Filter{Sync: "Synced"}, "")
+	if len(got) != 1 || len(got[0].Children) != 1 || len(got[0].Children[0].Children) != 1 {
+		t.Fatalf("synced = %+v, want the Deployment with its ReplicaSet and Pod", got)
+	}
+	if got := FilterHierarchy(roots, "", Filter{Sync: "OutOfSync"}, ""); len(got) != 1 || got[0].Kind != "Service" {
+		t.Fatalf("out of sync = %+v, want only the Service", got)
 	}
 }

@@ -79,7 +79,8 @@ type Model struct {
 	screen   Screen
 	cursor   int
 	project  string
-	filter   string
+	search   string
+	filter   Filter
 }
 
 // NewModel creates an explorer with Applications selected.
@@ -97,10 +98,11 @@ func (m Model) Cursor() int {
 	return m.cursor
 }
 
-// SetScreen selects a screen, clears its filter and resets its row selection.
+// SetScreen selects a screen, clears its search and filter and resets its row selection.
 func (m *Model) SetScreen(screen Screen) {
 	m.screen = screen
-	m.filter = ""
+	m.search = ""
+	m.filter = Filter{}
 	m.cursor = 0
 }
 
@@ -138,53 +140,65 @@ func (m *Model) SetProject(project string) {
 	m.cursor = 0
 }
 
-// Filter returns the text rows on the current screen are filtered by.
-func (m Model) Filter() string {
-	return m.filter
+// Search returns the text rows on the current screen are searched by.
+func (m Model) Search() string {
+	return m.search
 }
 
-// SetFilter narrows the current screen to rows whose name contains the text,
+// SetSearch narrows the current screen to rows whose name contains the text,
 // ignoring case, and resets the selection.
-func (m *Model) SetFilter(text string) {
-	m.filter = text
+func (m *Model) SetSearch(text string) {
+	m.search = text
 	m.cursor = 0
 }
 
-// Applications returns the Applications in the selected project that match the filter.
+// Filter returns the status filter applied to Applications.
+func (m Model) Filter() Filter {
+	return m.filter
+}
+
+// SetFilter narrows Applications by health and sync status and resets the selection.
+func (m *Model) SetFilter(filter Filter) {
+	m.filter = filter
+	m.cursor = 0
+}
+
+// Applications returns the Applications in the selected project that match the search and filter.
 func (m Model) Applications() []Application {
 	var matches []Application
 	for _, application := range m.snapshot.Applications {
-		if (m.project == "" || application.Project == m.project) && m.matches(application.Name) {
+		if (m.project == "" || application.Project == m.project) && m.matchesSearch(application.Name) &&
+			m.filter.Matches(application.Sync, application.Health, "") {
 			matches = append(matches, application)
 		}
 	}
 	return matches
 }
 
-// Projects returns the projects that match the filter.
+// Projects returns the projects that match the search.
 func (m Model) Projects() []Project {
 	var matches []Project
 	for _, project := range m.snapshot.Projects {
-		if m.matches(project.Name) {
+		if m.matchesSearch(project.Name) {
 			matches = append(matches, project)
 		}
 	}
 	return matches
 }
 
-// Clusters returns the clusters that match the filter.
+// Clusters returns the clusters that match the search.
 func (m Model) Clusters() []Cluster {
 	var matches []Cluster
 	for _, cluster := range m.snapshot.Clusters {
-		if m.matches(cluster.Name) {
+		if m.matchesSearch(cluster.Name) {
 			matches = append(matches, cluster)
 		}
 	}
 	return matches
 }
 
-func (m Model) matches(name string) bool {
-	return strings.Contains(strings.ToLower(name), strings.ToLower(m.filter))
+func (m Model) matchesSearch(name string) bool {
+	return strings.Contains(strings.ToLower(name), strings.ToLower(m.search))
 }
 
 // RowCount returns the number of selectable rows on the current screen.

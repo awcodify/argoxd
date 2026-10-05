@@ -31,7 +31,7 @@ func (m Model) renderDependencies(width, height int) []string {
 	root := m.dependencyRoot()
 
 	index := 0
-	tree := renderBranch(root, m.treeCursor, m.treeFilter, &index)
+	tree := renderBranch(root, m.treeCursor, m.treeSearch, m.treeFilter, "", &index)
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
@@ -68,7 +68,7 @@ func (m Model) dependencyRoot() explorer.ResourceNode {
 		Name:      application.Name,
 		Sync:      application.Sync,
 		Health:    application.Health,
-		Children:  explorer.FilterHierarchy(m.resourceTree.Hierarchy(), m.treeFilter),
+		Children:  explorer.FilterHierarchy(m.resourceTree.Hierarchy(), m.treeSearch, m.treeFilter, application.Sync),
 	}
 }
 
@@ -83,15 +83,15 @@ func (m Model) selectedCard() explorer.ResourceNode {
 }
 
 // renderBranch renders a card followed by its children, numbering cards in
-// the same depth-first order the cursor moves through them. While filtering,
+// the same depth-first order the cursor moves through them. While searching or filtering,
 // cards shown only to give a match its context are dimmed.
-func renderBranch(node explorer.ResourceNode, selected int, filter string, index *int) []string {
-	context := filter != "" && *index > 0 && !node.MatchesFilter(filter)
+func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, inheritedSync string, index *int) []string {
+	context := (search != "" || filter.Active()) && *index > 0 && !node.Matches(search, filter, inheritedSync)
 	lines := strings.Split(resourceCard(node, *index == selected, context), "\n")
 	*index++
 	for position, child := range node.Children {
 		last := position == len(node.Children)-1
-		for row, line := range renderBranch(child, selected, filter, index) {
+		for row, line := range renderBranch(child, selected, search, filter, node.EffectiveSync(inheritedSync), index) {
 			lines = append(lines, "  "+mutedStyle.Render(connector(row, last))+line)
 		}
 	}
