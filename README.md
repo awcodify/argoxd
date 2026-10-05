@@ -8,11 +8,21 @@
 go install github.com/awcodify/argoxd/cmd/argoxd@latest
 ```
 
+Prebuilt binaries for Linux, macOS and Windows are attached to each [GitHub release](https://github.com/awcodify/argoxd/releases).
+
 For local development:
 
 ```sh
 go run ./cmd/argoxd
 ```
+
+## Try it without Argo CD
+
+```sh
+argoxd --demo
+```
+
+`--demo` shows built-in sample Applications, resources, YAML, diffs and logs, and needs no cluster or credentials. Sync and delete change the sample data in memory only.
 
 ## Connect with kubeconfig
 
@@ -43,6 +53,22 @@ argoxd --source api --server https://argocd.example.com --auth-token "$TOKEN"
 ```
 
 Use `--insecure` only when connecting to a development instance with an untrusted TLS certificate.
+
+## Configuration
+
+Defaults can be kept in `~/.config/argoxd/config.yaml` (or `$XDG_CONFIG_HOME/argoxd/config.yaml`; set `ARGOXD_CONFIG` to use another path). Every key is optional:
+
+```yaml
+source: kubeconfig   # kubeconfig or api
+context: production
+namespace: argocd
+kubeconfig: ~/.kube/config
+server: https://argocd.example.com   # for source: api
+insecure: false
+refresh: 5s          # 0s turns auto-refresh off
+```
+
+Settings are resolved in this order, later ones winning: built-in defaults, the config file, the `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` environment variables, then command-line flags. The API token is not read from the config file; keep it in `ARGOCD_AUTH_TOKEN`. Unknown keys and invalid durations are reported as errors at startup.
 
 ## Layout
 
@@ -89,9 +115,17 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `r` | Reload resources now |
 | `q` / Ctrl+C | Quit |
 
+## License
+
+[MIT](LICENSE)
+
 ## Development
 
 ```sh
 go test ./...
 go build ./cmd/argoxd
 ```
+
+`make demo` re-records `demo/demo.gif` from the sample data; it needs [vhs](https://github.com/charmbracelet/vhs).
+
+Pushing a tag such as `v0.1.0` builds and publishes release binaries with GoReleaser.
