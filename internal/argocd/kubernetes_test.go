@@ -194,3 +194,62 @@ func TestKubernetesSourceInspectsResources(t *testing.T) {
 		t.Fatalf("ResourceLogs() = %q, %v", logs, err)
 	}
 }
+
+func historyApplication(automated bool) *unstructured.Unstructured {
+	spec := map[string]any{}
+	if automated {
+		spec["syncPolicy"] = map[string]any{"automated": map[string]any{}}
+	}
+	return &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "argoproj.io/v1alpha1",
+		"kind":       "Application",
+		"metadata":   map[string]any{"namespace": "argocd", "name": "checkout"},
+		"spec":       spec,
+		"status": map[string]any{"history": []any{
+			map[string]any{"id": int64(1), "revision": "aaa1111", "deployedAt": "2026-10-01T10:00:00Z",
+				"source": map[string]any{"repoURL": "https://example.com/a.git", "path": "old"}},
+			map[string]any{"id": int64(2), "revision": "bbb2222", "deployedAt": "2026-10-02T10:00:00Z",
+				"source": map[string]any{"repoURL": "https://example.com/a.git", "path": "new"}},
+		}},
+	}}
+}
+
+func TestKubernetesSourceReadsHistory(t *testing.T) {
+	source := fakeKubernetesSource(historyApplication(false))
+
+	history, err := source.ApplicationHistory(context.Background(), "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(history) != 2 || history[0].ID != 2 || history[0].Revision != "bbb2222" || history[0].Repo != "https://example.com/a.git" || history[1].ID != 1 {
+		t.Fatalf("history = %+v", history)
+	}
+}
+
+func TestKubernetesSourceRollbackSyncsTheRecordedRevision(t *testing.T) {
+	source := fakeKubernetesSource(historyApplication(false))
+
+	if err := source.RollbackApplication(context.Background(), "checkout", 1, SyncOptions{Prune: true}); err != nil {
+		t.Fatalf("RollbackApplication() error = %v", err)
+	}
+
+	got, _ := source.getApplication(context.Background(), "checkout")
+	sync, _, _ := unstructured.NestedMap(got.Object, "operation", "sync")
+	path, _, _ := unstructured.NestedString(sync, "source", "path")
+	if sync["revision"] != "aaa1111" || sync["prune"] != true || path != "old" {
+		t.Fatalf("operation.sync = %v, want revision aaa1111, prune and the old source", sync)
+	}
+}
+
+func TestKubernetesSourceRollbackRefusesAutoSyncAndUnknownIds(t *testing.T) {
+	automated := fakeKubernetesSource(historyApplication(true))
+	if err := automated.RollbackApplication(context.Background(), "checkout", 1, SyncOptions{}); err == nil || !strings.Contains(err.Error(), "auto-sync") {
+		t.Fatalf("error = %v, want an auto-sync refusal", err)
+	}
+
+	manual := fakeKubernetesSource(historyApplication(false))
+	if err := manual.RollbackApplication(context.Background(), "checkout", 9, SyncOptions{}); err == nil {
+		t.Fatal("rolling back to an unknown id succeeded")
+	}
+}

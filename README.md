@@ -86,6 +86,8 @@ The header shows the connection, the project shortcuts and the key hints. Below 
 
 Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. From a card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), or a Pod's recent logs (`l`).
 
+Rollback follows `argocd app rollback`: Argo CD refuses it while the Application has auto-sync enabled, so disable auto-sync first. With `--source kubeconfig` the identity also needs to `get` and `patch` `applications.argoproj.io`.
+
 ## Commands
 
 Press `/` on a list to search it by name as you type: Enter keeps the search, Esc clears it.
@@ -120,6 +122,7 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | Space / Left / Right | Expand or collapse the selected inventory node |
 | Esc | Go back, or clear the search and filters |
 | `s` | Sync the selected Application; toggle `p` prune and `r` dry run, then Enter |
+| `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
 | `R` | Hard refresh the selected Application, bypassing Argo CD's manifest cache |
 | `D`, then `y` | Delete the selected Application and its managed resources |
 | `r` | Reload resources now |

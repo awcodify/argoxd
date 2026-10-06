@@ -67,3 +67,47 @@ func TestDemoSourceTreeNestsPodsUnderDeployment(t *testing.T) {
 		t.Fatalf("degraded pod logs have no error:\n%s", logs)
 	}
 }
+
+func TestDemoSourceHistoryListsNewestFirst(t *testing.T) {
+	source := NewDemoSource()
+
+	history, err := source.ApplicationHistory(context.Background(), "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(history) != 3 || history[0].ID != 3 || history[0].Revision != "4be7d10" || history[2].ID != 1 {
+		t.Fatalf("history = %+v, want ids 3, 2, 1 with the running revision first", history)
+	}
+	if _, err := source.ApplicationHistory(context.Background(), "missing"); err == nil {
+		t.Fatal("history of a missing application succeeded")
+	}
+}
+
+func TestDemoSourceRollbackRedeploysAnEarlierRevision(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+	before, _ := source.ApplicationHistory(ctx, "checkout")
+
+	if err := source.RollbackApplication(ctx, "checkout", 1, SyncOptions{DryRun: true}); err != nil {
+		t.Fatal(err)
+	}
+	if application, _ := source.find("checkout"); application.Revision != "4be7d10" {
+		t.Fatalf("dry run changed the revision to %q", application.Revision)
+	}
+
+	if err := source.RollbackApplication(ctx, "checkout", 1, SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	application, _ := source.find("checkout")
+	after, _ := source.ApplicationHistory(ctx, "checkout")
+	if application.Revision != before[2].Revision || application.Sync != "OutOfSync" {
+		t.Fatalf("application = %+v, want revision %s and OutOfSync", application, before[2].Revision)
+	}
+	if len(after) != 4 || after[0].ID != 4 || after[0].Revision != before[2].Revision {
+		t.Fatalf("history = %+v, want a new deployment with id 4", after)
+	}
+	if err := source.RollbackApplication(ctx, "checkout", 99, SyncOptions{}); err == nil {
+		t.Fatal("rolling back to an unknown id succeeded")
+	}
+}

@@ -3,6 +3,8 @@ package argocd
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -15,12 +17,15 @@ import (
 type DemoSource struct {
 	mu           sync.Mutex
 	applications []explorer.Application
+	// history holds each Application's deployments, oldest first.
+	history map[string][]explorer.HistoryEntry
 }
 
 var (
 	_ Source              = (*DemoSource)(nil)
 	_ ApplicationOperator = (*DemoSource)(nil)
 	_ ResourceInspector   = (*DemoSource)(nil)
+	_ RollbackOperator    = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -32,7 +37,7 @@ func NewDemoSource() *DemoSource {
 			Revision: revision, Destination: "in-cluster/" + namespace, LastSync: now.Add(-age),
 		}
 	}
-	return &DemoSource{applications: []explorer.Application{
+	applications := []explorer.Application{
 		app("cart", "store", "store", "OutOfSync", "Healthy", "9f2c1ab", 3*time.Hour),
 		app("checkout", "store", "store", "Synced", "Healthy", "4be7d10", 26*time.Hour),
 		app("search", "store", "store", "Synced", "Progressing", "c81a05e", 2*time.Minute),
@@ -41,7 +46,34 @@ func NewDemoSource() *DemoSource {
 		app("ingress-nginx", "platform", "platform", "Synced", "Healthy", "1a6e44c", 72*time.Hour),
 		app("grafana", "observability", "observability", "Synced", "Healthy", "e05b8d3", 48*time.Hour),
 		app("prometheus", "observability", "observability", "OutOfSync", "Healthy", "e05b8d3", 48*time.Hour),
-	}}
+	}
+	history := make(map[string][]explorer.HistoryEntry, len(applications))
+	for _, application := range applications {
+		history[application.Name] = sampleHistory(application)
+	}
+	return &DemoSource{applications: applications, history: history}
+}
+
+// sampleHistory gives an Application two earlier deployments, a day apart each,
+// before the one it runs now.
+func sampleHistory(application explorer.Application) []explorer.HistoryEntry {
+	repo := "https://github.com/example/" + application.Name + ".git"
+	entries := make([]explorer.HistoryEntry, 0, 3)
+	for id := int64(1); id <= 3; id++ {
+		entry := explorer.HistoryEntry{
+			ID:         id,
+			Revision:   application.Revision,
+			DeployedAt: application.LastSync.Add(-time.Duration(3-id) * 24 * time.Hour),
+			Repo:       repo,
+		}
+		if id < 3 {
+			sum := fnv.New32a()
+			fmt.Fprintf(sum, "%s/%d", application.Name, id)
+			entry.Revision = fmt.Sprintf("%07x", sum.Sum32()&0xfffffff)
+		}
+		entries = append(entries, entry)
+	}
+	return entries
 }
 
 // Load returns the sample snapshot.
@@ -114,6 +146,41 @@ func (s *DemoSource) SyncApplication(_ context.Context, name string, options Syn
 	return s.update(name, func(application *explorer.Application) {
 		application.Sync, application.Health, application.LastSync = "Synced", "Healthy", time.Now()
 	})
+}
+
+// ApplicationHistory returns the sample deployments, newest first.
+func (s *DemoSource) ApplicationHistory(_ context.Context, name string) ([]explorer.HistoryEntry, error) {
+	if _, err := s.find(name); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return newestFirst(slices.Clone(s.history[name])), nil
+}
+
+// RollbackApplication runs the Application at an earlier revision, unless it is
+// a dry run. As in Argo CD, the Application is then OutOfSync with Git.
+func (s *DemoSource) RollbackApplication(_ context.Context, name string, id int64, options SyncOptions) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := slices.IndexFunc(s.history[name], func(entry explorer.HistoryEntry) bool { return entry.ID == id })
+	if index < 0 {
+		return fmt.Errorf("application %q has no deployment with id %d", name, id)
+	}
+	if options.DryRun {
+		return nil
+	}
+	target := s.history[name][index]
+	now := time.Now()
+	target.ID, target.DeployedAt = s.history[name][len(s.history[name])-1].ID+1, now
+	s.history[name] = append(s.history[name], target)
+	for position := range s.applications {
+		if s.applications[position].Name == name {
+			application := &s.applications[position]
+			application.Revision, application.Sync, application.Health, application.LastSync = target.Revision, "OutOfSync", "Healthy", now
+		}
+	}
+	return nil
 }
 
 // RefreshApplication does nothing: the sample data has no manifest cache.

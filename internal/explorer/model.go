@@ -46,6 +46,14 @@ type Cluster struct {
 	Server string
 }
 
+// HistoryEntry is one deployment recorded in an Application's sync history.
+type HistoryEntry struct {
+	ID         int64
+	Revision   string
+	DeployedAt time.Time
+	Repo       string
+}
+
 // ResourceTree contains the resources managed by an Application.
 type ResourceTree struct {
 	Application string

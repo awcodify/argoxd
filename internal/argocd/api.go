@@ -237,6 +237,7 @@ type applicationList struct {
 }
 
 type applicationSource struct {
+	RepoURL        string `json:"repoURL"`
 	TargetRevision string `json:"targetRevision"`
 }
 

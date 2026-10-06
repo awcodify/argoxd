@@ -25,6 +25,8 @@ func (m Model) renderContent(width, height int) (string, []string) {
 		return withSearch(title, m.treeSearch, m.treeFilter), m.renderDependencies(width, height)
 	case textViewMode:
 		return m.viewerTitle(), m.viewer.render(width, height)
+	case historyViewMode:
+		return viewTitle("history", m.history.application, len(m.history.entries)), m.historyTable().render(m.history.cursor, width, height)
 	}
 
 	switch m.explorer.Screen() {
@@ -169,6 +171,8 @@ func (m Model) renderCrumbs() string {
 		crumbs = append(crumbs, m.resourceTree.Application)
 	case textViewMode:
 		crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
+	case historyViewMode:
+		crumbs = append(crumbs, m.history.application, "history")
 	}
 	rendered := make([]string, len(crumbs))
 	for index, crumb := range crumbs {
@@ -188,6 +192,12 @@ func (m Model) renderFlash() string {
 			"   " + keycap("enter", "sync") +
 			"  " + keycap("p", "prune "+toggle(m.syncing.options.Prune)) +
 			"  " + keycap("r", "dry run "+toggle(m.syncing.options.DryRun)) +
+			"  " + keycap("esc", "cancel")
+	case m.rollingBack.application != "":
+		return " " + accentStyle.Render("↩ Roll back "+m.rollingBack.application+" to "+revisionLabel(m.rollingBack.entry)+"?") +
+			"   " + keycap("enter", "roll back") +
+			"  " + keycap("p", "prune "+toggle(m.rollingBack.options.Prune)) +
+			"  " + keycap("r", "dry run "+toggle(m.rollingBack.options.DryRun)) +
 			"  " + keycap("esc", "cancel")
 	case m.confirming != "":
 		return " " + errorStyle.Render("✗ Delete "+m.confirming+" and its managed resources?") +

@@ -178,6 +178,9 @@ type fakeSource struct {
 	manifest  string
 	diff      string
 	logs      string
+
+	history    []explorer.HistoryEntry
+	rolledBack []rollbackCall
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {

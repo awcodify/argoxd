@@ -73,10 +73,12 @@ func (m Model) keyHints() []keyHint {
 	switch m.view {
 	case textViewMode:
 		return []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}, {"esc", "Back"}, {"q", "Quit"}}
+	case historyViewMode:
+		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
 		return []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
-			{"s", "Sync"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
@@ -95,7 +97,7 @@ func (m Model) keyHints() []keyHint {
 		if m.view == listView {
 			hints = append(hints, keyHint{"enter", "Dependencies"})
 		}
-		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
+		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }

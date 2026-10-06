@@ -30,7 +30,16 @@ type ResourceInspector interface {
 	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode) (string, error)
 }
 
-// SyncOptions change how a sync is applied.
+// RollbackOperator lists an Application's past deployments and redeploys one of them.
+type RollbackOperator interface {
+	// ApplicationHistory returns the recorded deployments, newest first.
+	ApplicationHistory(ctx context.Context, application string) ([]explorer.HistoryEntry, error)
+	// RollbackApplication redeploys the deployment recorded under id. Argo CD
+	// refuses it while auto-sync is enabled.
+	RollbackApplication(ctx context.Context, application string, id int64, options SyncOptions) error
+}
+
+// SyncOptions change how a sync, or a rollback, is applied.
 type SyncOptions struct {
 	// Prune deletes resources that are no longer in Git.
 	Prune bool

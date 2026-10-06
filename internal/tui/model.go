@@ -42,6 +42,8 @@ type Model struct {
 	prompt          prompt
 	confirming      string
 	syncing         syncDialog
+	history         historyList
+	rollingBack     rollbackDialog
 	status          string
 }
 
@@ -52,6 +54,7 @@ const (
 	inventoryTreeView
 	applicationTreeView
 	textViewMode
+	historyViewMode
 )
 
 type treeItem struct {
@@ -125,6 +128,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewer = newTextView(message.kind, message.subject, message.text)
 			m.view = textViewMode
 		}
+	case loadedHistory:
+		m.loading = false
+		m.applyHistory(message)
 	case operationCompleted:
 		m.loading = false
 		m.err = message.err
@@ -144,10 +150,14 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateDeleteConfirmation(message)
 	case m.syncing.application != "":
 		return m.updateSyncDialog(message)
+	case m.rollingBack.application != "":
+		return m.updateRollbackDialog(message)
 	case m.prompt.active:
 		return m.updatePrompt(message)
 	case m.view == textViewMode:
 		return m.updateViewer(message)
+	case m.view == historyViewMode:
+		return m.updateHistory(message)
 	}
 
 	switch key := message.String(); key {
@@ -198,6 +208,10 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		if application := m.selectedApplication(); application != "" {
 			m.syncing = syncDialog{application: application}
+		}
+	case "h":
+		if application := m.selectedApplication(); application != "" {
+			return m.openHistory(application)
 		}
 	case "R":
 		if application := m.selectedApplication(); application != "" {
@@ -371,7 +385,7 @@ func (m *Model) openFilter(key string) {
 // only replaces the one on screen, keeping the selected card.
 func (m *Model) applyTree(message loadedTree) {
 	if message.background {
-		showing := m.view == applicationTreeView || m.view == textViewMode
+		showing := m.view == applicationTreeView || m.view == textViewMode || m.view == historyViewMode
 		if message.err == nil && showing && m.resourceTree.Application == message.tree.Application {
 			m.resourceTree = message.tree
 			m.treeCursor = min(m.treeCursor, m.cardCount()-1)

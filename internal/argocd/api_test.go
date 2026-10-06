@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -232,5 +233,36 @@ func TestAPISourceErrorsIncludeArgoCDMessage(t *testing.T) {
 	}
 	if strings.Count(err.Error(), "not found as part of") != 1 {
 		t.Fatalf("error repeats the explanation: %v", err)
+	}
+}
+
+func TestAPISourceReadsHistoryAndRollsBack(t *testing.T) {
+	var rollback string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			body, _ := io.ReadAll(r.Body)
+			rollback = r.URL.Path + " " + string(body)
+			return
+		}
+		fmt.Fprint(w, `{"status":{"history":[
+			{"id":1,"revision":"aaa1111","deployedAt":"2026-10-01T10:00:00Z","source":{"repoURL":"https://example.com/a.git"}},
+			{"id":2,"revisions":["bbb2222"],"deployedAt":"2026-10-02T10:00:00Z","sources":[{"repoURL":"https://example.com/b.git"}]}]}}`)
+	}))
+	defer server.Close()
+	source := NewAPISource(server.URL, "", false)
+
+	history, err := source.ApplicationHistory(context.Background(), "checkout")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 || history[0].ID != 2 || history[0].Revision != "bbb2222" || history[0].Repo != "https://example.com/b.git" || history[1].Revision != "aaa1111" {
+		t.Fatalf("history = %+v", history)
+	}
+
+	if err := source.RollbackApplication(context.Background(), "checkout", 1, SyncOptions{Prune: true}); err != nil {
+		t.Fatal(err)
+	}
+	if want := `/api/v1/applications/checkout/rollback {"id":1,"prune":true,"dryRun":false}`; rollback != want {
+		t.Fatalf("rollback request = %q, want %q", rollback, want)
 	}
 }
