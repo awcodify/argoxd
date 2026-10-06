@@ -253,3 +253,19 @@ func TestKubernetesSourceRollbackRefusesAutoSyncAndUnknownIds(t *testing.T) {
 		t.Fatal("rolling back to an unknown id succeeded")
 	}
 }
+
+func TestKubernetesSourceRollbackRefusesWhileAnotherOperationIsPending(t *testing.T) {
+	application := historyApplication(false)
+	application.Object["operation"] = map[string]any{"sync": map[string]any{"revision": "ccc3333"}}
+	source := fakeKubernetesSource(application)
+
+	err := source.RollbackApplication(context.Background(), "checkout", 1, SyncOptions{})
+
+	if err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("error = %v, want a refusal because an operation is in progress", err)
+	}
+	got, _ := source.getApplication(context.Background(), "checkout")
+	if revision, _, _ := unstructured.NestedString(got.Object, "operation", "sync", "revision"); revision != "ccc3333" {
+		t.Fatalf("the pending operation was overwritten: %v", got.Object["operation"])
+	}
+}

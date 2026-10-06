@@ -10,6 +10,10 @@ import (
 // would undo it.
 const errAutoSyncEnabled = "auto-sync is enabled; disable it to roll back"
 
+// errOperationInProgress is why a rollback waits: the Application is still
+// running an earlier operation, and a second one would replace it.
+const errOperationInProgress = "another operation is in progress; try again when it finishes"
+
 // newestFirst orders history entries from the latest deployment to the oldest.
 func newestFirst(entries []explorer.HistoryEntry) []explorer.HistoryEntry {
 	slices.SortStableFunc(entries, func(a, b explorer.HistoryEntry) int {

@@ -64,7 +64,7 @@ func (m Model) updateHistory(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		m.history.cursor = max(0, m.history.cursor-1)
 	case "down", "j":
-		m.history.cursor = min(len(m.history.entries)-1, m.history.cursor+1)
+		m.history.cursor = max(0, min(len(m.history.entries)-1, m.history.cursor+1))
 	case "enter":
 		if m.history.cursor < len(m.history.entries) {
 			m.rollingBack = rollbackDialog{application: m.history.application, entry: m.history.entries[m.history.cursor]}

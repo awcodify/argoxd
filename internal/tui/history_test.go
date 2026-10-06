@@ -139,3 +139,16 @@ func TestShortRevisionAbbreviatesCommitSHAsOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyHistoryHasNothingToSelectOrRollBackTo(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot()}
+
+	model := press(press(openHistory(t, source), "j"), "enter")
+
+	if view := model.View(); strings.Contains(view, "Roll back grafana") {
+		t.Fatalf("enter asked to roll back with no deployments:\n%s", view)
+	}
+	if len(source.rolledBack) != 0 {
+		t.Fatalf("rolled back with no deployments: %+v", source.rolledBack)
+	}
+}

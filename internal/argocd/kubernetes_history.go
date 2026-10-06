@@ -50,6 +50,10 @@ func (s *KubernetesSource) RollbackApplication(ctx context.Context, application 
 		return fmt.Errorf("roll back application %q: %s", application, errAutoSyncEnabled)
 	}
 
+	if _, pending, _ := unstructured.NestedMap(object.Object, "operation"); pending {
+		return fmt.Errorf("roll back application %q: %s", application, errOperationInProgress)
+	}
+
 	deployments, _, _ := unstructured.NestedSlice(object.Object, "status", "history")
 	for _, deployment := range deployments {
 		fields, ok := deployment.(map[string]any)
