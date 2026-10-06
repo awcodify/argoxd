@@ -31,7 +31,18 @@ checksum:
   name_template: checksums.txt
 
 changelog:
+  sort: asc
+  groups:
+    - title: Features
+      regexp: '^\s*feat(\(.*\))?!?:'
+      order: 0
+    - title: Fixes
+      regexp: '^\s*fix(\(.*\))?!?:'
+      order: 1
+    - title: Others
+      order: 999
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
+      - "^docs(\\(.*\\))?:"
+      - "^test(\\(.*\\))?:"
+      - "^chore(\\(release\\))?:"
