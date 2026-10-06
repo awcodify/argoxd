@@ -203,6 +203,12 @@ func (m Model) renderFlash() string {
 			"  " + keycap("p", "prune "+toggle(m.rollingBack.options.Prune)) +
 			"  " + keycap("r", "dry run "+toggle(m.rollingBack.options.DryRun)) +
 			"  " + keycap("esc", "cancel")
+	case m.resourceAction.action == "restart":
+		return " " + accentStyle.Render("↻ Restart "+m.resourceAction.subject()+"?") +
+			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
+	case m.resourceAction.action == "delete":
+		return " " + errorStyle.Render("✗ Delete "+m.resourceAction.subject()+"?") +
+			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
 	case m.confirming != "":
 		return " " + errorStyle.Render("✗ Delete "+m.confirming+" and its managed resources?") +
 			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")

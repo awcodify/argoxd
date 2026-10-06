@@ -186,6 +186,10 @@ type fakeSource struct {
 	streamedContainers []string
 
 	// logsByContainer gives the snapshot of a chosen container; others get logs.
+	treeLoads        int
+	restarted        []explorer.ResourceNode
+	deleted          []explorer.ResourceNode
+	actionErr        error
 	logsByContainer  map[string]string
 	loggedContainers []string
 }
@@ -204,6 +208,7 @@ func (f *fakeSource) loadCommand() tea.Cmd {
 }
 
 func (f *fakeSource) LoadResourceTree(context.Context, string) (explorer.ResourceTree, error) {
+	f.treeLoads++
 	return f.tree, nil
 }
 

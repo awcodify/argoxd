@@ -44,6 +44,7 @@ type Model struct {
 	syncing         syncDialog
 	history         historyList
 	rollingBack     rollbackDialog
+	resourceAction  resourceActionDialog
 	follow          followState
 	logTarget       explorer.ResourceNode
 	logContainers   argocd.Containers
@@ -160,8 +161,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
-			m.status = message.action + " requested for " + message.application
+			subject := message.application
+			if message.subject != "" {
+				subject = message.subject
+			}
+			m.status = message.action + " requested for " + subject
 			m.loading = true
+			if message.refreshTree {
+				return m, tea.Batch(m.load(), m.loadApplicationTree(message.application, true))
+			}
 			return m, m.load()
 		}
 	}
@@ -177,6 +185,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.updateSyncDialog(message)
 	case m.rollingBack.application != "":
 		return m.updateRollbackDialog(message)
+	case m.resourceAction.action != "":
+		return m.updateResourceAction(message)
 	case m.prompt.active:
 		return m.updatePrompt(message)
 	case m.view == textViewMode:
@@ -233,6 +243,10 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "s":
 		if application := m.selectedApplication(); application != "" {
 			m.syncing = syncDialog{application: application}
+		}
+	case "x", "X":
+		if m.view == applicationTreeView {
+			return m.askResourceAction(key)
 		}
 	case "h":
 		if application := m.selectedApplication(); application != "" {

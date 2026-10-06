@@ -91,6 +91,7 @@ func (m Model) keyHints() []keyHint {
 		return []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
 			{"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}

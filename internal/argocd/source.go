@@ -69,6 +69,24 @@ type RollbackOperator interface {
 	RollbackApplication(ctx context.Context, application string, id int64, options SyncOptions) error
 }
 
+// ResourceActor acts on the live resources of an Application.
+type ResourceActor interface {
+	// RestartResource rolls out the Pods of a Deployment, StatefulSet or
+	// DaemonSet again, like `kubectl rollout restart`.
+	RestartResource(ctx context.Context, application string, resource explorer.ResourceNode) error
+	// DeleteResource deletes a resource. A Pod that a workload owns is replaced by it.
+	DeleteResource(ctx context.Context, application string, resource explorer.ResourceNode) error
+}
+
+// Restartable reports whether resources of the kind can be restarted.
+func Restartable(kind string) bool {
+	switch kind {
+	case "Deployment", "StatefulSet", "DaemonSet":
+		return true
+	}
+	return false
+}
+
 // SyncOptions change how a sync, or a rollback, is applied.
 type SyncOptions struct {
 	// Prune deletes resources that are no longer in Git.

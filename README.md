@@ -44,7 +44,7 @@ argoxd --context production --namespace argocd
 argoxd --kubeconfig ~/.kube/config --context production
 ```
 
-The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`.
+The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`. Restarting a workload needs `patch` on it and deleting a Pod needs `delete` on `pods`. With `--source api`, the token needs Argo CD's `action/…/restart` and resource delete permissions.
 
 Resources reload every 5 seconds. Change this with `--refresh 30s`, or turn it off with `--refresh 0`. Requests that take longer than 15 seconds are abandoned and reported as errors.
 
@@ -128,6 +128,8 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
 | `R` | Hard refresh the selected Application, bypassing Argo CD's manifest cache |
 | `D`, then `y` | Delete the selected Application and its managed resources |
+| `x`, then `y` | In the dependency view, restart the selected Deployment, StatefulSet or DaemonSet with a rolling restart, like `kubectl rollout restart` |
+| `X`, then `y` | In the dependency view, delete the selected Pod; the workload that owns it starts a replacement |
 | `r` | Reload resources now |
 | `q` / Ctrl+C | Quit |
 

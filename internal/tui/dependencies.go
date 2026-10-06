@@ -126,7 +126,7 @@ func resourceCard(node explorer.ResourceNode, selected, context bool) string {
 		nameStyle = mutedStyle
 	}
 	inner := cardWidth - 4
-	name := nameStyle.Render(ansi.Truncate(node.Name, inner, "…"))
+	name := nameStyle.Render(truncateMiddle(node.Name, inner))
 	status := joinNonEmpty(statusBadge(node.Health), statusBadge(node.Sync))
 	if status == "" {
 		status = mutedStyle.Render("no status reported")
@@ -193,7 +193,7 @@ func renderDetails(selected card) []string {
 	rows := [][2]string{
 		{"Kind", brightStyle.Render(node.Kind)},
 		{"Group", textStyle.Render(node.Group)},
-		{"Name", brightStyle.Render(node.Name)},
+		{"Name", brightStyle.Render(truncateMiddle(node.Name, detailsWidth-2-1-11))},
 		{"Namespace", textStyle.Render(node.Namespace)},
 		{"Health", statusBadge(node.Health)},
 		{"Sync", statusBadge(node.Sync)},
@@ -215,4 +215,15 @@ func renderDetails(selected card) []string {
 		width:  detailsWidth,
 		height: len(lines) + 3,
 	}.render(lines), "\n")
+}
+
+// truncateMiddle shortens a name to width columns by cutting out its middle, so
+// the end stays visible. Generated names, such as a Pod's, differ only there.
+func truncateMiddle(name string, width int) string {
+	if ansi.StringWidth(name) <= width {
+		return name
+	}
+	tail := min(12, width/3)
+	head := max(0, width-tail-1)
+	return ansi.Truncate(name, head, "") + "…" + ansi.TruncateLeft(name, ansi.StringWidth(name)-tail, "")
 }

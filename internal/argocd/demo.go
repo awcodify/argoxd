@@ -21,6 +21,8 @@ type DemoSource struct {
 	history map[string][]explorer.HistoryEntry
 	// logInterval is how often a followed log gets a new line.
 	logInterval time.Duration
+	// podSets holds the ReplicaSet and Pod names each Application currently runs.
+	podSets map[string]*demoPodSet
 }
 
 var (
@@ -29,6 +31,7 @@ var (
 	_ ResourceInspector   = (*DemoSource)(nil)
 	_ RollbackOperator    = (*DemoSource)(nil)
 	_ LogStreamer         = (*DemoSource)(nil)
+	_ ResourceActor       = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -54,7 +57,7 @@ func NewDemoSource() *DemoSource {
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)
 	}
-	return &DemoSource{applications: applications, history: history, logInterval: time.Second}
+	return &DemoSource{applications: applications, history: history, logInterval: time.Second, podSets: map[string]*demoPodSet{}}
 }
 
 // sampleHistory gives an Application two earlier deployments, a day apart each,
@@ -121,7 +124,8 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 	}
 
 	deployment := explorer.ResourceReference{Group: "apps", Kind: "Deployment", Namespace: namespace, Name: name}
-	replicaSet := explorer.ResourceReference{Group: "apps", Kind: "ReplicaSet", Namespace: namespace, Name: name + "-5d8f7c"}
+	hash, suffixes := s.podNames(name)
+	replicaSet := explorer.ResourceReference{Group: "apps", Kind: "ReplicaSet", Namespace: namespace, Name: name + "-" + hash}
 	nodes := []explorer.ResourceNode{
 		{Version: "v1", Kind: "ConfigMap", Namespace: namespace, Name: name + "-config", Sync: "Synced"},
 		{Version: "v1", Kind: "Service", Namespace: namespace, Name: name, Sync: "Synced", Health: "Healthy"},
@@ -131,7 +135,7 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 	}
 	for index := range 3 {
 		nodes = append(nodes, explorer.ResourceNode{
-			Version: "v1", Kind: "Pod", Namespace: namespace, Name: fmt.Sprintf("%s-5d8f7c-%s", name, podSuffixes[index]),
+			Version: "v1", Kind: "Pod", Namespace: namespace, Name: fmt.Sprintf("%s-%s-%s", name, hash, suffixes[index]),
 			Health: podHealth(index), Parents: []explorer.ResourceReference{replicaSet},
 		})
 	}
@@ -411,4 +415,74 @@ func demoLogLine(now time.Time, pod explorer.ResourceNode, container string, cou
 		return fmt.Sprintf("%s WARN  payment gateway unreachable, retry %d", timestamp, count)
 	}
 	return fmt.Sprintf("%s INFO  GET /api/items/%d 200 %dms", timestamp, count, 2+count%7)
+}
+
+// demoPodSet is the ReplicaSet hash and Pod name suffixes an Application runs.
+type demoPodSet struct {
+	hash       string
+	suffixes   [3]string
+	generation int
+}
+
+// podNames returns the current ReplicaSet hash and Pod suffixes of an Application.
+func (s *DemoSource) podNames(name string) (string, [3]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set := s.podSet(name)
+	return set.hash, set.suffixes
+}
+
+// podSet returns the Application's names, starting with the sample ones. The
+// caller holds s.mu.
+func (s *DemoSource) podSet(name string) *demoPodSet {
+	if set, found := s.podSets[name]; found {
+		return set
+	}
+	set := &demoPodSet{hash: "5d8f7c", suffixes: [3]string(podSuffixes[:])}
+	s.podSets[name] = set
+	return set
+}
+
+// demoName derives a short, stable name from the Application and a counter.
+func demoName(application string, counter, length int) string {
+	sum := fnv.New32a()
+	fmt.Fprintf(sum, "%s/%d", application, counter)
+	return fmt.Sprintf("%08x", sum.Sum32())[:length]
+}
+
+// RestartResource gives the Application a new ReplicaSet and new Pods.
+func (s *DemoSource) RestartResource(_ context.Context, name string, resource explorer.ResourceNode) error {
+	if !Restartable(resource.Kind) {
+		return fmt.Errorf("%s/%s cannot be restarted: only Deployments, StatefulSets and DaemonSets can", resource.Kind, resource.Name)
+	}
+	if _, err := s.find(name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set := s.podSet(name)
+	set.generation++
+	set.hash = demoName(name, set.generation*10, 6)
+	for index := range set.suffixes {
+		set.suffixes[index] = demoName(name, set.generation*10+index+1, 5)
+	}
+	return nil
+}
+
+// DeleteResource replaces a Pod with a new one, as its ReplicaSet would.
+func (s *DemoSource) DeleteResource(_ context.Context, name string, resource explorer.ResourceNode) error {
+	if _, err := s.find(name); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	set := s.podSet(name)
+	for index, suffix := range set.suffixes {
+		if resource.Kind == "Pod" && resource.Name == fmt.Sprintf("%s-%s-%s", name, set.hash, suffix) {
+			set.generation++
+			set.suffixes[index] = demoName(name, set.generation*10+index+1, 5)
+			return nil
+		}
+	}
+	return fmt.Errorf("%s/%s not found", resource.Kind, resource.Name)
 }

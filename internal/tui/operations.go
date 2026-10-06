@@ -38,6 +38,10 @@ type loadedText struct {
 type operationCompleted struct {
 	action      string
 	application string
+	// subject names what the action was about when it is not the Application.
+	subject string
+	// refreshTree reloads the open dependency view too.
+	refreshTree bool
 	err         error
 }
 

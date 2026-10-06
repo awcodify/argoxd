@@ -185,7 +185,9 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	if body != nil {
+	// Argo CD refuses any request that changes something without a JSON content
+	// type, even one with no body, such as a delete.
+	if body != nil || (method != http.MethodGet && method != http.MethodHead) {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if s.token != "" {
