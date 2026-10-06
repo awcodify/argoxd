@@ -53,8 +53,11 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.stopFollowing()
 		m.view = applicationTreeView
+		if m.viewerFromList {
+			m.view = listView
+		}
 	case "/":
-		if m.viewer.kind == "logs" {
+		if m.viewer.kind == "logs" || m.viewer.kind == "events" {
 			m.prompt = prompt{active: true, search: true, input: m.viewer.search}
 			return m, nil
 		}
@@ -129,6 +132,13 @@ func (v textView) highlight(line string, width int) string {
 		return " " + podStyle(pod).Render(pod+strings.TrimRight(argocd.LogSeparator, " ")) + " " + textStyle.Render(message)
 	}
 	switch v.kind {
+	case "events":
+		switch {
+		case strings.HasPrefix(line, "AGE "):
+			return " " + mutedStyle.Render(line)
+		case strings.Contains(line, " Warning "):
+			return " " + warningStyle.Render(line)
+		}
 	case "diff":
 		band := padRight(ansi.Truncate(" "+line, width, "…"), width)
 		switch {

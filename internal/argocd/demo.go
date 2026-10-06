@@ -32,6 +32,7 @@ var (
 	_ RollbackOperator    = (*DemoSource)(nil)
 	_ LogStreamer         = (*DemoSource)(nil)
 	_ ResourceActor       = (*DemoSource)(nil)
+	_ EventLister         = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.

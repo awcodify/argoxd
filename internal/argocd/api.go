@@ -110,6 +110,7 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 			Kind:      node.Kind,
 			Namespace: node.Namespace,
 			Name:      node.Name,
+			UID:       node.UID,
 			Sync:      node.Status,
 			Health:    node.Health.Status,
 			Parents:   parents,
@@ -297,6 +298,7 @@ type resourceTreeResponse struct {
 		Kind      string `json:"kind"`
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
+		UID       string `json:"uid"`
 		Status    string `json:"status"`
 		Health    struct {
 			Status string `json:"status"`

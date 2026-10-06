@@ -32,7 +32,9 @@ type loadedText struct {
 	kind    string
 	subject string
 	text    string
-	err     error
+	// fromList means the text was opened from the Applications list, so Esc returns there.
+	fromList bool
+	err      error
 }
 
 type operationCompleted struct {

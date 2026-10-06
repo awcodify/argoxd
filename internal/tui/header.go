@@ -73,6 +73,9 @@ func (m Model) keyHints() []keyHint {
 	switch m.view {
 	case textViewMode:
 		hints := []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}}
+		if m.viewer.kind == "events" {
+			hints = append(hints, keyHint{"/", "Search"})
+		}
 		if m.viewer.kind == "logs" {
 			hints = append(hints, keyHint{"/", "Search"}, keyHint{"c", "Container"})
 			if m.logWorkload.Kind != "" {
@@ -89,7 +92,7 @@ func (m Model) keyHints() []keyHint {
 		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
 		return []keyHint{
-			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
+			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"},
 			{"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
@@ -108,7 +111,7 @@ func (m Model) keyHints() []keyHint {
 	}
 	if m.selectedApplication() != "" {
 		if m.view == listView {
-			hints = append(hints, keyHint{"enter", "Dependencies"})
+			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"})
 		}
 		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
 	}

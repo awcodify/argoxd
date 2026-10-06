@@ -39,6 +39,7 @@ type Model struct {
 	treeFilter      explorer.Filter
 	expanded        map[string]bool
 	viewer          textView
+	viewerFromList  bool
 	prompt          prompt
 	confirming      string
 	syncing         syncDialog
@@ -139,6 +140,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 				m.resetLogOptions()
 			}
 			m.viewer = newTextView(message.kind, message.subject, message.text)
+			m.viewerFromList = message.fromList
 			m.view = textViewMode
 		}
 	case loadedHistory:
@@ -240,6 +242,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.view == applicationTreeView {
 			return m.inspect(key)
 		}
+	case "e":
+		return m.showEvents()
 	case "s":
 		if application := m.selectedApplication(); application != "" {
 			m.syncing = syncDialog{application: application}

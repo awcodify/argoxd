@@ -67,10 +67,12 @@ type ResourceNode struct {
 	Kind      string
 	Namespace string
 	Name      string
-	Sync      string
-	Health    string
-	Parents   []ResourceReference
-	Children  []ResourceNode
+	// UID identifies the live object; only the Argo CD API reports it.
+	UID      string
+	Sync     string
+	Health   string
+	Parents  []ResourceReference
+	Children []ResourceNode
 }
 
 // ResourceReference identifies a resource that owns or precedes another resource.

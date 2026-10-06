@@ -192,6 +192,9 @@ type fakeSource struct {
 	actionErr        error
 	logsByContainer  map[string]string
 	loggedContainers []string
+
+	events        string
+	eventRequests []string
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {
