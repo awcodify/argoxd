@@ -10,7 +10,7 @@ import (
 
 func containerSource() *fakeSource {
 	return &fakeSource{
-		snapshot: storeSnapshot(), tree: checkoutTree(), manifest: "spec:\n  containers:\n    - name: app\n    - name: sidecar\n", logs: "default log",
+		snapshot: storeSnapshot(), tree: barePodTree(), manifest: "spec:\n  containers:\n    - name: app\n    - name: sidecar\n", logs: "default log",
 		logsByContainer: map[string]string{
 			"sidecar":            "sidecar log",
 			argocd.AllContainers: "app │ from app\nsidecar │ from sidecar",

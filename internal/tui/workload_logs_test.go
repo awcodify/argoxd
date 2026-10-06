@@ -50,7 +50,7 @@ func TestLOnADeploymentFollowsTheLogsOfAllItsPods(t *testing.T) {
 func TestAPodLogHasNoPodPrefix(t *testing.T) {
 	stream := lines()
 	stream <- podLine("web-abc", "hello")
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), logs: "old", stream: stream}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), logs: "old", stream: stream}
 	model := openPodLogs(t, source)
 
 	model, _ = follow(t, model, 1)

@@ -74,7 +74,10 @@ func (m Model) keyHints() []keyHint {
 	case textViewMode:
 		hints := []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}}
 		if m.viewer.kind == "logs" {
-			hints = append(hints, keyHint{"c", "Container"})
+			hints = append(hints, keyHint{"/", "Search"}, keyHint{"c", "Container"})
+			if m.logWorkload.Kind != "" {
+				hints = append(hints, keyHint{"p", "Pod"})
+			}
 		}
 		if m.following() {
 			hints = append(hints, keyHint{"f", "Stop following"})

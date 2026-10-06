@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,14 +56,7 @@ func (m Model) renderContent(width, height int) (string, []string) {
 func (m Model) viewerTitle() string {
 	title := viewTitle(m.viewer.kind, m.viewer.subject, -1)
 	if m.viewer.kind == "logs" {
-		title = strings.TrimSuffix(title, " ")
-		if label := m.containerLabel(); label != "" {
-			title += mutedStyle.Render(" · ") + accentStyle.Render("container: "+label)
-		}
-		if m.following() {
-			title += mutedStyle.Render(" · ") + infoStyle.Render("● following")
-		}
-		return title + " "
+		return m.logsTitle()
 	}
 	if m.viewer.kind != "diff" {
 		return title
@@ -235,7 +229,9 @@ func (m Model) renderPrompt(width int) string {
 		symbol, title = "▾", m.prompt.field
 	}
 	line := " " + accentStyle.Render(symbol) + " " + brightStyle.Render(m.prompt.input)
-	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found {
+	// Completing what was typed shows the rest as ghost text; with nothing typed
+	// the selected chip already says it.
+	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found && m.prompt.input != "" {
 		line += mutedStyle.Render(ghost)
 	}
 	line += accentStyle.Render("▏")
@@ -248,19 +244,23 @@ func (m Model) renderPrompt(width int) string {
 		matches = matches[start : start+visibleSuggestion]
 	}
 	chips := make([]string, 0, len(matches))
+	selectedChip := 0
 	for _, match := range matches {
 		label := match
 		if command, found := findFilterCommand(match); found && !m.prompt.search && m.prompt.field == "" {
 			label += " " + mutedStyle.Render("shift+"+command.shortcut)
 		}
 		if match == suggestion {
+			selectedChip = len(chips)
 			chips = append(chips, keycapStyle.Render(label))
 			continue
 		}
 		chips = append(chips, mutedStyle.Render(" "+label+" "))
 	}
 	if len(chips) > 0 {
-		line += "    " + strings.Join(chips, " ") + "  " + mutedStyle.Render("⇥ complete  ↑↓ choose")
+		hint := mutedStyle.Render("⇥ complete  ↑↓ choose")
+		budget := width - 2 - lipgloss.Width(line) - 4 - 2 - lipgloss.Width(hint)
+		line += "    " + strings.Join(fitChips(chips, selectedChip, budget), " ") + "  " + hint
 	}
 
 	return box{
@@ -290,4 +290,76 @@ func screenName(screen explorer.Screen) string {
 	default:
 		return "settings"
 	}
+}
+
+// logsTitle names the open log and says what it shows: the Pod and container
+// chosen, the search, and whether it is followed. Long names can leave no room
+// for all of that, so the workload, the Pod and the container drop out in turn
+// while the search and the following marker stay.
+func (m Model) logsTitle() string {
+	levels := []struct{ subject, pod, container bool }{
+		{true, true, true}, {false, true, true}, {false, false, true}, {false, false, false},
+	}
+	var title string
+	for _, level := range levels {
+		subject := ""
+		if level.subject {
+			subject = m.viewer.subject
+		}
+		title = strings.TrimSuffix(viewTitle("logs", subject, -1), " ")
+		if level.pod && m.logPod != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("pod: "+m.logPod)
+		}
+		if label := m.containerLabel(); level.container && label != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("container: "+label)
+		}
+		if m.viewer.search != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("/"+m.viewer.search)
+		}
+		if m.following() {
+			title += mutedStyle.Render(" · ") + infoStyle.Render("● following")
+		}
+		title += " "
+		if lipgloss.Width(title) <= m.width-6 {
+			break
+		}
+	}
+	return title
+}
+
+// fitChips keeps the chips that fit in budget columns, scrolling so the selected
+// one stays visible. A "…" marks each side where chips are hidden.
+func fitChips(chips []string, selected, budget int) []string {
+	const marker = 2
+	fits := func(from, to int) bool {
+		used := 0
+		for _, chip := range chips[from:to] {
+			used += lipgloss.Width(chip) + 1
+		}
+		if from > 0 {
+			used += marker
+		}
+		if to < len(chips) {
+			used += marker
+		}
+		return used <= budget
+	}
+
+	start := 0
+	for start < selected && !fits(start, selected+1) {
+		start++
+	}
+	end := selected + 1
+	for end < len(chips) && fits(start, end+1) {
+		end++
+	}
+
+	fitted := slices.Clone(chips[start:end])
+	if start > 0 {
+		fitted = append([]string{mutedStyle.Render("…")}, fitted...)
+	}
+	if end < len(chips) {
+		fitted = append(fitted, mutedStyle.Render("…"))
+	}
+	return fitted
 }

@@ -111,7 +111,7 @@ func TestShiftRHardRefreshesTheApplication(t *testing.T) {
 func TestCardActionsOpenTheViewer(t *testing.T) {
 	source := &fakeSource{
 		snapshot: storeSnapshot(),
-		tree:     checkoutTree(),
+		tree:     barePodTree(),
 		manifest: "kind: Deployment\nspec:\n  replicas: 2",
 		diff:     "  kind: Deployment\n- replicas: 1\n+ replicas: 2",
 		logs:     "starting\nready",
@@ -233,6 +233,15 @@ func (f *fakeSource) ResourceLogs(_ context.Context, _ string, _ explorer.Resour
 		return text, nil
 	}
 	return f.logs, nil
+}
+
+// barePodTree has a Deployment and, beside it, a Pod that no workload owns, so
+// opening the Pod's log shows its own snapshot.
+func barePodTree() explorer.ResourceTree {
+	return explorer.ResourceTree{Application: "checkout", Nodes: []explorer.ResourceNode{
+		{Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "store", Name: "web", Health: "Healthy"},
+		{Version: "v1", Kind: "Pod", Namespace: "store", Name: "web-abc", Health: "Healthy"},
+	}}
 }
 
 func checkoutTree() explorer.ResourceTree {

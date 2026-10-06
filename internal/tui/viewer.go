@@ -28,6 +28,8 @@ type textView struct {
 	offset  int
 	// prefixed marks lines that start with the name of the Pod they came from.
 	prefixed bool
+	// search keeps only the lines that contain it, ignoring case.
+	search string
 }
 
 func newTextView(kind, subject, text string) textView {
@@ -39,14 +41,27 @@ func newTextView(kind, subject, text string) textView {
 }
 
 func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	last := max(0, len(m.viewer.lines)-m.bodyHeight())
+	last := max(0, len(m.viewer.shown())-m.bodyHeight())
 	switch message.String() {
 	case "ctrl+c", "q":
 		m.stopFollowing()
 		return m, tea.Quit
 	case "esc":
+		if m.viewer.search != "" {
+			m.applySearch("")
+			return m, nil
+		}
 		m.stopFollowing()
 		m.view = applicationTreeView
+	case "/":
+		if m.viewer.kind == "logs" {
+			m.prompt = prompt{active: true, search: true, input: m.viewer.search}
+			return m, nil
+		}
+	case "p":
+		if m.viewer.kind == "logs" {
+			return m.openPodBar()
+		}
 	case "f":
 		return m.toggleFollow()
 	case "c":
@@ -70,10 +85,30 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// shown returns the lines that contain the search, or all of them.
+func (v textView) shown() []string {
+	if v.search == "" {
+		return v.lines
+	}
+	needle := strings.ToLower(v.search)
+	var matching []string
+	for _, line := range v.lines {
+		if strings.Contains(strings.ToLower(line), needle) {
+			matching = append(matching, line)
+		}
+	}
+	return matching
+}
+
 func (v textView) render(width, height int) []string {
-	end := min(len(v.lines), v.offset+height)
-	lines := make([]string, 0, end-v.offset)
-	for _, line := range v.lines[v.offset:end] {
+	shown := v.shown()
+	if len(shown) == 0 && v.search != "" {
+		return []string{mutedStyle.Render("  No lines match /" + v.search)}
+	}
+	start := min(v.offset, max(0, len(shown)-height))
+	end := min(len(shown), start+height)
+	lines := make([]string, 0, end-start)
+	for _, line := range shown[start:end] {
 		lines = append(lines, v.highlight(line, width))
 	}
 	return lines

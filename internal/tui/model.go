@@ -50,6 +50,9 @@ type Model struct {
 	containersKnown bool
 	logContainer    string
 	logSeen         string
+	logWorkload     explorer.ResourceNode
+	logPod          string
+	logPods         []string
 	status          string
 }
 
@@ -132,7 +135,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		if message.err == nil {
 			if message.kind == "logs" {
-				m.resetContainers()
+				m.resetLogOptions()
 			}
 			m.viewer = newTextView(message.kind, message.subject, message.text)
 			m.view = textViewMode
@@ -362,6 +365,11 @@ func (m Model) searching() bool {
 
 // applySearch narrows the list or, in the dependency view, the card tree.
 func (m *Model) applySearch(text string) {
+	if m.view == textViewMode {
+		m.viewer.search = text
+		m.viewer.offset = max(0, len(m.viewer.shown())-m.bodyHeight())
+		return
+	}
 	if m.view == applicationTreeView {
 		m.treeSearch = text
 		m.treeCursor = 0

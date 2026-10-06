@@ -143,6 +143,9 @@ func (m Model) suggestions() []string {
 	if m.prompt.field == containerField {
 		return containerSuggestions(m.prompt.input, m.logContainers)
 	}
+	if m.prompt.field == podField {
+		return matchOptions(m.prompt.input, podOptions(m.logPods))
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
@@ -199,8 +202,11 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if chosen != "" {
 				input = chosen
 			}
-			if field == containerField {
+			switch field {
+			case containerField:
 				return m.showContainer(input)
+			case podField:
+				return m.showPod(input)
 			}
 			m.runFilter(field, input)
 			return m, nil

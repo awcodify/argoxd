@@ -72,7 +72,7 @@ func follow(t *testing.T, model Model, count int) (Model, tea.Cmd) {
 }
 
 func TestFFollowsThePodLogs(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), logs: "old", stream: lines("old", "new")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), logs: "old", stream: lines("old", "new")}
 	model := openPodLogs(t, source)
 
 	model, _ = follow(t, model, 2)
@@ -91,7 +91,7 @@ func TestFollowingStaysAtTheBottomUntilYouScrollUp(t *testing.T) {
 	for index := range 10 {
 		all = append(all, fmt.Sprintf("line-%d", index))
 	}
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: lines(all...)}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: lines(all...)}
 	model, next := follow(t, openPodLogs(t, source), 10)
 
 	if view := model.View(); !strings.Contains(view, "line-9") || strings.Contains(view, "line-0") {
@@ -108,7 +108,7 @@ func TestFollowingStaysAtTheBottomUntilYouScrollUp(t *testing.T) {
 }
 
 func TestFStopsFollowingAndKeepsTheLines(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: lines("kept")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: lines("kept")}
 	model, _ := follow(t, openPodLogs(t, source), 1)
 
 	stopped := press(model, "f")
@@ -122,7 +122,7 @@ func TestFStopsFollowingAndKeepsTheLines(t *testing.T) {
 }
 
 func TestEscStopsFollowingAndGoesBack(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: lines("a")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: lines("a")}
 	model, _ := follow(t, openPodLogs(t, source), 1)
 
 	back := press(model, "esc")
@@ -138,7 +138,7 @@ func TestEscStopsFollowingAndGoesBack(t *testing.T) {
 func TestAStreamErrorStopsFollowingAndIsShown(t *testing.T) {
 	stream := lines()
 	stream <- argocd.LogEntry{Err: errors.New("connection reset")}
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: stream}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: stream}
 
 	model, _ := follow(t, openPodLogs(t, source), 1)
 
@@ -153,7 +153,7 @@ func TestAStreamErrorStopsFollowingAndIsShown(t *testing.T) {
 func TestAClosedStreamIsReported(t *testing.T) {
 	stream := lines("last")
 	close(stream)
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: stream}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: stream}
 
 	model, _ := follow(t, openPodLogs(t, source), 2)
 
@@ -163,7 +163,7 @@ func TestAClosedStreamIsReported(t *testing.T) {
 }
 
 func TestFollowingKeepsOnlyTheLatestLines(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: lines("first")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: lines("first")}
 	model, _ := follow(t, openPodLogs(t, source), 1)
 
 	for index := range maxLogLines + 5 {
@@ -180,7 +180,7 @@ func TestFollowingKeepsOnlyTheLatestLines(t *testing.T) {
 }
 
 func TestLinesFromAStoppedStreamAreIgnored(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), stream: lines("a")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), stream: lines("a")}
 	model, _ := follow(t, openPodLogs(t, source), 1)
 	id := model.follow.id
 	model = press(model, "f")
@@ -193,7 +193,7 @@ func TestLinesFromAStoppedStreamAreIgnored(t *testing.T) {
 }
 
 func TestFOnlyFollowsLogs(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), manifest: "kind: Pod", stream: lines("x")}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), manifest: "kind: Pod", stream: lines("x")}
 	model := run(press(press(openCheckout(t, source), "j"), "j"), "y")
 
 	_, command := model.Update(key("f"))
@@ -204,7 +204,7 @@ func TestFOnlyFollowsLogs(t *testing.T) {
 }
 
 func TestFollowingNeedsASourceThatStreams(t *testing.T) {
-	source := &logsOnlySource{fakeSource: &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), logs: "x"}}
+	source := &logsOnlySource{fakeSource: &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), logs: "x"}}
 	model := resize(New(source, "test", "argocd", explorer.Snapshot{}), 100, 12)
 	model = settle(model, source.loadCommand())
 	model = run(press(run(press(model, "j"), "enter"), "j"), "j")
@@ -221,7 +221,7 @@ type logsOnlySource struct{ *fakeSource }
 func (logsOnlySource) StreamLogs() {}
 
 func TestLogsHeaderListsFollow(t *testing.T) {
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), logs: "x", manifest: "kind: Pod"}
+	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), logs: "x", manifest: "kind: Pod"}
 	model := resize(openCheckout(t, source), 160, 40)
 	model = press(press(model, "j"), "j")
 

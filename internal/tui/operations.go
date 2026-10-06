@@ -149,7 +149,12 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
 		return m, nil
 	case key == "l" && selected.Kind != "Pod":
-		return m.followWorkload(selected)
+		return m.followLog(selected, nil)
+	case key == "l":
+		// A Pod shows its workload's log, filtered to that Pod, when it has one.
+		if workload, found := m.workloadOf(selected); found && m.canStream() {
+			return m.followLog(workload, &selected)
+		}
 	}
 	inspector, ok := m.source.(argocd.ResourceInspector)
 	if !ok {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/awcodify/argoxd/internal/argocd"
+	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,12 +25,15 @@ type loadedLogs struct {
 	err     error
 }
 
-// resetContainers forgets the container chosen for the previous log.
-func (m *Model) resetContainers() {
+// resetLogOptions forgets the container, Pod and workload chosen for the previous log.
+func (m *Model) resetLogOptions() {
 	m.logContainers = argocd.Containers{}
 	m.containersKnown = false
 	m.logContainer = ""
 	m.logSeen = ""
+	m.logWorkload = explorer.ResourceNode{}
+	m.logPod = ""
+	m.logPods = nil
 }
 
 // prefixesLines reports whether the open log mixes lines from several Pods or
@@ -77,13 +81,18 @@ func containerOptions(containers argocd.Containers) []string {
 	return append(slices.Clone(containers.Names), allContainersOption)
 }
 
-// containerSuggestions lists the containers that contain the input, those that
-// start with it first. Container names often share a long prefix, such as
-// "prometheus-server-configmap-reload", so any part of a name matches.
+// containerSuggestions lists the containers that match the input.
 func containerSuggestions(input string, containers argocd.Containers) []string {
+	return matchOptions(input, containerOptions(containers))
+}
+
+// matchOptions lists the options that contain the input, those that start with
+// it first. Container and Pod names often share a long prefix, such as
+// "prometheus-server-configmap-reload", so any part of a name matches.
+func matchOptions(input string, options []string) []string {
 	input = strings.ToLower(input)
 	var prefixed, contained []string
-	for _, option := range containerOptions(containers) {
+	for _, option := range options {
 		switch lower := strings.ToLower(option); {
 		case strings.HasPrefix(lower, input):
 			prefixed = append(prefixed, option)
@@ -172,7 +181,7 @@ func (m Model) showContainer(choice string) (tea.Model, tea.Cmd) {
 // of a workload, which is only ever followed, starts a new stream; a Pod's
 // snapshot is read again.
 func (m Model) reloadLogs() (tea.Model, tea.Cmd) {
-	if m.following() || m.logTarget.Kind != "Pod" {
+	if m.following() || m.logWorkload.Kind != "" {
 		m.stopFollowing()
 		return m.toggleFollow()
 	}

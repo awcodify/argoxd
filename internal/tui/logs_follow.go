@@ -50,15 +50,49 @@ func hasLogs(kind string) bool {
 	return false
 }
 
-// followWorkload opens the combined log of a workload's Pods, which is
-// followed from the start.
-func (m Model) followWorkload(workload explorer.ResourceNode) (tea.Model, tea.Cmd) {
-	if _, ok := m.source.(argocd.LogStreamer); !ok {
+// canStream reports whether the source can follow logs.
+func (m Model) canStream() bool {
+	_, ok := m.source.(argocd.LogStreamer)
+	return ok
+}
+
+// workloadOf finds the workload that runs a Pod: the top-most one above it, so
+// a Deployment rather than its ReplicaSet.
+func (m Model) workloadOf(target explorer.ResourceNode) (explorer.ResourceNode, bool) {
+	var search func(nodes []explorer.ResourceNode, workload *explorer.ResourceNode) (explorer.ResourceNode, bool)
+	search = func(nodes []explorer.ResourceNode, workload *explorer.ResourceNode) (explorer.ResourceNode, bool) {
+		for _, node := range nodes {
+			top := workload
+			if top == nil && node.Kind != "Pod" && hasLogs(node.Kind) {
+				top = &node
+			}
+			if node.Reference() == target.Reference() {
+				if top == nil {
+					return explorer.ResourceNode{}, false
+				}
+				return *top, true
+			}
+			if found, ok := search(node.Children, top); ok {
+				return found, true
+			}
+		}
+		return explorer.ResourceNode{}, false
+	}
+	return search(m.resourceTree.Hierarchy(), nil)
+}
+
+// followLog opens the log of a workload's Pods, or of one of its Pods when pod
+// is given, and follows it from the start.
+func (m Model) followLog(workload explorer.ResourceNode, pod *explorer.ResourceNode) (tea.Model, tea.Cmd) {
+	if !m.canStream() {
 		m.err = errNoStreaming
 		return m, nil
 	}
-	m.logTarget = workload
-	m.resetContainers()
+	m.resetLogOptions()
+	m.logTarget, m.logWorkload = workload, workload
+	if pod != nil {
+		m.logTarget, m.logPod = *pod, pod.Name
+	}
 	m.viewer = textView{kind: "logs", subject: workload.Kind + "/" + workload.Name}
 	m.view = textViewMode
 	return m.toggleFollow()
@@ -155,13 +189,14 @@ func (m Model) nextLogLine() tea.Cmd {
 // appendLogLine adds a line to the viewer, keeping the view at the bottom if it
 // was there and dropping the oldest lines beyond maxLogLines.
 func (m *Model) appendLogLine(line string) {
-	pinned := m.viewer.offset >= max(0, len(m.viewer.lines)-m.bodyHeight())
+	pinned := m.viewer.offset >= max(0, len(m.viewer.shown())-m.bodyHeight())
 	m.viewer.lines = append(m.viewer.lines, line)
 	if dropped := len(m.viewer.lines) - maxLogLines; dropped > 0 {
+		gone := textView{lines: m.viewer.lines[:dropped], search: m.viewer.search}
+		m.viewer.offset = max(0, m.viewer.offset-len(gone.shown()))
 		m.viewer.lines = m.viewer.lines[dropped:]
-		m.viewer.offset = max(0, m.viewer.offset-dropped)
 	}
 	if pinned {
-		m.viewer.offset = max(0, len(m.viewer.lines)-m.bodyHeight())
+		m.viewer.offset = max(0, len(m.viewer.shown())-m.bodyHeight())
 	}
 }
