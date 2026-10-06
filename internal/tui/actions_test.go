@@ -100,8 +100,11 @@ func TestShiftRHardRefreshesTheApplication(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
 	model := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
 
-	updated, command := model.Update(key("R"))
-	settle(updated.(Model), command)
+	asking := press(model, "R")
+	if len(source.refreshed) != 0 {
+		t.Fatalf("refreshed before confirming: %v", source.refreshed)
+	}
+	run(asking, "enter")
 
 	if len(source.refreshed) != 1 || source.refreshed[0] != "grafana" {
 		t.Fatalf("refreshed = %v, want grafana", source.refreshed)
@@ -195,6 +198,13 @@ type fakeSource struct {
 
 	events        string
 	eventRequests []string
+
+	syncedApps      []string
+	syncedResources [][]explorer.ResourceReference
+	syncErrors      map[string]error
+	deletedApps     []string
+	// failures makes the action on the named Application or resource fail.
+	failures map[string]error
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {
@@ -215,17 +225,21 @@ func (f *fakeSource) LoadResourceTree(context.Context, string) (explorer.Resourc
 	return f.tree, nil
 }
 
-func (f *fakeSource) SyncApplication(_ context.Context, _ string, options argocd.SyncOptions) error {
+func (f *fakeSource) SyncApplication(_ context.Context, application string, options argocd.SyncOptions) error {
 	f.synced = append(f.synced, options)
-	return nil
+	f.syncedApps = append(f.syncedApps, application)
+	return f.syncErrors[application]
 }
 
 func (f *fakeSource) RefreshApplication(_ context.Context, application string) error {
 	f.refreshed = append(f.refreshed, application)
-	return nil
+	return f.failures[application]
 }
 
-func (f *fakeSource) DeleteApplication(context.Context, string) error { return nil }
+func (f *fakeSource) DeleteApplication(_ context.Context, application string) error {
+	f.deletedApps = append(f.deletedApps, application)
+	return f.failures[application]
+}
 
 func (f *fakeSource) ResourceManifest(context.Context, string, explorer.ResourceNode) (string, error) {
 	return f.manifest, f.manifestErr

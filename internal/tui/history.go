@@ -27,13 +27,6 @@ type historyList struct {
 	from        viewMode
 }
 
-// rollbackDialog asks how to roll back before redeploying a past deployment.
-type rollbackDialog struct {
-	application string
-	entry       explorer.HistoryEntry
-	options     argocd.SyncOptions
-}
-
 // openHistory loads the deployments of an Application and shows them.
 func (m Model) openHistory(application string) (tea.Model, tea.Cmd) {
 	operator, ok := m.source.(argocd.RollbackOperator)
@@ -67,7 +60,7 @@ func (m Model) updateHistory(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.history.cursor = max(0, min(len(m.history.entries)-1, m.history.cursor+1))
 	case "enter":
 		if m.history.cursor < len(m.history.entries) {
-			m.rollingBack = rollbackDialog{application: m.history.application, entry: m.history.entries[m.history.cursor]}
+			m.confirm = confirmation{kind: confirmRollback, application: m.history.application, entry: m.history.entries[m.history.cursor]}
 		}
 	case "esc":
 		m.view = m.history.from
@@ -76,24 +69,7 @@ func (m Model) updateHistory(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateRollbackDialog(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch message.String() {
-	case "p":
-		m.rollingBack.options.Prune = !m.rollingBack.options.Prune
-	case "r":
-		m.rollingBack.options.DryRun = !m.rollingBack.options.DryRun
-	case "enter":
-		dialog := m.rollingBack
-		m.rollingBack = rollbackDialog{}
-		m.loading = true
-		return m, m.rollback(dialog)
-	case "esc", "n":
-		m.rollingBack = rollbackDialog{}
-	}
-	return m, nil
-}
-
-func (m Model) rollback(dialog rollbackDialog) tea.Cmd {
+func (m Model) rollback(dialog confirmation) tea.Cmd {
 	action := "rollback"
 	if dialog.options.DryRun {
 		action = "dry-run rollback"

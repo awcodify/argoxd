@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
@@ -11,75 +12,83 @@ import (
 
 var errNoActions = errors.New("the active source cannot act on resources")
 
-// resourceActionDialog asks for confirmation before acting on a card's resource.
-type resourceActionDialog struct {
-	// action is "restart" or "delete".
-	action      string
-	application string
-	resource    explorer.ResourceNode
-}
-
-func (d resourceActionDialog) subject() string {
-	return d.resource.Kind + "/" + d.resource.Name
-}
-
-// askResourceAction opens the confirmation for restarting (x) the selected
-// workload or deleting (X) the selected Pod.
+// askResourceAction opens the confirmation for restarting (x) the marked
+// workloads or deleting (X) the marked Pods, or else the selected card.
 func (m Model) askResourceAction(key string) (tea.Model, tea.Cmd) {
-	selected := m.selectedCard()
-	action := "restart"
+	kind := confirmRestart
 	if key == "X" {
-		action = "delete"
+		kind = confirmDeleteResources
 	}
-	switch {
-	case selected.Kind == "Application":
-		m.status = "Select a resource card to act on it"
-		return m, nil
-	case action == "restart" && !argocd.Restartable(selected.Kind):
-		m.status = "Only Deployments, StatefulSets and DaemonSets can be restarted"
-		return m, nil
-	case action == "delete" && selected.Kind != "Pod":
-		m.status = "Only Pods can be deleted here"
+	targets, refusal := m.resourceTargets(kind)
+	if refusal != "" {
+		m.status = refusal
 		return m, nil
 	}
 	if _, ok := m.source.(argocd.ResourceActor); !ok {
 		m.err = errNoActions
 		return m, nil
 	}
-	m.resourceAction = resourceActionDialog{action: action, application: m.resourceTree.Application, resource: selected}
+	m.confirm = confirmation{kind: kind, application: m.resourceTree.Application, resources: targets}
 	return m, nil
 }
 
-func (m Model) updateResourceAction(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch message.String() {
-	case "y":
-		dialog := m.resourceAction
-		m.resourceAction = resourceActionDialog{}
-		m.loading = true
-		return m, m.actOnResource(dialog)
-	case "n", "esc":
-		m.resourceAction = resourceActionDialog{}
+// resourceTargets returns the cards an action applies to, or why it cannot:
+// every marked card must take the action, and none is skipped silently.
+func (m Model) resourceTargets(kind confirmKind) ([]explorer.ResourceNode, string) {
+	if len(m.markedCards) == 0 {
+		selected := m.selectedCard()
+		switch {
+		case selected.Kind == "Application":
+			return nil, "Select a resource card to act on it"
+		case kind == confirmRestart && !argocd.Restartable(selected.Kind):
+			return nil, "Only Deployments, StatefulSets and DaemonSets can be restarted"
+		case kind == confirmDeleteResources && selected.Kind != "Pod":
+			return nil, "Only Pods can be deleted here"
+		}
+		return []explorer.ResourceNode{selected}, ""
 	}
-	return m, nil
+	targets := m.markedNodes()
+	for _, node := range targets {
+		switch {
+		case kind == confirmRestart && !argocd.Restartable(node.Kind):
+			return nil, fmt.Sprintf("%s cannot be restarted: only Deployments, StatefulSets and DaemonSets can be", resourceName(node))
+		case kind == confirmDeleteResources && node.Kind != "Pod":
+			return nil, fmt.Sprintf("%s cannot be deleted here: only Pods can be", resourceName(node))
+		}
+	}
+	return targets, ""
 }
 
-func (m Model) actOnResource(dialog resourceActionDialog) tea.Cmd {
+// actOnResources restarts or deletes the confirmed resources, one after another.
+func (m Model) actOnResources(c confirmation) tea.Cmd {
+	action := "restart"
+	if c.kind == confirmDeleteResources {
+		action = "delete"
+	}
 	actor, ok := m.source.(argocd.ResourceActor)
 	if !ok {
 		return func() tea.Msg {
-			return operationCompleted{action: dialog.action, application: dialog.application, err: errNoActions}
+			return operationCompleted{action: action, application: c.application, err: errNoActions}
 		}
 	}
-	return m.request(func(ctx context.Context) tea.Msg {
-		var err error
-		switch dialog.action {
-		case "restart":
-			err = actor.RestartResource(ctx, dialog.application, dialog.resource)
-		case "delete":
-			err = actor.DeleteResource(ctx, dialog.application, dialog.resource)
+	act := func(ctx context.Context, resource explorer.ResourceNode) error {
+		if action == "restart" {
+			return actor.RestartResource(ctx, c.application, resource)
 		}
-		return operationCompleted{
-			action: dialog.action, application: dialog.application, subject: dialog.subject(), refreshTree: true, err: err,
-		}
+		return actor.DeleteResource(ctx, c.application, resource)
+	}
+	if len(c.resources) == 1 {
+		return m.request(func(ctx context.Context) tea.Msg {
+			return operationCompleted{
+				action: action, application: c.application, subject: c.subject(), refreshTree: true, err: act(ctx, c.resources[0]),
+			}
+		})
+	}
+	labels := make([]string, len(c.resources))
+	for index, resource := range c.resources {
+		labels[index] = resourceName(resource)
+	}
+	return m.each(action, c.subject(), c.application, labels, true, func(ctx context.Context, index int) error {
+		return act(ctx, c.resources[index])
 	})
 }

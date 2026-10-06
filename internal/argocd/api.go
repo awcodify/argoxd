@@ -121,7 +121,25 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 
 // SyncApplication starts a sync operation for an Application.
 func (s *APISource) SyncApplication(ctx context.Context, application string, options SyncOptions) error {
-	body, err := json.Marshal(syncRequest{Prune: options.Prune, DryRun: options.DryRun})
+	return s.sync(ctx, application, nil, options)
+}
+
+var _ ResourceSyncer = (*APISource)(nil)
+
+// SyncResources starts a sync operation for only the listed resources.
+func (s *APISource) SyncResources(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	return s.sync(ctx, application, resources, options)
+}
+
+// sync posts the operation; no resources means the whole Application.
+func (s *APISource) sync(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	request := syncRequest{Prune: options.Prune, DryRun: options.DryRun}
+	for _, resource := range resources {
+		request.Resources = append(request.Resources, syncResource{
+			Group: resource.Group, Kind: resource.Kind, Namespace: resource.Namespace, Name: resource.Name,
+		})
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("encode sync request: %w", err)
 	}
@@ -218,8 +236,16 @@ func errorMessage(body io.Reader) string {
 }
 
 type syncRequest struct {
-	Prune  bool `json:"prune"`
-	DryRun bool `json:"dryRun"`
+	Prune     bool           `json:"prune"`
+	DryRun    bool           `json:"dryRun"`
+	Resources []syncResource `json:"resources,omitempty"`
+}
+
+type syncResource struct {
+	Group     string `json:"group"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 type metadata struct {

@@ -11,11 +11,17 @@ import (
 
 func (f *fakeSource) RestartResource(_ context.Context, _ string, resource explorer.ResourceNode) error {
 	f.restarted = append(f.restarted, resource)
+	if err := f.failures[resource.Name]; err != nil {
+		return err
+	}
 	return f.actionErr
 }
 
 func (f *fakeSource) DeleteResource(_ context.Context, _ string, resource explorer.ResourceNode) error {
 	f.deleted = append(f.deleted, resource)
+	if err := f.failures[resource.Name]; err != nil {
+		return err
+	}
 	return f.actionErr
 }
 

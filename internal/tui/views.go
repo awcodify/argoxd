@@ -17,6 +17,9 @@ const (
 
 // renderContent returns the frame title and body lines for the active view.
 func (m Model) renderContent(width, height int) (string, []string) {
+	if m.confirm.active() {
+		return viewTitle("confirm", "", -1), m.renderConfirmation(width, height)
+	}
 	switch m.view {
 	case inventoryTreeView:
 		return viewTitle("inventory", "", -1), m.renderInventory(width, height)
@@ -95,7 +98,9 @@ func (m Model) applicationsTable() table {
 			application.Name, application.Project, application.Sync, application.Health,
 			application.Revision, application.Destination, age(application.LastSync),
 		})
+		result.marked = append(result.marked, m.marked[application.Name])
 	}
+	result.markable = true
 	return result
 }
 
@@ -195,27 +200,6 @@ func (m Model) renderCrumbs() string {
 // renderFlash shows the most urgent message: a pending confirmation, an error, or progress.
 func (m Model) renderFlash() string {
 	switch {
-	case m.syncing.application != "":
-		return " " + accentStyle.Render("⟳ Sync "+m.syncing.application+"?") +
-			"   " + keycap("enter", "sync") +
-			"  " + keycap("p", "prune "+toggle(m.syncing.options.Prune)) +
-			"  " + keycap("r", "dry run "+toggle(m.syncing.options.DryRun)) +
-			"  " + keycap("esc", "cancel")
-	case m.rollingBack.application != "":
-		return " " + accentStyle.Render("↩ Roll back "+m.rollingBack.application+" to "+revisionLabel(m.rollingBack.entry)+"?") +
-			"   " + keycap("enter", "roll back") +
-			"  " + keycap("p", "prune "+toggle(m.rollingBack.options.Prune)) +
-			"  " + keycap("r", "dry run "+toggle(m.rollingBack.options.DryRun)) +
-			"  " + keycap("esc", "cancel")
-	case m.resourceAction.action == "restart":
-		return " " + accentStyle.Render("↻ Restart "+m.resourceAction.subject()+"?") +
-			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
-	case m.resourceAction.action == "delete":
-		return " " + errorStyle.Render("✗ Delete "+m.resourceAction.subject()+"?") +
-			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
-	case m.confirming != "":
-		return " " + errorStyle.Render("✗ Delete "+m.confirming+" and its managed resources?") +
-			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
 	case m.err != nil:
 		return " " + errorStyle.Render("✗ "+m.err.Error())
 	case m.loading:

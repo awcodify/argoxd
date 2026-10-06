@@ -23,6 +23,13 @@ type ApplicationOperator interface {
 	DeleteApplication(ctx context.Context, application string) error
 }
 
+// ResourceSyncer syncs only some of an Application's resources.
+type ResourceSyncer interface {
+	// SyncResources syncs the listed resources and leaves the rest of the
+	// Application as it is.
+	SyncResources(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error
+}
+
 // ResourceInspector shows the live state of an Application's resources.
 type ResourceInspector interface {
 	ResourceManifest(ctx context.Context, application string, resource explorer.ResourceNode) (string, error)

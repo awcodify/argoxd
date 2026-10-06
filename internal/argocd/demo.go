@@ -33,6 +33,7 @@ var (
 	_ LogStreamer         = (*DemoSource)(nil)
 	_ ResourceActor       = (*DemoSource)(nil)
 	_ EventLister         = (*DemoSource)(nil)
+	_ ResourceSyncer      = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -154,6 +155,12 @@ func (s *DemoSource) SyncApplication(_ context.Context, name string, options Syn
 	return s.update(name, func(application *explorer.Application) {
 		application.Sync, application.Health, application.LastSync = "Synced", "Healthy", time.Now()
 	})
+}
+
+// SyncResources syncs the Application: the sample data does not track which
+// of its resources are out of sync.
+func (s *DemoSource) SyncResources(ctx context.Context, name string, _ []explorer.ResourceReference, options SyncOptions) error {
+	return s.SyncApplication(ctx, name, options)
 }
 
 // ApplicationHistory returns the sample deployments, newest first.

@@ -12,6 +12,9 @@ type table struct {
 	columns []string
 	rows    [][]string
 	status  map[int]bool
+	// markable adds a column that flags the rows set in marked.
+	markable bool
+	marked   []bool
 }
 
 func (t table) render(cursor, width, height int) []string {
@@ -57,6 +60,14 @@ func (t table) renderRow(index int, cells []string, widths []int, width int, sel
 	}
 	parts := []string{marker}
 	used := 1
+	if t.markable {
+		mark := " "
+		if t.marked[index] {
+			mark = accentStyle.Render(markGlyph)
+		}
+		parts = append(parts, base.Render(mark))
+		used++
+	}
 	for column, cell := range cells {
 		style := base
 		switch {
@@ -87,6 +98,9 @@ func (t table) columnWidths(cells [][]string) []int {
 func (t table) format(cells []string, widths []int) string {
 	var line strings.Builder
 	line.WriteString(" ")
+	if t.markable {
+		line.WriteString(" ")
+	}
 	for column, cell := range cells {
 		line.WriteString(" " + padRight(cell, widths[column]) + "  ")
 	}

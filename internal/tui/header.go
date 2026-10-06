@@ -93,7 +93,7 @@ func (m Model) keyHints() []keyHint {
 	case applicationTreeView:
 		return []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"},
-			{"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
@@ -104,7 +104,7 @@ func (m Model) keyHints() []keyHint {
 	if m.view == listView {
 		hints = append(hints, keyHint{"/", "Search"})
 		if m.explorer.Screen() == explorer.ApplicationsScreen {
-			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"})
+			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"}, keyHint{"space", "Mark"})
 		}
 	} else {
 		hints = append(hints, keyHint{"esc", "Back"})
