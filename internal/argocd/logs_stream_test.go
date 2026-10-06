@@ -56,7 +56,7 @@ func TestAPISourceStreamsLogsUntilCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream, err := NewAPISource(server.URL, "", false).StreamLogs(ctx, "checkout", webPod)
+	stream, err := NewAPISource(server.URL, "", false).StreamLogs(ctx, "checkout", webPod, "app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestAPISourceStreamIsNotCutOffByTheRequestTimeout(t *testing.T) {
 	source := NewAPISource(server.URL, "", false)
 	source.client.Timeout = 50 * time.Millisecond
 
-	stream, err := source.StreamLogs(context.Background(), "checkout", webPod)
+	stream, err := source.StreamLogs(context.Background(), "checkout", webPod, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +97,7 @@ func TestAPISourceStreamReportsRefusals(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := NewAPISource(server.URL, "", false).StreamLogs(context.Background(), "checkout", webPod)
+	_, err := NewAPISource(server.URL, "", false).StreamLogs(context.Background(), "checkout", webPod, "")
 
 	if err == nil || !strings.Contains(err.Error(), "permission denied") {
 		t.Fatalf("error = %v, want the refusal with Argo CD's message", err)
@@ -113,7 +113,7 @@ func TestAPISourceStreamReportsAConnectionThatDrops(t *testing.T) {
 	}))
 	defer server.Close()
 
-	stream, err := NewAPISource(server.URL, "", false).StreamLogs(context.Background(), "checkout", webPod)
+	stream, err := NewAPISource(server.URL, "", false).StreamLogs(context.Background(), "checkout", webPod, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestAPISourceStreamReportsAConnectionThatDrops(t *testing.T) {
 func TestKubernetesSourceStreamsLogs(t *testing.T) {
 	source := fakeKubernetesSource()
 
-	stream, err := source.StreamLogs(context.Background(), "checkout", webPod)
+	stream, err := source.StreamLogs(context.Background(), "checkout", webPod, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestDemoSourceStreamsNewLinesUntilCancelled(t *testing.T) {
 	defer cancel()
 	pod := explorer.ResourceNode{Version: "v1", Kind: "Pod", Namespace: "store", Name: "cart-5d8f7c-x7k2p", Health: "Healthy"}
 
-	stream, err := source.StreamLogs(ctx, "cart", pod)
+	stream, err := source.StreamLogs(ctx, "cart", pod, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestDemoSourceStreamsNewLinesUntilCancelled(t *testing.T) {
 }
 
 func TestDemoSourceStreamRefusesUnknownApplications(t *testing.T) {
-	if _, err := NewDemoSource().StreamLogs(context.Background(), "missing", webPod); err == nil {
+	if _, err := NewDemoSource().StreamLogs(context.Background(), "missing", webPod, ""); err == nil {
 		t.Fatal("streaming a missing application succeeded")
 	}
 }

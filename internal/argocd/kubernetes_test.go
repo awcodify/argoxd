@@ -189,7 +189,7 @@ func TestKubernetesSourceInspectsResources(t *testing.T) {
 	}
 
 	pod := explorer.ResourceNode{Version: "v1", Kind: "Pod", Namespace: "store", Name: "web-1-abc"}
-	logs, err := source.ResourceLogs(context.Background(), "checkout", pod)
+	logs, err := source.ResourceLogs(context.Background(), "checkout", pod, "")
 	if err != nil || logs != "fake logs" {
 		t.Fatalf("ResourceLogs() = %q, %v", logs, err)
 	}

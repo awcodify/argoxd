@@ -130,9 +130,6 @@ func TestCardActionsOpenTheViewer(t *testing.T) {
 		t.Fatalf("d did not show the diff:\n%s", view)
 	}
 
-	if view := run(deployment, "l").View(); !strings.Contains(view, "only available for Pods") {
-		t.Fatalf("l on a Deployment was not refused:\n%s", view)
-	}
 	if view := run(press(deployment, "j"), "l").View(); !strings.Contains(view, "ready") {
 		t.Fatalf("l on a Pod did not show logs:\n%s", view)
 	}
@@ -169,22 +166,28 @@ func TestApplicationsTableShowsRevisionDestinationAndLastSync(t *testing.T) {
 
 // fakeSource records operations and serves canned resources.
 type fakeSource struct {
-	snapshot  explorer.Snapshot
-	tree      explorer.ResourceTree
-	hang      bool
-	loads     int
-	synced    []argocd.SyncOptions
-	refreshed []string
-	manifest  string
-	diff      string
-	logs      string
+	snapshot    explorer.Snapshot
+	tree        explorer.ResourceTree
+	hang        bool
+	loads       int
+	synced      []argocd.SyncOptions
+	refreshed   []string
+	manifest    string
+	manifestErr error
+	diff        string
+	logs        string
 
 	history    []explorer.HistoryEntry
 	rolledBack []rollbackCall
 
-	stream       chan argocd.LogEntry
-	streamCtx    context.Context
-	streamedPods []explorer.ResourceNode
+	stream             chan argocd.LogEntry
+	streamCtx          context.Context
+	streamedPods       []explorer.ResourceNode
+	streamedContainers []string
+
+	// logsByContainer gives the snapshot of a chosen container; others get logs.
+	logsByContainer  map[string]string
+	loggedContainers []string
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {
@@ -217,14 +220,18 @@ func (f *fakeSource) RefreshApplication(_ context.Context, application string) e
 func (f *fakeSource) DeleteApplication(context.Context, string) error { return nil }
 
 func (f *fakeSource) ResourceManifest(context.Context, string, explorer.ResourceNode) (string, error) {
-	return f.manifest, nil
+	return f.manifest, f.manifestErr
 }
 
 func (f *fakeSource) ResourceDiff(context.Context, string, explorer.ResourceNode) (string, error) {
 	return f.diff, nil
 }
 
-func (f *fakeSource) ResourceLogs(context.Context, string, explorer.ResourceNode) (string, error) {
+func (f *fakeSource) ResourceLogs(_ context.Context, _ string, _ explorer.ResourceNode, container string) (string, error) {
+	f.loggedContainers = append(f.loggedContainers, container)
+	if text, found := f.logsByContainer[container]; found {
+		return text, nil
+	}
 	return f.logs, nil
 }
 

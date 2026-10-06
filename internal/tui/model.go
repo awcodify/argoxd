@@ -45,7 +45,11 @@ type Model struct {
 	history         historyList
 	rollingBack     rollbackDialog
 	follow          followState
-	logPod          explorer.ResourceNode
+	logTarget       explorer.ResourceNode
+	logContainers   argocd.Containers
+	containersKnown bool
+	logContainer    string
+	logSeen         string
 	status          string
 }
 
@@ -127,12 +131,19 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
+			if message.kind == "logs" {
+				m.resetContainers()
+			}
 			m.viewer = newTextView(message.kind, message.subject, message.text)
 			m.view = textViewMode
 		}
 	case loadedHistory:
 		m.loading = false
 		m.applyHistory(message)
+	case loadedContainers:
+		return m.applyContainers(message)
+	case loadedLogs:
+		return m.applyLogs(message)
 	case logStreamStarted:
 		return m.applyLogStream(message)
 	case logLine:

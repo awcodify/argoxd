@@ -4,15 +4,19 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"sync"
 )
 
 // maxLogLineBytes is the longest log line a followed stream reads.
 const maxLogLineBytes = 1 << 20
 
+// maxFollowedPods bounds how many Pods of one workload are followed at once.
+const maxFollowedPods = 30
+
 // streamLines sends the lines of a log stream, as read by parse, until the
 // body ends, fails or ctx is cancelled. A failure is sent as a last entry
 // with Err set. The body is closed and the channel is closed when it is done.
-func streamLines(ctx context.Context, body io.ReadCloser, parse func([]byte) (string, bool)) <-chan LogEntry {
+func streamLines(ctx context.Context, body io.ReadCloser, parse func([]byte) (LogEntry, bool)) <-chan LogEntry {
 	entries := make(chan LogEntry)
 	go func() {
 		defer close(entries)
@@ -31,7 +35,7 @@ func streamLines(ctx context.Context, body io.ReadCloser, parse func([]byte) (st
 		scanner := bufio.NewScanner(body)
 		scanner.Buffer(nil, maxLogLineBytes)
 		for scanner.Scan() {
-			if line, ok := parse(scanner.Bytes()); ok && !send(LogEntry{Line: line}) {
+			if entry, ok := parse(scanner.Bytes()); ok && !send(entry) {
 				return
 			}
 		}
@@ -40,4 +44,49 @@ func streamLines(ctx context.Context, body io.ReadCloser, parse func([]byte) (st
 		}
 	}()
 	return entries
+}
+
+// mergeStreams sends the entries of every stream on one channel, which closes
+// when all of them have ended or ctx is cancelled. One Pod failing must not
+// end the logs of the others, so a failure is passed on as a line of its Pod.
+func mergeStreams(ctx context.Context, streams ...<-chan LogEntry) <-chan LogEntry {
+	merged := make(chan LogEntry)
+	var running sync.WaitGroup
+	for _, stream := range streams {
+		running.Add(1)
+		go func() {
+			defer running.Done()
+			for {
+				select {
+				case entry, open := <-stream:
+					if !open {
+						return
+					}
+					if entry.Err != nil {
+						entry = LogEntry{Pod: entry.Pod, Line: "stream error: " + entry.Err.Error()}
+					}
+					select {
+					case merged <- entry:
+					case <-ctx.Done():
+						return
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+	go func() {
+		running.Wait()
+		close(merged)
+	}()
+	return merged
+}
+
+// singleEntry is a stream of one entry, for a notice among the lines of Pods.
+func singleEntry(entry LogEntry) <-chan LogEntry {
+	stream := make(chan LogEntry, 1)
+	stream <- entry
+	close(stream)
+	return stream
 }

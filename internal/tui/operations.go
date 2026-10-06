@@ -145,9 +145,11 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 	case selected.Kind == "Application":
 		m.status = "Select a resource card to inspect it"
 		return m, nil
-	case key == "l" && selected.Kind != "Pod":
-		m.status = "Logs are only available for Pods"
+	case key == "l" && !hasLogs(selected.Kind):
+		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
 		return m, nil
+	case key == "l" && selected.Kind != "Pod":
+		return m.followWorkload(selected)
 	}
 	inspector, ok := m.source.(argocd.ResourceInspector)
 	if !ok {
@@ -157,7 +159,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 
 	application := m.resourceTree.Application
 	subject := selected.Kind + "/" + selected.Name
-	m.logPod = selected
+	m.logTarget = selected
 	m.loading = true
 	return m, m.request(func(ctx context.Context) tea.Msg {
 		var text string
@@ -171,7 +173,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 			text, err = inspector.ResourceDiff(ctx, application, selected)
 		case "l":
 			kind = "logs"
-			text, err = inspector.ResourceLogs(ctx, application, selected)
+			text, err = inspector.ResourceLogs(ctx, application, selected, "")
 		}
 		return loadedText{kind: kind, subject: subject, text: text, err: err}
 	})

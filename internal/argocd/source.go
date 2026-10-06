@@ -27,21 +27,37 @@ type ApplicationOperator interface {
 type ResourceInspector interface {
 	ResourceManifest(ctx context.Context, application string, resource explorer.ResourceNode) (string, error)
 	ResourceDiff(ctx context.Context, application string, resource explorer.ResourceNode) (string, error)
-	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode) (string, error)
+	// ResourceLogs returns the recent log lines of a Pod. An empty container
+	// means its default container; AllContainers returns every container's
+	// lines, grouped by container and prefixed with its name.
+	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode, container string) (string, error)
 }
 
 // LogEntry is one line of a followed log, or the error that ended the stream.
 type LogEntry struct {
-	Line string
-	Err  error
+	// Pod and Container are where the line came from, when the source knows.
+	Pod       string
+	Container string
+	Line      string
+	Err       error
 }
 
-// LogStreamer follows the logs of a Pod.
+// AllContainers asks for the logs of every container instead of one.
+const AllContainers = "*"
+
+// LogSeparator ends the name that prefixes a line when logs from several
+// Pods or containers are shown together.
+const LogSeparator = " │ "
+
+// LogStreamer follows the logs of a Pod, or of all the Pods of a workload.
 type LogStreamer interface {
-	// StreamLogs sends the Pod's recent log lines and then new ones as they are
-	// written. The channel is closed when the stream ends, after a final entry
-	// with Err set if it failed. Cancel ctx to stop the stream.
-	StreamLogs(ctx context.Context, application string, pod explorer.ResourceNode) (<-chan LogEntry, error)
+	// StreamLogs sends the recent log lines of a Pod, or of every Pod of a
+	// Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, and then new lines
+	// as they are written. The channel is closed when the stream ends, after a
+	// final entry with Err set if it failed. Cancel ctx to stop the stream.
+	// An empty container means each Pod's default container; AllContainers
+	// follows every container.
+	StreamLogs(ctx context.Context, application string, resource explorer.ResourceNode, container string) (<-chan LogEntry, error)
 }
 
 // RollbackOperator lists an Application's past deployments and redeploys one of them.

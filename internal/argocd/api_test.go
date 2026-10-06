@@ -201,7 +201,7 @@ func TestAPISourceInspectsResources(t *testing.T) {
 	}
 
 	pod := explorer.ResourceNode{Version: "v1", Kind: "Pod", Namespace: "store", Name: "web-1-abc"}
-	logs, err := source.ResourceLogs(context.Background(), "checkout", pod)
+	logs, err := source.ResourceLogs(context.Background(), "checkout", pod, "app")
 	if err != nil || logs != "starting\nready" {
 		t.Fatalf("ResourceLogs() = %q, %v", logs, err)
 	}

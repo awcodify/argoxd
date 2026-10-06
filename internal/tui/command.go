@@ -140,6 +140,9 @@ func (m Model) suggestions() []string {
 	if m.prompt.search {
 		return nil
 	}
+	if m.prompt.field == containerField {
+		return containerSuggestions(m.prompt.input, m.logContainers)
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
@@ -195,6 +198,9 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if field != "" {
 			if chosen != "" {
 				input = chosen
+			}
+			if field == containerField {
+				return m.showContainer(input)
 			}
 			m.runFilter(field, input)
 			return m, nil

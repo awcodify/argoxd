@@ -216,8 +216,13 @@ func (s *DemoSource) ResourceManifest(_ context.Context, _ string, resource expl
 	if resource.Kind == "Deployment" {
 		manifest += fmt.Sprintf("  labels:\n    app: %[1]s\nspec:\n  replicas: 3\n  selector:\n    matchLabels:\n      app: %[1]s\n"+
 			"  template:\n    metadata:\n      labels:\n        app: %[1]s\n    spec:\n      containers:\n"+
-			"        - name: %[1]s\n          image: registry.example.com/%[1]s:1.4.2\n          ports:\n            - containerPort: 8080\n",
+			"        - name: app\n          image: registry.example.com/%[1]s:1.4.2\n          ports:\n            - containerPort: 8080\n"+
+			"        - name: metrics\n          image: registry.example.com/metrics-exporter:0.9.0\n          ports:\n            - containerPort: 9102\n",
 			resource.Name)
+	}
+	if resource.Kind == "Pod" {
+		manifest += "spec:\n  containers:\n    - name: app\n      image: registry.example.com/app:1.4.2\n" +
+			"    - name: metrics\n      image: registry.example.com/metrics-exporter:0.9.0\n"
 	}
 	return manifest, nil
 }
@@ -243,20 +248,58 @@ func (s *DemoSource) ResourceDiff(_ context.Context, application string, resourc
 	}, "\n"), nil
 }
 
-// ResourceLogs returns sample log lines, with errors for a Degraded Pod.
-func (s *DemoSource) ResourceLogs(_ context.Context, _ string, pod explorer.ResourceNode) (string, error) {
+// demoContainerNames are the containers of every sample Pod.
+var demoContainerNames = []string{"app", "metrics"}
+
+// demoContainers resolves a chosen container: none means the app container.
+func demoContainers(container string) ([]string, error) {
+	switch {
+	case container == "":
+		return []string{"app"}, nil
+	case container == AllContainers:
+		return demoContainerNames, nil
+	case slices.Contains(demoContainerNames, container):
+		return []string{container}, nil
+	}
+	return nil, fmt.Errorf("container %q not found in the pod", container)
+}
+
+// ResourceLogs returns sample log lines of a container, with errors for a
+// Degraded Pod's app. AllContainers groups the lines under each container's name.
+func (s *DemoSource) ResourceLogs(_ context.Context, _ string, pod explorer.ResourceNode, container string) (string, error) {
+	containers, err := demoContainers(container)
+	if err != nil {
+		return "", err
+	}
+	var lines []string
+	for _, name := range containers {
+		for _, line := range recentLogLines(pod, name) {
+			if container == AllContainers {
+				line = name + LogSeparator + line
+			}
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+func recentLogLines(pod explorer.ResourceNode, container string) []string {
+	if container == "metrics" {
+		return []string{
+			"2026-10-05T09:12:01Z INFO  metrics exporter listening on :9102",
+			"2026-10-05T09:12:11Z INFO  scrape /metrics 200 2ms",
+		}
+	}
 	lines := []string{
 		"2026-10-05T09:12:01Z INFO  starting " + pod.Name,
 		"2026-10-05T09:12:02Z INFO  listening on :8080",
 	}
 	if pod.Health == "Degraded" {
-		lines = append(lines,
+		return append(lines,
 			"2026-10-05T09:12:09Z ERROR payment gateway unreachable: dial tcp 10.0.4.17:443: i/o timeout",
 			"2026-10-05T09:12:09Z FATAL readiness check failed, exiting")
-	} else {
-		lines = append(lines, "2026-10-05T09:12:10Z INFO  GET /healthz 200 1ms")
 	}
-	return strings.Join(lines, "\n"), nil
+	return append(lines, "2026-10-05T09:12:10Z INFO  GET /healthz 200 1ms")
 }
 
 func (s *DemoSource) find(name string) (explorer.Application, error) {
@@ -282,28 +325,62 @@ func (s *DemoSource) update(name string, change func(*explorer.Application)) err
 	return fmt.Errorf("application %q not found", name)
 }
 
-// StreamLogs sends the Pod's sample log, then a new line every logInterval.
-func (s *DemoSource) StreamLogs(ctx context.Context, name string, pod explorer.ResourceNode) (<-chan LogEntry, error) {
+// StreamLogs sends a Pod's sample log, or the interleaved logs of the Pods of
+// a workload, with a new line every logInterval.
+func (s *DemoSource) StreamLogs(ctx context.Context, name string, resource explorer.ResourceNode, container string) (<-chan LogEntry, error) {
 	if _, err := s.find(name); err != nil {
 		return nil, err
 	}
-	recent, err := s.ResourceLogs(ctx, name, pod)
+	if resource.Kind == "Pod" {
+		return s.streamPod(ctx, name, resource, container)
+	}
+	tree, err := s.LoadResourceTree(ctx, name)
 	if err != nil {
 		return nil, err
 	}
+	var streams []<-chan LogEntry
+	for _, node := range tree.Nodes {
+		if node.Kind != "Pod" {
+			continue
+		}
+		stream, err := s.streamPod(ctx, name, node, container)
+		if err != nil {
+			return nil, err
+		}
+		streams = append(streams, stream)
+	}
+	return mergeStreams(ctx, streams...), nil
+}
 
+// streamPod follows the chosen containers of a Pod as one stream.
+func (s *DemoSource) streamPod(ctx context.Context, name string, pod explorer.ResourceNode, container string) (<-chan LogEntry, error) {
+	containers, err := demoContainers(container)
+	if err != nil {
+		return nil, err
+	}
+	streams := make([]<-chan LogEntry, 0, len(containers))
+	for _, each := range containers {
+		streams = append(streams, s.streamContainer(ctx, pod, each))
+	}
+	if len(streams) == 1 {
+		return streams[0], nil
+	}
+	return mergeStreams(ctx, streams...), nil
+}
+
+func (s *DemoSource) streamContainer(ctx context.Context, pod explorer.ResourceNode, container string) <-chan LogEntry {
 	entries := make(chan LogEntry)
 	go func() {
 		defer close(entries)
 		send := func(line string) bool {
 			select {
-			case entries <- LogEntry{Line: line}:
+			case entries <- LogEntry{Pod: pod.Name, Container: container, Line: line}:
 				return true
 			case <-ctx.Done():
 				return false
 			}
 		}
-		for _, line := range strings.Split(recent, "\n") {
+		for _, line := range recentLogLines(pod, container) {
 			if !send(line) {
 				return
 			}
@@ -313,7 +390,7 @@ func (s *DemoSource) StreamLogs(ctx context.Context, name string, pod explorer.R
 		for count := 1; ; count++ {
 			select {
 			case now := <-ticker.C:
-				if !send(demoLogLine(now, pod, count)) {
+				if !send(demoLogLine(now, pod, container, count)) {
 					return
 				}
 			case <-ctx.Done():
@@ -321,13 +398,16 @@ func (s *DemoSource) StreamLogs(ctx context.Context, name string, pod explorer.R
 			}
 		}
 	}()
-	return entries, nil
+	return entries
 }
 
-// demoLogLine is the count-th new line of a Pod's sample log.
-func demoLogLine(now time.Time, pod explorer.ResourceNode, count int) string {
+// demoLogLine is the count-th new line of a container's sample log.
+func demoLogLine(now time.Time, pod explorer.ResourceNode, container string, count int) string {
 	timestamp := now.UTC().Format(time.RFC3339)
-	if pod.Health == "Degraded" {
+	switch {
+	case container == "metrics":
+		return fmt.Sprintf("%s INFO  scrape /metrics 200 %dms", timestamp, 1+count%4)
+	case pod.Health == "Degraded":
 		return fmt.Sprintf("%s WARN  payment gateway unreachable, retry %d", timestamp, count)
 	}
 	return fmt.Sprintf("%s INFO  GET /api/items/%d 200 %dms", timestamp, count, 2+count%7)

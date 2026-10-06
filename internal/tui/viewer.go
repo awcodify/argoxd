@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"hash/fnv"
 	"regexp"
 	"strings"
 
+	"github.com/awcodify/argoxd/internal/argocd"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -24,6 +26,8 @@ type textView struct {
 	subject string
 	lines   []string
 	offset  int
+	// prefixed marks lines that start with the name of the Pod they came from.
+	prefixed bool
 }
 
 func newTextView(kind, subject, text string) textView {
@@ -45,6 +49,10 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.view = applicationTreeView
 	case "f":
 		return m.toggleFollow()
+	case "c":
+		if m.viewer.kind == "logs" {
+			return m.chooseContainer()
+		}
 	case "down", "j":
 		m.viewer.offset++
 	case "up", "k":
@@ -71,7 +79,20 @@ func (v textView) render(width, height int) []string {
 	return lines
 }
 
+// podColors are the colors a workload log gives its Pods, one per name.
+var podColors = []lipgloss.Color{colorSky, colorTeal, colorAmber, colorViolet, colorRose, colorAccent}
+
+// podStyle gives a Pod the same color every time it is drawn.
+func podStyle(pod string) lipgloss.Style {
+	sum := fnv.New32a()
+	_, _ = sum.Write([]byte(pod))
+	return lipgloss.NewStyle().Foreground(podColors[sum.Sum32()%uint32(len(podColors))])
+}
+
 func (v textView) highlight(line string, width int) string {
+	if pod, message, found := strings.Cut(line, argocd.LogSeparator); found && v.prefixed {
+		return " " + podStyle(pod).Render(pod+strings.TrimRight(argocd.LogSeparator, " ")) + " " + textStyle.Render(message)
+	}
 	switch v.kind {
 	case "diff":
 		band := padRight(ansi.Truncate(" "+line, width, "…"), width)

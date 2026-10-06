@@ -62,7 +62,7 @@ func TestDemoSourceTreeNestsPodsUnderDeployment(t *testing.T) {
 	if len(deployment.Children) != 1 || len(deployment.Children[0].Children) != 3 {
 		t.Fatalf("deployment children = %+v, want one ReplicaSet owning three Pods", deployment.Children)
 	}
-	logs, _ := source.ResourceLogs(context.Background(), "payments", deployment.Children[0].Children[0])
+	logs, _ := source.ResourceLogs(context.Background(), "payments", deployment.Children[0].Children[0], "")
 	if !strings.Contains(logs, "ERROR") {
 		t.Fatalf("degraded pod logs have no error:\n%s", logs)
 	}

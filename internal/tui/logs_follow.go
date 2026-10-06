@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/awcodify/argoxd/internal/argocd"
+	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -39,6 +40,30 @@ type followState struct {
 	cancel  context.CancelFunc
 }
 
+// hasLogs reports whether a resource kind has logs to show: a Pod, or a
+// workload that runs Pods.
+func hasLogs(kind string) bool {
+	switch kind {
+	case "Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job":
+		return true
+	}
+	return false
+}
+
+// followWorkload opens the combined log of a workload's Pods, which is
+// followed from the start.
+func (m Model) followWorkload(workload explorer.ResourceNode) (tea.Model, tea.Cmd) {
+	if _, ok := m.source.(argocd.LogStreamer); !ok {
+		m.err = errNoStreaming
+		return m, nil
+	}
+	m.logTarget = workload
+	m.resetContainers()
+	m.viewer = textView{kind: "logs", subject: workload.Kind + "/" + workload.Name}
+	m.view = textViewMode
+	return m.toggleFollow()
+}
+
 func (m Model) following() bool {
 	return m.follow.cancel != nil
 }
@@ -65,9 +90,11 @@ func (m Model) toggleFollow() (tea.Model, tea.Cmd) {
 	m.err, m.status = nil, ""
 	// The stream starts with the recent lines, so it replaces the snapshot.
 	m.viewer.lines, m.viewer.offset = nil, 0
-	application, pod := m.resourceTree.Application, m.logPod
+	m.viewer.prefixed = m.prefixesLines()
+	m.logSeen = ""
+	application, pod, container := m.resourceTree.Application, m.logTarget, m.logContainer
 	return m, func() tea.Msg {
-		entries, err := streamer.StreamLogs(ctx, application, pod)
+		entries, err := streamer.StreamLogs(ctx, application, pod, container)
 		return logStreamStarted{stream: id, entries: entries, err: err}
 	}
 }
@@ -102,7 +129,14 @@ func (m Model) applyLogLine(message logLine) (tea.Model, tea.Cmd) {
 		m.stopFollowing()
 		return m, nil
 	}
-	m.appendLogLine(message.entry.Line)
+	line := message.entry.Line
+	if prefix := m.linePrefix(message.entry); prefix != "" {
+		line = prefix + argocd.LogSeparator + line
+	}
+	if m.logContainer == "" && m.logSeen == "" {
+		m.logSeen = message.entry.Container
+	}
+	m.appendLogLine(line)
 	return m, m.nextLogLine()
 }
 

@@ -12,9 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func (f *fakeSource) StreamLogs(ctx context.Context, _ string, pod explorer.ResourceNode) (<-chan argocd.LogEntry, error) {
+func (f *fakeSource) StreamLogs(ctx context.Context, _ string, pod explorer.ResourceNode, container string) (<-chan argocd.LogEntry, error) {
 	f.streamCtx = ctx
 	f.streamedPods = append(f.streamedPods, pod)
+	f.streamedContainers = append(f.streamedContainers, container)
 	return f.stream, nil
 }
 
@@ -41,6 +42,15 @@ func openPodLogs(t *testing.T, source *fakeSource) Model {
 func step(model Model, command tea.Cmd) (Model, tea.Cmd) {
 	updated, next := model.Update(command())
 	return updated.(Model), next
+}
+
+// stepT is step, failing the test instead of panicking when there is no command.
+func stepT(t *testing.T, model Model, command tea.Cmd) (Model, tea.Cmd) {
+	t.Helper()
+	if command == nil {
+		t.Fatalf("expected a command to run next, got none:\n%s", model.View())
+	}
+	return step(model, command)
 }
 
 // follow presses f and delivers the stream's start and its first count entries.

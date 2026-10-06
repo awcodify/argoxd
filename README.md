@@ -118,8 +118,9 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies |
-| `y` / `d` / `l` | Show the selected card's YAML, diff, or logs |
+| `y` / `d` / `l` | Show the selected card's YAML, diff, or logs. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods) |
 | `f` | In a log view, follow new lines as they arrive (the last 10,000 are kept); press again, or Esc, to stop |
+| `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
 | Space / Left / Right | Expand or collapse the selected inventory node |
 | Esc | Go back, or clear the search and filters |
 | `s` | Sync the selected Application; toggle `p` prune and `r` dry run, then Enter |
