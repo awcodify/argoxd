@@ -30,6 +30,12 @@ Sleep 2s
 Down 5
 Sleep 1s
 
+# Its events show why it keeps restarting.
+Type "e"
+Sleep 3s
+Escape
+Sleep 500ms
+
 # Read its logs, then go back out (the last Esc clears the filter).
 Type "l"
 Sleep 3s
@@ -40,15 +46,19 @@ Sleep 500ms
 Escape
 Sleep 1s
 
-# Sync an OutOfSync Application.
+# Mark the OutOfSync Applications and sync them together.
 Type "S"
 Sleep 600ms
 Type "OutOfSync"
 Sleep 600ms
 Enter
 Sleep 1.5s
+Space
+Sleep 500ms
+Space
+Sleep 1s
 Type "s"
-Sleep 1.5s
+Sleep 2s
 Enter
 Sleep 2.5s
 
