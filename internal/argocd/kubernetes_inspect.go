@@ -48,16 +48,30 @@ func (s *KubernetesSource) ResourceDiff(context.Context, string, explorer.Resour
 	return "", errDiffNeedsAPI
 }
 
-// ResourceLogs returns the most recent log lines of a Pod.
-func (s *KubernetesSource) ResourceLogs(ctx context.Context, _ string, pod explorer.ResourceNode) (string, error) {
+// ResourceLogs returns the most recent log lines of a Pod's container. An empty
+// container means its default one; AllContainers groups each container's lines
+// under its name.
+func (s *KubernetesSource) ResourceLogs(ctx context.Context, _ string, pod explorer.ResourceNode, container string) (string, error) {
 	clients, err := s.clients()
 	if err != nil {
 		return "", err
 	}
-	tail := int64(logTailLines)
-	logs, err := clients.typed.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{TailLines: &tail}).DoRaw(ctx)
-	if err != nil {
-		return "", fmt.Errorf("load logs for %s: %w", pod.Name, err)
+	var lines []string
+	for _, name := range containersToRead(readPod(ctx, clients.typed, pod.Namespace, pod.Name, container), container) {
+		tail := int64(logTailLines)
+		logs, err := clients.typed.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: name, TailLines: &tail}).DoRaw(ctx)
+		if err != nil {
+			return "", fmt.Errorf("load logs for %s: %w", pod.Name, err)
+		}
+		text := strings.TrimRight(string(logs), "\n")
+		if container != AllContainers {
+			return text, nil
+		}
+		if text != "" {
+			for _, line := range strings.Split(text, "\n") {
+				lines = append(lines, name+LogSeparator+line)
+			}
+		}
 	}
-	return strings.TrimRight(string(logs), "\n"), nil
+	return strings.Join(lines, "\n"), nil
 }

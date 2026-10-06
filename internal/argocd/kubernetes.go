@@ -117,10 +117,29 @@ func (s *KubernetesSource) listOwnedResources(ctx context.Context, client dynami
 
 // SyncApplication requests a sync through the Application operation field.
 func (s *KubernetesSource) SyncApplication(ctx context.Context, application string, options SyncOptions) error {
-	patch := map[string]any{"operation": map[string]any{"sync": map[string]any{
-		"prune":  options.Prune,
-		"dryRun": options.DryRun,
-	}}}
+	return s.sync(ctx, application, nil, options)
+}
+
+var _ ResourceSyncer = (*KubernetesSource)(nil)
+
+// SyncResources requests a sync of only the listed resources.
+func (s *KubernetesSource) SyncResources(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	return s.sync(ctx, application, resources, options)
+}
+
+// sync writes the operation; no resources means the whole Application.
+func (s *KubernetesSource) sync(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	operation := map[string]any{"prune": options.Prune, "dryRun": options.DryRun}
+	if len(resources) > 0 {
+		chosen := make([]any, 0, len(resources))
+		for _, resource := range resources {
+			chosen = append(chosen, map[string]any{
+				"group": resource.Group, "kind": resource.Kind, "namespace": resource.Namespace, "name": resource.Name,
+			})
+		}
+		operation["resources"] = chosen
+	}
+	patch := map[string]any{"operation": map[string]any{"sync": operation}}
 	if err := s.patchApplication(ctx, application, patch); err != nil {
 		return fmt.Errorf("sync application %q: %w", application, err)
 	}

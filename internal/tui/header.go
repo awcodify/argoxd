@@ -72,11 +72,29 @@ func (m Model) projectHints() []keyHint {
 func (m Model) keyHints() []keyHint {
 	switch m.view {
 	case textViewMode:
-		return []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}, {"esc", "Back"}, {"q", "Quit"}}
+		hints := []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}}
+		if m.viewer.kind == "events" {
+			hints = append(hints, keyHint{"/", "Search"})
+		}
+		if m.viewer.kind == "logs" {
+			hints = append(hints, keyHint{"/", "Search"}, keyHint{"c", "Container"})
+			if m.logWorkload.Kind != "" {
+				hints = append(hints, keyHint{"p", "Pod"})
+			}
+		}
+		if m.following() {
+			hints = append(hints, keyHint{"f", "Stop following"})
+		} else if m.viewer.kind == "logs" {
+			hints = append(hints, keyHint{"f", "Follow"})
+		}
+		return append(hints, keyHint{"esc", "Back"}, keyHint{"q", "Quit"})
+	case historyViewMode:
+		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
 		return []keyHint{
-			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"},
-			{"s", "Sync"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"},
+			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
@@ -86,16 +104,16 @@ func (m Model) keyHints() []keyHint {
 	if m.view == listView {
 		hints = append(hints, keyHint{"/", "Search"})
 		if m.explorer.Screen() == explorer.ApplicationsScreen {
-			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"})
+			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"}, keyHint{"space", "Mark"})
 		}
 	} else {
 		hints = append(hints, keyHint{"esc", "Back"})
 	}
 	if m.selectedApplication() != "" {
 		if m.view == listView {
-			hints = append(hints, keyHint{"enter", "Dependencies"})
+			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"})
 		}
-		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
+		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }

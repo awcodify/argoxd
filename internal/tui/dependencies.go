@@ -31,7 +31,7 @@ func (m Model) renderDependencies(width, height int) []string {
 	root := m.dependencyRoot()
 
 	index := 0
-	tree := renderBranch(root, m.treeCursor, m.treeSearch, m.treeFilter, "", &index)
+	tree := renderBranch(root, m.treeCursor, m.treeSearch, m.treeFilter, m.markedCards, "", &index)
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
@@ -85,13 +85,13 @@ func (m Model) selectedCard() explorer.ResourceNode {
 // renderBranch renders a card followed by its children, numbering cards in
 // the same depth-first order the cursor moves through them. While searching or filtering,
 // cards shown only to give a match its context are dimmed.
-func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, inheritedSync string, index *int) []string {
+func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, marked map[explorer.ResourceReference]bool, inheritedSync string, index *int) []string {
 	context := (search != "" || filter.Active()) && *index > 0 && !node.Matches(search, filter, inheritedSync)
-	lines := strings.Split(resourceCard(node, *index == selected, context), "\n")
+	lines := strings.Split(drawCard(node, *index == selected, context, marked[node.Reference()]), "\n")
 	*index++
 	for position, child := range node.Children {
 		last := position == len(node.Children)-1
-		for row, line := range renderBranch(child, selected, search, filter, node.EffectiveSync(inheritedSync), index) {
+		for row, line := range renderBranch(child, selected, search, filter, marked, node.EffectiveSync(inheritedSync), index) {
 			lines = append(lines, "  "+mutedStyle.Render(connector(row, last))+line)
 		}
 	}
@@ -114,6 +114,11 @@ func connector(row int, last bool) string {
 // resourceCard shows the kind in a border colored by status, the name with
 // its namespace, and the health and sync status.
 func resourceCard(node explorer.ResourceNode, selected, context bool) string {
+	return drawCard(node, selected, context, false)
+}
+
+// drawCard renders a card; a marked one has a ● before its kind.
+func drawCard(node explorer.ResourceNode, selected, context, marked bool) string {
 	color := statusColor(node.Health, node.Sync)
 	border := lipgloss.RoundedBorder()
 	nameStyle := brightStyle
@@ -126,7 +131,7 @@ func resourceCard(node explorer.ResourceNode, selected, context bool) string {
 		nameStyle = mutedStyle
 	}
 	inner := cardWidth - 4
-	name := nameStyle.Render(ansi.Truncate(node.Name, inner, "…"))
+	name := nameStyle.Render(truncateMiddle(node.Name, inner))
 	status := joinNonEmpty(statusBadge(node.Health), statusBadge(node.Sync))
 	if status == "" {
 		status = mutedStyle.Render("no status reported")
@@ -134,7 +139,7 @@ func resourceCard(node explorer.ResourceNode, selected, context bool) string {
 	return box{
 		border: border,
 		color:  color,
-		title:  " " + lipgloss.NewStyle().Foreground(color).Bold(true).Render(node.Kind) + " ",
+		title:  " " + markPrefix(marked) + lipgloss.NewStyle().Foreground(color).Bold(true).Render(node.Kind) + " ",
 		width:  cardWidth,
 		height: cardHeight,
 	}.render([]string{
@@ -193,7 +198,7 @@ func renderDetails(selected card) []string {
 	rows := [][2]string{
 		{"Kind", brightStyle.Render(node.Kind)},
 		{"Group", textStyle.Render(node.Group)},
-		{"Name", brightStyle.Render(node.Name)},
+		{"Name", brightStyle.Render(truncateMiddle(node.Name, detailsWidth-2-1-11))},
 		{"Namespace", textStyle.Render(node.Namespace)},
 		{"Health", statusBadge(node.Health)},
 		{"Sync", statusBadge(node.Sync)},
@@ -215,4 +220,22 @@ func renderDetails(selected card) []string {
 		width:  detailsWidth,
 		height: len(lines) + 3,
 	}.render(lines), "\n")
+}
+
+// truncateMiddle shortens a name to width columns by cutting out its middle, so
+// the end stays visible. Generated names, such as a Pod's, differ only there.
+func truncateMiddle(name string, width int) string {
+	if ansi.StringWidth(name) <= width {
+		return name
+	}
+	tail := min(12, width/3)
+	head := max(0, width-tail-1)
+	return ansi.Truncate(name, head, "") + "…" + ansi.TruncateLeft(name, ansi.StringWidth(name)-tail, "")
+}
+
+func markPrefix(marked bool) string {
+	if marked {
+		return accentStyle.Render(markGlyph) + " "
+	}
+	return ""
 }

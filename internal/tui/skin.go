@@ -30,6 +30,7 @@ var (
 	keycapStyle  = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Bold(true).Padding(0, 1)
 	columnStyle  = lipgloss.NewStyle().Foreground(colorSlate).Bold(true)
 	errorStyle   = lipgloss.NewStyle().Foreground(colorRose).Bold(true)
+	warningStyle = lipgloss.NewStyle().Foreground(colorAmber)
 	infoStyle    = lipgloss.NewStyle().Foreground(colorSky)
 	selectedBar  = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Render("▌")
 	selectedText = lipgloss.NewStyle().Foreground(colorBright).Background(colorSurface).Bold(true)

@@ -32,12 +32,18 @@ type loadedText struct {
 	kind    string
 	subject string
 	text    string
-	err     error
+	// fromList means the text was opened from the Applications list, so Esc returns there.
+	fromList bool
+	err      error
 }
 
 type operationCompleted struct {
 	action      string
 	application string
+	// subject names what the action was about when it is not the Application.
+	subject string
+	// refreshTree reloads the open dependency view too.
+	refreshTree bool
 	err         error
 }
 
@@ -145,9 +151,16 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 	case selected.Kind == "Application":
 		m.status = "Select a resource card to inspect it"
 		return m, nil
-	case key == "l" && selected.Kind != "Pod":
-		m.status = "Logs are only available for Pods"
+	case key == "l" && !hasLogs(selected.Kind):
+		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
 		return m, nil
+	case key == "l" && selected.Kind != "Pod":
+		return m.followLog(selected, nil)
+	case key == "l":
+		// A Pod shows its workload's log, filtered to that Pod, when it has one.
+		if workload, found := m.workloadOf(selected); found && m.canStream() {
+			return m.followLog(workload, &selected)
+		}
 	}
 	inspector, ok := m.source.(argocd.ResourceInspector)
 	if !ok {
@@ -157,6 +170,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 
 	application := m.resourceTree.Application
 	subject := selected.Kind + "/" + selected.Name
+	m.logTarget = selected
 	m.loading = true
 	return m, m.request(func(ctx context.Context) tea.Msg {
 		var text string
@@ -170,7 +184,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 			text, err = inspector.ResourceDiff(ctx, application, selected)
 		case "l":
 			kind = "logs"
-			text, err = inspector.ResourceLogs(ctx, application, selected)
+			text, err = inspector.ResourceLogs(ctx, application, selected, "")
 		}
 		return loadedText{kind: kind, subject: subject, text: text, err: err}
 	})

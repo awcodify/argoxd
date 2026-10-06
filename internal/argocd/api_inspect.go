@@ -3,7 +3,6 @@ package argocd
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -69,17 +68,39 @@ func (s *APISource) ResourceDiff(ctx context.Context, application string, resour
 	return strings.Join(lineDiff(live, desired), "\n"), nil
 }
 
-// ResourceLogs returns the most recent log lines of a Pod.
-func (s *APISource) ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode) (string, error) {
+// ResourceLogs returns the most recent log lines of a Pod's container.
+func (s *APISource) ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode, container string) (string, error) {
+	var lines []string
+	for _, name := range s.logContainerNames(ctx, application, pod, container) {
+		recent, err := s.containerLines(ctx, application, pod, name)
+		if err != nil {
+			return "", err
+		}
+		for _, line := range recent {
+			if container == AllContainers {
+				line = name + LogSeparator + line
+			}
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
+// containerLines fetches the recent lines of one container; an empty name
+// leaves the choice to Argo CD.
+func (s *APISource) containerLines(ctx context.Context, application string, pod explorer.ResourceNode, container string) ([]string, error) {
 	query := url.Values{
 		"podName":   {pod.Name},
 		"namespace": {pod.Namespace},
 		"tailLines": {strconv.Itoa(logTailLines)},
 		"follow":    {"false"},
 	}
+	if container != "" {
+		query.Set("container", container)
+	}
 	response, err := s.do(ctx, http.MethodGet, applicationPath(application, "logs", query), nil)
 	if err != nil {
-		return "", fmt.Errorf("load logs: %w", err)
+		return nil, fmt.Errorf("load logs: %w", err)
 	}
 	defer response.Body.Close()
 
@@ -87,19 +108,14 @@ func (s *APISource) ResourceLogs(ctx context.Context, application string, pod ex
 	var lines []string
 	scanner := bufio.NewScanner(response.Body)
 	for scanner.Scan() {
-		var entry struct {
-			Result struct {
-				Content string `json:"content"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err == nil && entry.Result.Content != "" {
-			lines = append(lines, entry.Result.Content)
+		if entry, ok := parseLogEntry(scanner.Bytes()); ok {
+			lines = append(lines, entry.Line)
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("read logs: %w", err)
+		return nil, fmt.Errorf("read logs: %w", err)
 	}
-	return strings.Join(lines, "\n"), nil
+	return lines, nil
 }
 
 func applicationPath(application, endpoint string, query url.Values) string {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,9 @@ const (
 
 // renderContent returns the frame title and body lines for the active view.
 func (m Model) renderContent(width, height int) (string, []string) {
+	if m.confirm.active() {
+		return viewTitle("confirm", "", -1), m.renderConfirmation(width, height)
+	}
 	switch m.view {
 	case inventoryTreeView:
 		return viewTitle("inventory", "", -1), m.renderInventory(width, height)
@@ -25,6 +29,8 @@ func (m Model) renderContent(width, height int) (string, []string) {
 		return withSearch(title, m.treeSearch, m.treeFilter), m.renderDependencies(width, height)
 	case textViewMode:
 		return m.viewerTitle(), m.viewer.render(width, height)
+	case historyViewMode:
+		return viewTitle("history", m.history.application, len(m.history.entries)), m.historyTable().render(m.history.cursor, width, height)
 	}
 
 	switch m.explorer.Screen() {
@@ -52,6 +58,9 @@ func (m Model) renderContent(width, height int) (string, []string) {
 // viewerTitle names the open text, and for a diff explains which side is which.
 func (m Model) viewerTitle() string {
 	title := viewTitle(m.viewer.kind, m.viewer.subject, -1)
+	if m.viewer.kind == "logs" {
+		return m.logsTitle()
+	}
 	if m.viewer.kind != "diff" {
 		return title
 	}
@@ -89,7 +98,9 @@ func (m Model) applicationsTable() table {
 			application.Name, application.Project, application.Sync, application.Health,
 			application.Revision, application.Destination, age(application.LastSync),
 		})
+		result.marked = append(result.marked, m.marked[application.Name])
 	}
+	result.markable = true
 	return result
 }
 
@@ -168,7 +179,13 @@ func (m Model) renderCrumbs() string {
 	case applicationTreeView:
 		crumbs = append(crumbs, m.resourceTree.Application)
 	case textViewMode:
-		crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
+		if m.viewerFromList {
+			crumbs = append(crumbs, m.viewer.subject, m.viewer.kind)
+		} else {
+			crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
+		}
+	case historyViewMode:
+		crumbs = append(crumbs, m.history.application, "history")
 	}
 	rendered := make([]string, len(crumbs))
 	for index, crumb := range crumbs {
@@ -183,15 +200,6 @@ func (m Model) renderCrumbs() string {
 // renderFlash shows the most urgent message: a pending confirmation, an error, or progress.
 func (m Model) renderFlash() string {
 	switch {
-	case m.syncing.application != "":
-		return " " + accentStyle.Render("⟳ Sync "+m.syncing.application+"?") +
-			"   " + keycap("enter", "sync") +
-			"  " + keycap("p", "prune "+toggle(m.syncing.options.Prune)) +
-			"  " + keycap("r", "dry run "+toggle(m.syncing.options.DryRun)) +
-			"  " + keycap("esc", "cancel")
-	case m.confirming != "":
-		return " " + errorStyle.Render("✗ Delete "+m.confirming+" and its managed resources?") +
-			"   " + keycap("y", "confirm") + "  " + keycap("n", "cancel")
 	case m.err != nil:
 		return " " + errorStyle.Render("✗ "+m.err.Error())
 	case m.loading:
@@ -215,7 +223,9 @@ func (m Model) renderPrompt(width int) string {
 		symbol, title = "▾", m.prompt.field
 	}
 	line := " " + accentStyle.Render(symbol) + " " + brightStyle.Render(m.prompt.input)
-	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found {
+	// Completing what was typed shows the rest as ghost text; with nothing typed
+	// the selected chip already says it.
+	if ghost, found := strings.CutPrefix(suggestion, m.prompt.input); found && m.prompt.input != "" {
 		line += mutedStyle.Render(ghost)
 	}
 	line += accentStyle.Render("▏")
@@ -228,19 +238,23 @@ func (m Model) renderPrompt(width int) string {
 		matches = matches[start : start+visibleSuggestion]
 	}
 	chips := make([]string, 0, len(matches))
+	selectedChip := 0
 	for _, match := range matches {
 		label := match
 		if command, found := findFilterCommand(match); found && !m.prompt.search && m.prompt.field == "" {
 			label += " " + mutedStyle.Render("shift+"+command.shortcut)
 		}
 		if match == suggestion {
+			selectedChip = len(chips)
 			chips = append(chips, keycapStyle.Render(label))
 			continue
 		}
 		chips = append(chips, mutedStyle.Render(" "+label+" "))
 	}
 	if len(chips) > 0 {
-		line += "    " + strings.Join(chips, " ") + "  " + mutedStyle.Render("⇥ complete  ↑↓ choose")
+		hint := mutedStyle.Render("⇥ complete  ↑↓ choose")
+		budget := width - 2 - lipgloss.Width(line) - 4 - 2 - lipgloss.Width(hint)
+		line += "    " + strings.Join(fitChips(chips, selectedChip, budget), " ") + "  " + hint
 	}
 
 	return box{
@@ -270,4 +284,76 @@ func screenName(screen explorer.Screen) string {
 	default:
 		return "settings"
 	}
+}
+
+// logsTitle names the open log and says what it shows: the Pod and container
+// chosen, the search, and whether it is followed. Long names can leave no room
+// for all of that, so the workload, the Pod and the container drop out in turn
+// while the search and the following marker stay.
+func (m Model) logsTitle() string {
+	levels := []struct{ subject, pod, container bool }{
+		{true, true, true}, {false, true, true}, {false, false, true}, {false, false, false},
+	}
+	var title string
+	for _, level := range levels {
+		subject := ""
+		if level.subject {
+			subject = m.viewer.subject
+		}
+		title = strings.TrimSuffix(viewTitle("logs", subject, -1), " ")
+		if level.pod && m.logPod != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("pod: "+m.logPod)
+		}
+		if label := m.containerLabel(); level.container && label != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("container: "+label)
+		}
+		if m.viewer.search != "" {
+			title += mutedStyle.Render(" · ") + accentStyle.Render("/"+m.viewer.search)
+		}
+		if m.following() {
+			title += mutedStyle.Render(" · ") + infoStyle.Render("● following")
+		}
+		title += " "
+		if lipgloss.Width(title) <= m.width-6 {
+			break
+		}
+	}
+	return title
+}
+
+// fitChips keeps the chips that fit in budget columns, scrolling so the selected
+// one stays visible. A "…" marks each side where chips are hidden.
+func fitChips(chips []string, selected, budget int) []string {
+	const marker = 2
+	fits := func(from, to int) bool {
+		used := 0
+		for _, chip := range chips[from:to] {
+			used += lipgloss.Width(chip) + 1
+		}
+		if from > 0 {
+			used += marker
+		}
+		if to < len(chips) {
+			used += marker
+		}
+		return used <= budget
+	}
+
+	start := 0
+	for start < selected && !fits(start, selected+1) {
+		start++
+	}
+	end := selected + 1
+	for end < len(chips) && fits(start, end+1) {
+		end++
+	}
+
+	fitted := slices.Clone(chips[start:end])
+	if start > 0 {
+		fitted = append([]string{mutedStyle.Render("…")}, fitted...)
+	}
+	if end < len(chips) {
+		fitted = append(fitted, mutedStyle.Render("…"))
+	}
+	return fitted
 }

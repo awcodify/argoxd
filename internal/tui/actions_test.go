@@ -100,8 +100,11 @@ func TestShiftRHardRefreshesTheApplication(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
 	model := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
 
-	updated, command := model.Update(key("R"))
-	settle(updated.(Model), command)
+	asking := press(model, "R")
+	if len(source.refreshed) != 0 {
+		t.Fatalf("refreshed before confirming: %v", source.refreshed)
+	}
+	run(asking, "enter")
 
 	if len(source.refreshed) != 1 || source.refreshed[0] != "grafana" {
 		t.Fatalf("refreshed = %v, want grafana", source.refreshed)
@@ -111,7 +114,7 @@ func TestShiftRHardRefreshesTheApplication(t *testing.T) {
 func TestCardActionsOpenTheViewer(t *testing.T) {
 	source := &fakeSource{
 		snapshot: storeSnapshot(),
-		tree:     checkoutTree(),
+		tree:     barePodTree(),
 		manifest: "kind: Deployment\nspec:\n  replicas: 2",
 		diff:     "  kind: Deployment\n- replicas: 1\n+ replicas: 2",
 		logs:     "starting\nready",
@@ -130,9 +133,6 @@ func TestCardActionsOpenTheViewer(t *testing.T) {
 		t.Fatalf("d did not show the diff:\n%s", view)
 	}
 
-	if view := run(deployment, "l").View(); !strings.Contains(view, "only available for Pods") {
-		t.Fatalf("l on a Deployment was not refused:\n%s", view)
-	}
 	if view := run(press(deployment, "j"), "l").View(); !strings.Contains(view, "ready") {
 		t.Fatalf("l on a Pod did not show logs:\n%s", view)
 	}
@@ -169,15 +169,42 @@ func TestApplicationsTableShowsRevisionDestinationAndLastSync(t *testing.T) {
 
 // fakeSource records operations and serves canned resources.
 type fakeSource struct {
-	snapshot  explorer.Snapshot
-	tree      explorer.ResourceTree
-	hang      bool
-	loads     int
-	synced    []argocd.SyncOptions
-	refreshed []string
-	manifest  string
-	diff      string
-	logs      string
+	snapshot    explorer.Snapshot
+	tree        explorer.ResourceTree
+	hang        bool
+	loads       int
+	synced      []argocd.SyncOptions
+	refreshed   []string
+	manifest    string
+	manifestErr error
+	diff        string
+	logs        string
+
+	history    []explorer.HistoryEntry
+	rolledBack []rollbackCall
+
+	stream             chan argocd.LogEntry
+	streamCtx          context.Context
+	streamedPods       []explorer.ResourceNode
+	streamedContainers []string
+
+	// logsByContainer gives the snapshot of a chosen container; others get logs.
+	treeLoads        int
+	restarted        []explorer.ResourceNode
+	deleted          []explorer.ResourceNode
+	actionErr        error
+	logsByContainer  map[string]string
+	loggedContainers []string
+
+	events        string
+	eventRequests []string
+
+	syncedApps      []string
+	syncedResources [][]explorer.ResourceReference
+	syncErrors      map[string]error
+	deletedApps     []string
+	// failures makes the action on the named Application or resource fail.
+	failures map[string]error
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {
@@ -194,31 +221,49 @@ func (f *fakeSource) loadCommand() tea.Cmd {
 }
 
 func (f *fakeSource) LoadResourceTree(context.Context, string) (explorer.ResourceTree, error) {
+	f.treeLoads++
 	return f.tree, nil
 }
 
-func (f *fakeSource) SyncApplication(_ context.Context, _ string, options argocd.SyncOptions) error {
+func (f *fakeSource) SyncApplication(_ context.Context, application string, options argocd.SyncOptions) error {
 	f.synced = append(f.synced, options)
-	return nil
+	f.syncedApps = append(f.syncedApps, application)
+	return f.syncErrors[application]
 }
 
 func (f *fakeSource) RefreshApplication(_ context.Context, application string) error {
 	f.refreshed = append(f.refreshed, application)
-	return nil
+	return f.failures[application]
 }
 
-func (f *fakeSource) DeleteApplication(context.Context, string) error { return nil }
+func (f *fakeSource) DeleteApplication(_ context.Context, application string) error {
+	f.deletedApps = append(f.deletedApps, application)
+	return f.failures[application]
+}
 
 func (f *fakeSource) ResourceManifest(context.Context, string, explorer.ResourceNode) (string, error) {
-	return f.manifest, nil
+	return f.manifest, f.manifestErr
 }
 
 func (f *fakeSource) ResourceDiff(context.Context, string, explorer.ResourceNode) (string, error) {
 	return f.diff, nil
 }
 
-func (f *fakeSource) ResourceLogs(context.Context, string, explorer.ResourceNode) (string, error) {
+func (f *fakeSource) ResourceLogs(_ context.Context, _ string, _ explorer.ResourceNode, container string) (string, error) {
+	f.loggedContainers = append(f.loggedContainers, container)
+	if text, found := f.logsByContainer[container]; found {
+		return text, nil
+	}
 	return f.logs, nil
+}
+
+// barePodTree has a Deployment and, beside it, a Pod that no workload owns, so
+// opening the Pod's log shows its own snapshot.
+func barePodTree() explorer.ResourceTree {
+	return explorer.ResourceTree{Application: "checkout", Nodes: []explorer.ResourceNode{
+		{Group: "apps", Version: "v1", Kind: "Deployment", Namespace: "store", Name: "web", Health: "Healthy"},
+		{Version: "v1", Kind: "Pod", Namespace: "store", Name: "web-abc", Health: "Healthy"},
+	}}
 }
 
 func checkoutTree() explorer.ResourceTree {

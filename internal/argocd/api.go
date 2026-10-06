@@ -26,6 +26,7 @@ type APISource struct {
 func NewAPISource(server, token string, insecure bool) *APISource {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecure} //nolint:gosec // Explicit opt-in through --insecure.
+	transport.ResponseHeaderTimeout = 15 * time.Second
 
 	return &APISource{
 		baseURL: strings.TrimRight(server, "/"),
@@ -109,6 +110,7 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 			Kind:      node.Kind,
 			Namespace: node.Namespace,
 			Name:      node.Name,
+			UID:       node.UID,
 			Sync:      node.Status,
 			Health:    node.Health.Status,
 			Parents:   parents,
@@ -119,7 +121,25 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 
 // SyncApplication starts a sync operation for an Application.
 func (s *APISource) SyncApplication(ctx context.Context, application string, options SyncOptions) error {
-	body, err := json.Marshal(syncRequest{Prune: options.Prune, DryRun: options.DryRun})
+	return s.sync(ctx, application, nil, options)
+}
+
+var _ ResourceSyncer = (*APISource)(nil)
+
+// SyncResources starts a sync operation for only the listed resources.
+func (s *APISource) SyncResources(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	return s.sync(ctx, application, resources, options)
+}
+
+// sync posts the operation; no resources means the whole Application.
+func (s *APISource) sync(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	request := syncRequest{Prune: options.Prune, DryRun: options.DryRun}
+	for _, resource := range resources {
+		request.Resources = append(request.Resources, syncResource{
+			Group: resource.Group, Kind: resource.Kind, Namespace: resource.Namespace, Name: resource.Name,
+		})
+	}
+	body, err := json.Marshal(request)
 	if err != nil {
 		return fmt.Errorf("encode sync request: %w", err)
 	}
@@ -167,6 +187,11 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 // do sends a request and returns the response of a successful call. The
 // caller must close the response body.
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
+	return s.send(ctx, s.client, method, path, body)
+}
+
+// send is do through the given client.
+func (s *APISource) send(ctx context.Context, client *http.Client, method, path string, body *bytes.Buffer) (*http.Response, error) {
 	endpoint, err := url.Parse(s.baseURL + path)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint: %w", err)
@@ -179,14 +204,16 @@ func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buf
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	if body != nil {
+	// Argo CD refuses any request that changes something without a JSON content
+	// type, even one with no body, such as a delete.
+	if body != nil || (method != http.MethodGet && method != http.MethodHead) {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if s.token != "" {
 		request.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	response, err := s.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("request %s: %w", endpoint.Path, err)
 	}
@@ -209,8 +236,16 @@ func errorMessage(body io.Reader) string {
 }
 
 type syncRequest struct {
-	Prune  bool `json:"prune"`
-	DryRun bool `json:"dryRun"`
+	Prune     bool           `json:"prune"`
+	DryRun    bool           `json:"dryRun"`
+	Resources []syncResource `json:"resources,omitempty"`
+}
+
+type syncResource struct {
+	Group     string `json:"group"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 type metadata struct {
@@ -237,6 +272,7 @@ type applicationList struct {
 }
 
 type applicationSource struct {
+	RepoURL        string `json:"repoURL"`
 	TargetRevision string `json:"targetRevision"`
 }
 
@@ -288,6 +324,7 @@ type resourceTreeResponse struct {
 		Kind      string `json:"kind"`
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
+		UID       string `json:"uid"`
 		Status    string `json:"status"`
 		Health    struct {
 			Status string `json:"status"`

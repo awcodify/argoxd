@@ -39,9 +39,21 @@ type Model struct {
 	treeFilter      explorer.Filter
 	expanded        map[string]bool
 	viewer          textView
+	viewerFromList  bool
+	marked          map[string]bool
+	markedCards     map[explorer.ResourceReference]bool
 	prompt          prompt
-	confirming      string
-	syncing         syncDialog
+	confirm         confirmation
+	history         historyList
+	follow          followState
+	logTarget       explorer.ResourceNode
+	logContainers   argocd.Containers
+	containersKnown bool
+	logContainer    string
+	logSeen         string
+	logWorkload     explorer.ResourceNode
+	logPod          string
+	logPods         []string
 	status          string
 }
 
@@ -52,6 +64,7 @@ const (
 	inventoryTreeView
 	applicationTreeView
 	textViewMode
+	historyViewMode
 )
 
 type treeItem struct {
@@ -62,12 +75,6 @@ type treeItem struct {
 	application string
 	depth       int
 	expandable  bool
-}
-
-// syncDialog asks how to sync an Application before starting the sync.
-type syncDialog struct {
-	application string
-	options     argocd.SyncOptions
 }
 
 // New creates the TUI from an initial resource snapshot.
@@ -114,6 +121,7 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = message.err
 		if message.err == nil {
 			m.explorer.ReplaceSnapshot(message.snapshot)
+			m.pruneMarks()
 		}
 	case loadedTree:
 		m.loading = false
@@ -122,15 +130,42 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
+			if message.kind == "logs" {
+				m.resetLogOptions()
+			}
 			m.viewer = newTextView(message.kind, message.subject, message.text)
+			m.viewerFromList = message.fromList
 			m.view = textViewMode
+		}
+	case loadedHistory:
+		m.loading = false
+		m.applyHistory(message)
+	case loadedContainers:
+		return m.applyContainers(message)
+	case loadedLogs:
+		return m.applyLogs(message)
+	case logStreamStarted:
+		return m.applyLogStream(message)
+	case logLine:
+		return m.applyLogLine(message)
+	case logStreamEnded:
+		if m.following() && message.stream == m.follow.id {
+			m.stopFollowing()
+			m.status = "log stream ended"
 		}
 	case operationCompleted:
 		m.loading = false
 		m.err = message.err
 		if message.err == nil {
-			m.status = message.action + " requested for " + message.application
+			subject := message.application
+			if message.subject != "" {
+				subject = message.subject
+			}
+			m.status = message.action + " requested for " + subject
 			m.loading = true
+			if message.refreshTree {
+				return m, tea.Batch(m.load(), m.loadApplicationTree(message.application, true))
+			}
 			return m, m.load()
 		}
 	}
@@ -140,14 +175,14 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 // updateKey routes a key to the dialog or prompt that has focus, or else to the active view.
 func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
-	case m.confirming != "":
-		return m.updateDeleteConfirmation(message)
-	case m.syncing.application != "":
-		return m.updateSyncDialog(message)
+	case m.confirm.active():
+		return m.updateConfirm(message)
 	case m.prompt.active:
 		return m.updatePrompt(message)
 	case m.view == textViewMode:
 		return m.updateViewer(message)
+	case m.view == historyViewMode:
+		return m.updateHistory(message)
 	}
 
 	switch key := message.String(); key {
@@ -183,11 +218,17 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		m.toggleTreeItem()
-	case " ", "right", "left":
+	case " ":
+		m.toggleMark()
+	case "right", "left":
 		m.toggleTreeItem()
 	case "esc":
 		if m.searching() {
 			m.clearSearchAndFilter()
+			break
+		}
+		if m.markCount() > 0 {
+			m.clearMarks()
 			break
 		}
 		m.closeTree()
@@ -195,19 +236,22 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.view == applicationTreeView {
 			return m.inspect(key)
 		}
+	case "e":
+		return m.showEvents()
 	case "s":
+		m = m.askApplicationAction(confirmSync)
+	case "x", "X":
+		if m.view == applicationTreeView {
+			return m.askResourceAction(key)
+		}
+	case "h":
 		if application := m.selectedApplication(); application != "" {
-			m.syncing = syncDialog{application: application}
+			return m.openHistory(application)
 		}
 	case "R":
-		if application := m.selectedApplication(); application != "" {
-			m.loading = true
-			return m, m.hardRefresh(application)
-		}
+		m = m.askApplicationAction(confirmHardRefresh)
 	case "D":
-		if application := m.selectedApplication(); application != "" {
-			m.confirming = application
-		}
+		m = m.askApplicationAction(confirmDeleteApplications)
 	case "r":
 		if m.source != nil && !m.loading {
 			m.loading = true
@@ -226,36 +270,6 @@ func (m *Model) openProjectApplications() {
 	}
 	m.explorer.SetProject(project)
 	m.showScreen(explorer.ApplicationsScreen)
-}
-
-func (m Model) updateDeleteConfirmation(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch message.String() {
-	case "y":
-		application := m.confirming
-		m.confirming = ""
-		m.loading = true
-		return m, m.deleteApplication(application)
-	case "n", "esc":
-		m.confirming = ""
-	}
-	return m, nil
-}
-
-func (m Model) updateSyncDialog(message tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch message.String() {
-	case "p":
-		m.syncing.options.Prune = !m.syncing.options.Prune
-	case "r":
-		m.syncing.options.DryRun = !m.syncing.options.DryRun
-	case "enter":
-		dialog := m.syncing
-		m.syncing = syncDialog{}
-		m.loading = true
-		return m, m.sync(dialog.application, dialog.options)
-	case "esc", "n":
-		m.syncing = syncDialog{}
-	}
-	return m, nil
 }
 
 // View renders the header, the optional prompt, the framed view, the
@@ -303,6 +317,7 @@ func (m *Model) closeTree() {
 	m.treeCursor = 0
 	m.treeSearch = ""
 	m.treeFilter = explorer.Filter{}
+	m.markedCards = nil
 }
 
 // searchAndFilter returns the search text and status filter of the active view:
@@ -326,6 +341,11 @@ func (m Model) searching() bool {
 
 // applySearch narrows the list or, in the dependency view, the card tree.
 func (m *Model) applySearch(text string) {
+	if m.view == textViewMode {
+		m.viewer.search = text
+		m.viewer.offset = max(0, len(m.viewer.shown())-m.bodyHeight())
+		return
+	}
 	if m.view == applicationTreeView {
 		m.treeSearch = text
 		m.treeCursor = 0
@@ -371,7 +391,7 @@ func (m *Model) openFilter(key string) {
 // only replaces the one on screen, keeping the selected card.
 func (m *Model) applyTree(message loadedTree) {
 	if message.background {
-		showing := m.view == applicationTreeView || m.view == textViewMode
+		showing := m.view == applicationTreeView || m.view == textViewMode || m.view == historyViewMode
 		if message.err == nil && showing && m.resourceTree.Application == message.tree.Application {
 			m.resourceTree = message.tree
 			m.treeCursor = min(m.treeCursor, m.cardCount()-1)
