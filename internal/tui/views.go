@@ -54,6 +54,9 @@ func (m Model) renderContent(width, height int) (string, []string) {
 // viewerTitle names the open text, and for a diff explains which side is which.
 func (m Model) viewerTitle() string {
 	title := viewTitle(m.viewer.kind, m.viewer.subject, -1)
+	if m.following() {
+		return strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + infoStyle.Render("● following") + " "
+	}
 	if m.viewer.kind != "diff" {
 		return title
 	}

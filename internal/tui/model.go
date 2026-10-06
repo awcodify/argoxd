@@ -44,6 +44,8 @@ type Model struct {
 	syncing         syncDialog
 	history         historyList
 	rollingBack     rollbackDialog
+	follow          followState
+	logPod          explorer.ResourceNode
 	status          string
 }
 
@@ -131,6 +133,15 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case loadedHistory:
 		m.loading = false
 		m.applyHistory(message)
+	case logStreamStarted:
+		return m.applyLogStream(message)
+	case logLine:
+		return m.applyLogLine(message)
+	case logStreamEnded:
+		if m.following() && message.stream == m.follow.id {
+			m.stopFollowing()
+			m.status = "log stream ended"
+		}
 	case operationCompleted:
 		m.loading = false
 		m.err = message.err

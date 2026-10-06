@@ -181,6 +181,10 @@ type fakeSource struct {
 
 	history    []explorer.HistoryEntry
 	rolledBack []rollbackCall
+
+	stream       chan argocd.LogEntry
+	streamCtx    context.Context
+	streamedPods []explorer.ResourceNode
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {

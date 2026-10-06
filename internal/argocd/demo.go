@@ -19,6 +19,8 @@ type DemoSource struct {
 	applications []explorer.Application
 	// history holds each Application's deployments, oldest first.
 	history map[string][]explorer.HistoryEntry
+	// logInterval is how often a followed log gets a new line.
+	logInterval time.Duration
 }
 
 var (
@@ -26,6 +28,7 @@ var (
 	_ ApplicationOperator = (*DemoSource)(nil)
 	_ ResourceInspector   = (*DemoSource)(nil)
 	_ RollbackOperator    = (*DemoSource)(nil)
+	_ LogStreamer         = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -51,7 +54,7 @@ func NewDemoSource() *DemoSource {
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)
 	}
-	return &DemoSource{applications: applications, history: history}
+	return &DemoSource{applications: applications, history: history, logInterval: time.Second}
 }
 
 // sampleHistory gives an Application two earlier deployments, a day apart each,
@@ -277,4 +280,55 @@ func (s *DemoSource) update(name string, change func(*explorer.Application)) err
 		}
 	}
 	return fmt.Errorf("application %q not found", name)
+}
+
+// StreamLogs sends the Pod's sample log, then a new line every logInterval.
+func (s *DemoSource) StreamLogs(ctx context.Context, name string, pod explorer.ResourceNode) (<-chan LogEntry, error) {
+	if _, err := s.find(name); err != nil {
+		return nil, err
+	}
+	recent, err := s.ResourceLogs(ctx, name, pod)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make(chan LogEntry)
+	go func() {
+		defer close(entries)
+		send := func(line string) bool {
+			select {
+			case entries <- LogEntry{Line: line}:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+		for _, line := range strings.Split(recent, "\n") {
+			if !send(line) {
+				return
+			}
+		}
+		ticker := time.NewTicker(s.logInterval)
+		defer ticker.Stop()
+		for count := 1; ; count++ {
+			select {
+			case now := <-ticker.C:
+				if !send(demoLogLine(now, pod, count)) {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return entries, nil
+}
+
+// demoLogLine is the count-th new line of a Pod's sample log.
+func demoLogLine(now time.Time, pod explorer.ResourceNode, count int) string {
+	timestamp := now.UTC().Format(time.RFC3339)
+	if pod.Health == "Degraded" {
+		return fmt.Sprintf("%s WARN  payment gateway unreachable, retry %d", timestamp, count)
+	}
+	return fmt.Sprintf("%s INFO  GET /api/items/%d 200 %dms", timestamp, count, 2+count%7)
 }

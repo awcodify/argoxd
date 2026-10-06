@@ -38,9 +38,13 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	last := max(0, len(m.viewer.lines)-m.bodyHeight())
 	switch message.String() {
 	case "ctrl+c", "q":
+		m.stopFollowing()
 		return m, tea.Quit
 	case "esc":
+		m.stopFollowing()
 		m.view = applicationTreeView
+	case "f":
+		return m.toggleFollow()
 	case "down", "j":
 		m.viewer.offset++
 	case "up", "k":

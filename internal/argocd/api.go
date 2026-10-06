@@ -26,6 +26,7 @@ type APISource struct {
 func NewAPISource(server, token string, insecure bool) *APISource {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecure} //nolint:gosec // Explicit opt-in through --insecure.
+	transport.ResponseHeaderTimeout = 15 * time.Second
 
 	return &APISource{
 		baseURL: strings.TrimRight(server, "/"),
@@ -167,6 +168,11 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 // do sends a request and returns the response of a successful call. The
 // caller must close the response body.
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
+	return s.send(ctx, s.client, method, path, body)
+}
+
+// send is do through the given client.
+func (s *APISource) send(ctx context.Context, client *http.Client, method, path string, body *bytes.Buffer) (*http.Response, error) {
 	endpoint, err := url.Parse(s.baseURL + path)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint: %w", err)
@@ -186,7 +192,7 @@ func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buf
 		request.Header.Set("Authorization", "Bearer "+s.token)
 	}
 
-	response, err := s.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("request %s: %w", endpoint.Path, err)
 	}

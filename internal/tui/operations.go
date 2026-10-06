@@ -157,6 +157,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 
 	application := m.resourceTree.Application
 	subject := selected.Kind + "/" + selected.Name
+	m.logPod = selected
 	m.loading = true
 	return m, m.request(func(ctx context.Context) tea.Msg {
 		var text string

@@ -3,7 +3,6 @@ package argocd
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -87,13 +86,8 @@ func (s *APISource) ResourceLogs(ctx context.Context, application string, pod ex
 	var lines []string
 	scanner := bufio.NewScanner(response.Body)
 	for scanner.Scan() {
-		var entry struct {
-			Result struct {
-				Content string `json:"content"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err == nil && entry.Result.Content != "" {
-			lines = append(lines, entry.Result.Content)
+		if line, ok := logContent(scanner.Bytes()); ok {
+			lines = append(lines, line)
 		}
 	}
 	if err := scanner.Err(); err != nil {

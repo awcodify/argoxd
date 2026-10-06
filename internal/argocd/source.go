@@ -30,6 +30,20 @@ type ResourceInspector interface {
 	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode) (string, error)
 }
 
+// LogEntry is one line of a followed log, or the error that ended the stream.
+type LogEntry struct {
+	Line string
+	Err  error
+}
+
+// LogStreamer follows the logs of a Pod.
+type LogStreamer interface {
+	// StreamLogs sends the Pod's recent log lines and then new ones as they are
+	// written. The channel is closed when the stream ends, after a final entry
+	// with Err set if it failed. Cancel ctx to stop the stream.
+	StreamLogs(ctx context.Context, application string, pod explorer.ResourceNode) (<-chan LogEntry, error)
+}
+
 // RollbackOperator lists an Application's past deployments and redeploys one of them.
 type RollbackOperator interface {
 	// ApplicationHistory returns the recorded deployments, newest first.
