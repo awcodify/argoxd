@@ -55,6 +55,13 @@ func NewDemoSource() *DemoSource {
 		app("grafana", "observability", "observability", "Synced", "Healthy", "e05b8d3", 48*time.Hour),
 		app("prometheus", "observability", "observability", "OutOfSync", "Healthy", "e05b8d3", 48*time.Hour),
 	}
+	applications[3].Conditions = []explorer.Condition{
+		{Type: "SyncError", Message: "one or more objects failed to apply, reason: Deployment.apps \"billing-worker\" is invalid: spec.template.spec.containers[0].image: Required value"},
+	}
+	applications[7].Conditions = []explorer.Condition{
+		{Type: "SharedResourceWarning", Message: "ConfigMap/prometheus-rules is part of applications argocd/prometheus and argocd/grafana"},
+		{Type: "OrphanedResourceWarning", Message: "Application has 2 orphaned resources"},
+	}
 	history := make(map[string][]explorer.HistoryEntry, len(applications))
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)

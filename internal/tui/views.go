@@ -94,8 +94,12 @@ func (m Model) applicationsTable() table {
 		status:  map[int]bool{2: true, 3: true},
 	}
 	for _, application := range m.explorer.Applications() {
+		name := application.Name
+		if len(application.Conditions) > 0 {
+			name += " " + conditionGlyph
+		}
 		result.rows = append(result.rows, []string{
-			application.Name, application.Project, application.Sync, application.Health,
+			name, application.Project, application.Sync, application.Health,
 			application.Revision, application.Destination, age(application.LastSync),
 		})
 		result.marked = append(result.marked, m.marked[application.Name])

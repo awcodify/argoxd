@@ -111,3 +111,27 @@ func TestDemoSourceRollbackRedeploysAnEarlierRevision(t *testing.T) {
 		t.Fatal("rolling back to an unknown id succeeded")
 	}
 }
+
+func TestDemoSourceHasApplicationsWithConditions(t *testing.T) {
+	snapshot, err := NewDemoSource().Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	withConditions := map[string][]explorer.Condition{}
+	for _, application := range snapshot.Applications {
+		if len(application.Conditions) > 0 {
+			withConditions[application.Name] = application.Conditions
+		}
+	}
+	if len(withConditions) == 0 || len(withConditions) == len(snapshot.Applications) {
+		t.Fatalf("applications with conditions = %v, want some but not all", withConditions)
+	}
+	for name, conditions := range withConditions {
+		for _, condition := range conditions {
+			if condition.Type == "" || condition.Message == "" {
+				t.Fatalf("%s has an empty condition: %+v", name, condition)
+			}
+		}
+	}
+}

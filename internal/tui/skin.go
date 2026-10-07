@@ -22,6 +22,9 @@ var (
 	colorSurface = lipgloss.Color("#1E293B")
 )
 
+// conditionGlyph flags an Application that has warnings or errors.
+const conditionGlyph = "⚠"
+
 var (
 	accentStyle  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	brightStyle  = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
