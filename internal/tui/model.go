@@ -221,6 +221,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case explorer.ApplicationSetsScreen:
 				m.openApplicationSetApplications()
 				return m, nil
+			case explorer.PulseScreen:
+				return m.openDependencies()
 			}
 		}
 		if m.view == applicationTreeView {
@@ -521,11 +523,18 @@ func (m Model) selectedApplication() string {
 			return visible[m.treeCursor].application
 		}
 	default:
-		if m.explorer.Screen() == explorer.ApplicationsScreen {
+		if m.onApplicationRows() {
 			return m.explorer.SelectedName()
 		}
 	}
 	return ""
+}
+
+// onApplicationRows reports whether the list shows Applications: the
+// Applications screen, or the overview of the ones needing attention.
+func (m Model) onApplicationRows() bool {
+	screen := m.explorer.Screen()
+	return screen == explorer.ApplicationsScreen || screen == explorer.PulseScreen
 }
 
 func (m Model) visibleTree() []treeItem {

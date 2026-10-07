@@ -20,7 +20,7 @@ func (m Model) showEvents() (tea.Model, tea.Cmd) {
 	fromList := false
 	switch m.view {
 	case listView:
-		if m.explorer.Screen() != explorer.ApplicationsScreen || m.explorer.SelectedName() == "" {
+		if !m.onApplicationRows() || m.explorer.SelectedName() == "" {
 			return m, nil
 		}
 		application, fromList = m.explorer.SelectedName(), true

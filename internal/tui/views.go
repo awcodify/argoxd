@@ -49,6 +49,8 @@ func (m Model) renderContent(width, height int) (string, []string) {
 		return m.listTitle("clusters", ""), m.clustersTable().render(m.explorer.Cursor(), width, height)
 	case explorer.ApplicationSetsScreen:
 		return m.listTitle("applicationsets", ""), m.applicationSetsTable().render(m.explorer.Cursor(), width, height)
+	case explorer.PulseScreen:
+		return m.renderPulse(width, height)
 	default:
 		return viewTitle("settings", "", -1), []string{
 			"",
@@ -307,6 +309,8 @@ func screenName(screen explorer.Screen) string {
 		return "clusters"
 	case explorer.ApplicationSetsScreen:
 		return "applicationsets"
+	case explorer.PulseScreen:
+		return "pulse"
 	default:
 		return "settings"
 	}

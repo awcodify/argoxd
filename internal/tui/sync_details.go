@@ -15,7 +15,7 @@ func (m Model) showSyncDetails() (tea.Model, tea.Cmd) {
 	fromList := false
 	switch m.view {
 	case listView:
-		if m.explorer.Screen() != explorer.ApplicationsScreen || m.explorer.SelectedName() == "" {
+		if !m.onApplicationRows() || m.explorer.SelectedName() == "" {
 			return m, nil
 		}
 		name, fromList = m.explorer.SelectedName(), true

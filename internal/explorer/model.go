@@ -14,6 +14,7 @@ const (
 	ClustersScreen
 	SettingsScreen
 	ApplicationSetsScreen
+	PulseScreen
 )
 
 // Snapshot is the Argo CD state displayed by the explorer.
@@ -351,6 +352,10 @@ func (m Model) rowNames() []string {
 	case ApplicationSetsScreen:
 		for _, applicationSet := range m.ApplicationSets() {
 			names = append(names, applicationSet.Name)
+		}
+	case PulseScreen:
+		for _, item := range m.Attention() {
+			names = append(names, item.Application.Name)
 		}
 	}
 	return names
