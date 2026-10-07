@@ -238,6 +238,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m.showEvents()
+	case "i":
+		return m.showSyncDetails()
 	case "s":
 		m = m.askApplicationAction(confirmSync)
 	case "x", "X":

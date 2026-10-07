@@ -135,3 +135,44 @@ func TestDemoSourceHasApplicationsWithConditions(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoSourceHasAFailedAndASucceededOperation(t *testing.T) {
+	snapshot, err := NewDemoSource().Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	phases := map[string]bool{}
+	for _, application := range snapshot.Applications {
+		if application.Operation != nil {
+			phases[application.Operation.Phase] = true
+		}
+	}
+	if !phases["Failed"] || !phases["Succeeded"] {
+		t.Fatalf("operation phases = %v, want Failed and Succeeded", phases)
+	}
+}
+
+func TestDemoSourceSyncClearsASyncErrorAndSucceeds(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+
+	if err := source.SyncApplication(ctx, "billing-worker", SyncOptions{}); err != nil {
+		t.Fatalf("SyncApplication() error = %v", err)
+	}
+	snapshot, _ := source.Load(ctx)
+
+	for _, application := range snapshot.Applications {
+		if application.Name != "billing-worker" {
+			continue
+		}
+		if application.Operation == nil || application.Operation.Phase != "Succeeded" {
+			t.Fatalf("operation = %+v, want a succeeded sync", application.Operation)
+		}
+		for _, condition := range application.Conditions {
+			if condition.Type == "SyncError" {
+				t.Fatalf("conditions = %+v, want the SyncError cleared", application.Conditions)
+			}
+		}
+	}
+}

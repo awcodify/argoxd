@@ -338,3 +338,47 @@ func TestResourceTreeFromApplicationReadsRequiresPruning(t *testing.T) {
 		t.Fatalf("requires pruning = %v, %v, want true, false", nodes[0].RequiresPruning, nodes[1].RequiresPruning)
 	}
 }
+
+func TestSnapshotReadsTheLastOperation(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"status": map[string]any{
+			"operationState": map[string]any{
+				"phase":      "Failed",
+				"message":    "one or more objects failed to apply",
+				"startedAt":  "2026-10-07T10:00:00Z",
+				"finishedAt": "2026-10-07T10:00:30Z",
+				"syncResult": map[string]any{
+					"revision": "7d3f9a2",
+					"resources": []any{
+						map[string]any{"group": "apps", "kind": "Deployment", "namespace": "store", "name": "checkout", "status": "SyncFailed", "message": "image: Required value", "syncPhase": "Sync"},
+						map[string]any{"kind": "Job", "namespace": "store", "name": "migrate", "status": "Synced", "hookType": "PreSync", "hookPhase": "Succeeded", "syncPhase": "PreSync"},
+					},
+				},
+			},
+		},
+	}}, {Object: map[string]any{"metadata": map[string]any{"name": "never-synced"}}}}
+
+	snapshot := snapshotFromKubernetesResources(applications, nil, nil)
+
+	if snapshot.Applications[1].Operation != nil {
+		t.Fatalf("operation = %+v, want none for an application that never synced", snapshot.Applications[1].Operation)
+	}
+	operation := snapshot.Applications[0].Operation
+	if operation == nil {
+		t.Fatal("operation = nil, want the last operation")
+	}
+	if operation.Phase != "Failed" || operation.Message != "one or more objects failed to apply" || operation.Revision != "7d3f9a2" {
+		t.Fatalf("operation = %+v", operation)
+	}
+	if want := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC); !operation.StartedAt.Equal(want) {
+		t.Fatalf("started at = %v, want %v", operation.StartedAt, want)
+	}
+	want := []explorer.OperationResult{
+		{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "checkout", Status: "SyncFailed", Message: "image: Required value", SyncPhase: "Sync"},
+		{Kind: "Job", Namespace: "store", Name: "migrate", Status: "Synced", HookType: "PreSync", HookPhase: "Succeeded", SyncPhase: "PreSync"},
+	}
+	if !slices.Equal(operation.Results, want) {
+		t.Fatalf("results = %+v, want %+v", operation.Results, want)
+	}
+}

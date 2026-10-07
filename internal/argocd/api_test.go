@@ -297,3 +297,36 @@ func TestAPISourceReadsConditionsAndSyncPolicy(t *testing.T) {
 		t.Fatalf("manual application = %+v, want no conditions and no automation", manual)
 	}
 }
+
+func TestAPISourceReadsTheLastOperation(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/applications" {
+			_, _ = w.Write([]byte(`{"items":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[
+			{"metadata":{"name":"checkout"},"status":{"operationState":{"phase":"Failed","message":"boom",
+				"startedAt":"2026-10-07T10:00:00Z","finishedAt":"2026-10-07T10:00:30Z",
+				"syncResult":{"revision":"7d3f9a2","resources":[
+					{"group":"apps","kind":"Deployment","namespace":"store","name":"checkout","status":"SyncFailed","message":"invalid","syncPhase":"Sync"}]}}}},
+			{"metadata":{"name":"never-synced"}}]}`))
+	}))
+	defer server.Close()
+
+	snapshot, err := NewAPISource(server.URL, "", false).Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if snapshot.Applications[1].Operation != nil {
+		t.Fatalf("operation = %+v, want none for an application that never synced", snapshot.Applications[1].Operation)
+	}
+	operation := snapshot.Applications[0].Operation
+	if operation == nil || operation.Phase != "Failed" || operation.Message != "boom" || operation.Revision != "7d3f9a2" {
+		t.Fatalf("operation = %+v", operation)
+	}
+	want := []explorer.OperationResult{{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "checkout", Status: "SyncFailed", Message: "invalid", SyncPhase: "Sync"}}
+	if !slices.Equal(operation.Results, want) {
+		t.Fatalf("results = %+v, want %+v", operation.Results, want)
+	}
+}

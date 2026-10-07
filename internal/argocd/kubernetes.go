@@ -231,6 +231,7 @@ func snapshotFromKubernetesResources(applications, projects, clusters []unstruct
 			LastSync:    parseTime(nestedString(application.Object, "status", "operationState", "finishedAt")),
 			Conditions:  conditions(application.Object),
 			Policy:      syncPolicy(application.Object),
+			Operation:   lastOperation(application.Object),
 		})
 	}
 	for _, project := range projects {
@@ -281,6 +282,35 @@ func conditions(application map[string]any) []explorer.Condition {
 		}
 	}
 	return conditions
+}
+
+// lastOperation reads the outcome of an Application's last sync, or nil if it
+// has none.
+func lastOperation(application map[string]any) *explorer.Operation {
+	state, found, _ := unstructured.NestedMap(application, "status", "operationState")
+	if !found {
+		return nil
+	}
+	operation := &explorer.Operation{
+		Phase:      nestedString(state, "phase"),
+		Message:    nestedString(state, "message"),
+		Revision:   nestedString(state, "syncResult", "revision"),
+		StartedAt:  parseTime(nestedString(state, "startedAt")),
+		FinishedAt: parseTime(nestedString(state, "finishedAt")),
+	}
+	results, _, _ := unstructured.NestedSlice(state, "syncResult", "resources")
+	for _, item := range results {
+		if result, ok := item.(map[string]any); ok {
+			operation.Results = append(operation.Results, explorer.OperationResult{
+				Group: nestedString(result, "group"), Kind: nestedString(result, "kind"),
+				Namespace: nestedString(result, "namespace"), Name: nestedString(result, "name"),
+				Status: nestedString(result, "status"), Message: nestedString(result, "message"),
+				HookType: nestedString(result, "hookType"), HookPhase: nestedString(result, "hookPhase"),
+				SyncPhase: nestedString(result, "syncPhase"),
+			})
+		}
+	}
+	return operation
 }
 
 // syncPolicy reads how an Application syncs on its own. An empty automated

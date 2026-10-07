@@ -66,8 +66,9 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 			Health:      application.Status.Health.Status,
 			Revision:    application.Spec.targetRevision(),
 			Destination: destination(application.Spec.Destination.Name, application.Spec.Destination.Server, application.Spec.Destination.Namespace),
-			LastSync:    application.Status.OperationState.FinishedAt,
+			LastSync:    application.Status.OperationState.finishedAt(),
 			Policy:      application.Spec.policy(),
+			Operation:   application.Status.OperationState.operation(),
 		})
 		for _, condition := range application.Status.Conditions {
 			last := &snapshot.Applications[len(snapshot.Applications)-1]
@@ -269,15 +270,61 @@ type applicationList struct {
 			Health struct {
 				Status string `json:"status"`
 			} `json:"health"`
-			OperationState struct {
-				FinishedAt time.Time `json:"finishedAt"`
-			} `json:"operationState"`
-			Conditions []struct {
+			OperationState *operationState `json:"operationState"`
+			Conditions     []struct {
 				Type    string `json:"type"`
 				Message string `json:"message"`
 			} `json:"conditions"`
 		} `json:"status"`
 	} `json:"items"`
+}
+
+type operationState struct {
+	Phase      string    `json:"phase"`
+	Message    string    `json:"message"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	SyncResult struct {
+		Revision  string `json:"revision"`
+		Resources []struct {
+			Group     string `json:"group"`
+			Kind      string `json:"kind"`
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+			Status    string `json:"status"`
+			Message   string `json:"message"`
+			HookType  string `json:"hookType"`
+			HookPhase string `json:"hookPhase"`
+			SyncPhase string `json:"syncPhase"`
+		} `json:"resources"`
+	} `json:"syncResult"`
+}
+
+// finishedAt is when the last sync ended; zero if there was none.
+func (s *operationState) finishedAt() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	return s.FinishedAt
+}
+
+// operation converts the state of an Application's last sync, or nil if it has none.
+func (s *operationState) operation() *explorer.Operation {
+	if s == nil {
+		return nil
+	}
+	operation := &explorer.Operation{
+		Phase: s.Phase, Message: s.Message, Revision: s.SyncResult.Revision,
+		StartedAt: s.StartedAt, FinishedAt: s.FinishedAt,
+	}
+	for _, result := range s.SyncResult.Resources {
+		operation.Results = append(operation.Results, explorer.OperationResult{
+			Group: result.Group, Kind: result.Kind, Namespace: result.Namespace, Name: result.Name,
+			Status: result.Status, Message: result.Message,
+			HookType: result.HookType, HookPhase: result.HookPhase, SyncPhase: result.SyncPhase,
+		})
+	}
+	return operation
 }
 
 type applicationSource struct {

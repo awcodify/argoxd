@@ -36,6 +36,35 @@ type Application struct {
 	Conditions []Condition
 	// Policy is how the Application syncs on its own.
 	Policy SyncPolicy
+	// Operation is the Application's last sync; nil if it never synced.
+	Operation *Operation
+}
+
+// Operation is the outcome of an Application's last sync.
+type Operation struct {
+	// Phase is Running, Succeeded, Failed, Error or Terminating.
+	Phase      string
+	Message    string
+	Revision   string
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Results    []OperationResult
+}
+
+// OperationResult is what a sync did to one resource or hook.
+type OperationResult struct {
+	Group     string
+	Kind      string
+	Namespace string
+	Name      string
+	// Status is the result of applying the resource, such as Synced or SyncFailed.
+	Status  string
+	Message string
+	// HookType is set for a hook, such as PreSync.
+	HookType  string
+	HookPhase string
+	// SyncPhase is when in the sync the resource was applied: PreSync, Sync, PostSync or SyncFail.
+	SyncPhase string
 }
 
 // Condition is a warning or error Argo CD reports for an Application, such as

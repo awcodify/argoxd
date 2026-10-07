@@ -62,11 +62,37 @@ func NewDemoSource() *DemoSource {
 		{Type: "SharedResourceWarning", Message: "ConfigMap/prometheus-rules is part of applications argocd/prometheus and argocd/grafana"},
 		{Type: "OrphanedResourceWarning", Message: "Application has 2 orphaned resources"},
 	}
+	for index := range applications {
+		applications[index].Operation = sampleOperation(applications[index])
+	}
 	history := make(map[string][]explorer.HistoryEntry, len(applications))
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)
 	}
 	return &DemoSource{applications: applications, history: history, logInterval: time.Second, podSets: map[string]*demoPodSet{}}
+}
+
+// sampleOperation gives an Application the outcome of its last sync: a failed
+// one if it has a SyncError condition, else a successful one.
+func sampleOperation(application explorer.Application) *explorer.Operation {
+	operation := &explorer.Operation{
+		Phase:      "Succeeded",
+		Message:    "successfully synced (all tasks run)",
+		Revision:   application.Revision,
+		StartedAt:  application.LastSync.Add(-12 * time.Second),
+		FinishedAt: application.LastSync,
+		Results: []explorer.OperationResult{
+			{Kind: "Service", Namespace: application.Destination[strings.LastIndex(application.Destination, "/")+1:], Name: application.Name, Status: "Synced", Message: "service/" + application.Name + " unchanged", SyncPhase: "Sync"},
+			{Group: "apps", Kind: "Deployment", Namespace: application.Destination[strings.LastIndex(application.Destination, "/")+1:], Name: application.Name, Status: "Synced", Message: "deployment.apps/" + application.Name + " configured", SyncPhase: "Sync"},
+		},
+	}
+	for _, condition := range application.Conditions {
+		if condition.Type == "SyncError" {
+			operation.Phase, operation.Message = "Failed", condition.Message
+			operation.Results[1].Status, operation.Results[1].Message = "SyncFailed", condition.Message
+		}
+	}
+	return operation
 }
 
 // sampleHistory gives an Application two earlier deployments, a day apart each,
@@ -161,6 +187,10 @@ func (s *DemoSource) SyncApplication(_ context.Context, name string, options Syn
 	}
 	return s.update(name, func(application *explorer.Application) {
 		application.Sync, application.Health, application.LastSync = "Synced", "Healthy", time.Now()
+		application.Conditions = slices.DeleteFunc(slices.Clone(application.Conditions), func(condition explorer.Condition) bool {
+			return condition.Type == "SyncError"
+		})
+		application.Operation = sampleOperation(*application)
 	})
 }
 
