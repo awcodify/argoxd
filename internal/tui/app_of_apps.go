@@ -16,10 +16,16 @@ type treeFrame struct {
 	marked map[explorer.ResourceReference]bool
 }
 
+// onRootCard reports whether the selected card is the open Application's own
+// card, which comes first. A card of the same kind further down is a child.
+func (m Model) onRootCard() bool {
+	return m.treeCursor == 0
+}
+
 // onChildApplication reports whether the selected card is an Application that
 // the open Application deploys, as an app of apps does.
 func (m Model) onChildApplication() bool {
-	if m.view != applicationTreeView || m.treeCursor == 0 {
+	if m.view != applicationTreeView || m.onRootCard() {
 		return false
 	}
 	card := m.selectedCard()

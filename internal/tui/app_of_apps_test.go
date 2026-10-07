@@ -152,3 +152,55 @@ func TestKeyHintsOfferOpeningAChildApplication(t *testing.T) {
 		t.Fatalf("a child Application card should offer to open it:\n%s", view)
 	}
 }
+
+func TestSpaceMarksAChildApplicationCardAndSyncSyncsOnlyThatApplication(t *testing.T) {
+	source := appOfAppsSource()
+	model := press(openRoot(t, source), "j")
+
+	model = press(model, " ")
+	if model.markCount() != 1 {
+		t.Fatalf("marks = %d, want the child Application card marked", model.markCount())
+	}
+	model = press(model, "s")
+	if view := model.View(); !strings.Contains(view, "Sync 1 resource of platform-root?") || !strings.Contains(view, "Application/payments") {
+		t.Fatalf("the dialog should offer to sync the payments Application:\n%s", view)
+	}
+	run(model, "enter")
+
+	want := []explorer.ResourceReference{{Group: "argoproj.io", Kind: "Application", Namespace: "argocd", Name: "payments"}}
+	if len(source.syncedResources) != 1 || len(source.syncedResources[0]) != 1 || source.syncedResources[0][0] != want[0] {
+		t.Fatalf("synced resources = %v, want %v", source.syncedResources, want)
+	}
+}
+
+func TestYOnAChildApplicationCardShowsItsManifest(t *testing.T) {
+	source := appOfAppsSource()
+	source.manifest = "kind: Application\nmetadata:\n  name: payments\n"
+	model := run(press(openRoot(t, source), "j"), "y")
+
+	if view := model.View(); !strings.Contains(view, "name: payments") || !strings.Contains(view, "yaml") {
+		t.Fatalf("y did not show the child Application's manifest:\n%s", view)
+	}
+}
+
+func TestEOnAChildApplicationCardShowsItsOwnEvents(t *testing.T) {
+	source := appOfAppsSource()
+	source.events = sampleEvents
+	run(press(openRoot(t, source), "j"), "e")
+
+	if len(source.eventRequests) != 1 || source.eventRequests[0] != "Application/payments" {
+		t.Fatalf("event requests = %v, want the child Application's, not platform-root's", source.eventRequests)
+	}
+}
+
+func TestTheOpenApplicationsOwnCardStillCannotBeMarkedOrInspected(t *testing.T) {
+	model := openRoot(t, appOfAppsSource())
+
+	marked := press(model, " ")
+	if marked.markCount() != 0 || !strings.Contains(marked.View(), "Select a resource card to mark it") {
+		t.Fatalf("the Application's own card should refuse to be marked:\n%s", marked.View())
+	}
+	if view := run(model, "y").View(); !strings.Contains(view, "Select a resource card to inspect it") {
+		t.Fatalf("the Application's own card should refuse to be inspected:\n%s", view)
+	}
+}

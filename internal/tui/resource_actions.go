@@ -38,7 +38,7 @@ func (m Model) resourceTargets(kind confirmKind) ([]explorer.ResourceNode, strin
 	if len(m.markedCards) == 0 {
 		selected := m.selectedCard()
 		switch {
-		case selected.Kind == "Application":
+		case m.onRootCard():
 			return nil, "Select a resource card to act on it"
 		case kind == confirmRestart && !argocd.Restartable(selected.Kind):
 			return nil, "Only Deployments, StatefulSets and DaemonSets can be restarted"

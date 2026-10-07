@@ -32,7 +32,7 @@ func (m *Model) toggleMark() {
 		m.explorer.MoveDown()
 	case applicationTreeView:
 		card := m.selectedCard()
-		if card.Kind == "Application" {
+		if m.onRootCard() {
 			m.status = "Select a resource card to mark it"
 			return
 		}

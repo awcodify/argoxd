@@ -25,7 +25,10 @@ func (m Model) showEvents() (tea.Model, tea.Cmd) {
 		}
 		application, fromList = m.explorer.SelectedName(), true
 	case applicationTreeView:
-		application, resource = m.resourceTree.Application, m.selectedCard()
+		application = m.resourceTree.Application
+		if !m.onRootCard() {
+			resource = m.selectedCard()
+		}
 	default:
 		return m, nil
 	}
@@ -36,7 +39,7 @@ func (m Model) showEvents() (tea.Model, tea.Cmd) {
 	}
 
 	subject := application
-	if resource.Kind != "" && resource.Kind != "Application" {
+	if resource.Kind != "" {
 		subject = resource.Kind + "/" + resource.Name
 	}
 	m.loading = true
