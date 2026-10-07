@@ -22,6 +22,13 @@ var (
 	colorSurface = lipgloss.Color("#1E293B")
 )
 
+// pruneGlyph flags a resource that a sync with prune would delete, and
+// orphanGlyph one that no Application manages.
+const (
+	pruneGlyph  = "✂"
+	orphanGlyph = "◌"
+)
+
 // conditionGlyph flags an Application that has warnings or errors.
 const conditionGlyph = "⚠"
 

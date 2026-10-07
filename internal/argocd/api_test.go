@@ -330,3 +330,55 @@ func TestAPISourceReadsTheLastOperation(t *testing.T) {
 		t.Fatalf("results = %+v, want %+v", operation.Results, want)
 	}
 }
+
+func TestAPISourceMarksResourcesThatRequirePruningAndOrphans(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/applications/payments/resource-tree":
+			_, _ = w.Write([]byte(`{"nodes":[
+				{"kind":"ConfigMap","namespace":"pay","name":"old","status":"OutOfSync"},
+				{"kind":"ConfigMap","namespace":"pay","name":"current","status":"Synced"}],
+				"orphanedNodes":[{"kind":"Secret","namespace":"pay","name":"stray"}]}`))
+		case "/api/v1/applications/payments":
+			_, _ = w.Write([]byte(`{"status":{"resources":[
+				{"kind":"ConfigMap","namespace":"pay","name":"old","requiresPruning":true},
+				{"kind":"ConfigMap","namespace":"pay","name":"current"}]}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	tree, err := NewAPISource(server.URL, "", false).LoadResourceTree(context.Background(), "payments")
+	if err != nil {
+		t.Fatalf("LoadResourceTree() error = %v", err)
+	}
+
+	got := map[string][2]bool{}
+	for _, node := range tree.Nodes {
+		got[node.Name] = [2]bool{node.RequiresPruning, node.Orphaned}
+	}
+	want := map[string][2]bool{"old": {true, false}, "current": {false, false}, "stray": {false, true}}
+	if len(got) != len(want) || got["old"] != want["old"] || got["current"] != want["current"] || got["stray"] != want["stray"] {
+		t.Fatalf("[requires pruning, orphaned] by name = %v, want %v", got, want)
+	}
+}
+
+func TestAPISourceLoadsTheTreeWhenTheApplicationCannotBeRead(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/applications/payments/resource-tree" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		_, _ = w.Write([]byte(`{"nodes":[{"kind":"ConfigMap","namespace":"pay","name":"old"}]}`))
+	}))
+	defer server.Close()
+
+	tree, err := NewAPISource(server.URL, "", false).LoadResourceTree(context.Background(), "payments")
+	if err != nil {
+		t.Fatalf("LoadResourceTree() error = %v, want the tree without prune marks", err)
+	}
+	if len(tree.Nodes) != 1 || tree.Nodes[0].RequiresPruning {
+		t.Fatalf("nodes = %+v, want one node without a prune mark", tree.Nodes)
+	}
+}

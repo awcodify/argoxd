@@ -172,6 +172,15 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 		{Group: "apps", Version: "v1", Kind: "ReplicaSet", Namespace: namespace, Name: replicaSet.Name, Health: "Healthy",
 			Parents: []explorer.ResourceReference{deployment}},
 	}
+	if application.Sync == "OutOfSync" {
+		// A ConfigMap that was removed from Git; the next sync clears it.
+		nodes = append(nodes, explorer.ResourceNode{
+			Version: "v1", Kind: "ConfigMap", Namespace: namespace, Name: name + "-legacy", Sync: "OutOfSync", RequiresPruning: true,
+		})
+	}
+	if name == "prometheus" {
+		nodes = append(nodes, explorer.ResourceNode{Version: "v1", Kind: "Secret", Namespace: namespace, Name: "prometheus-old-token", Orphaned: true})
+	}
 	for index := range 3 {
 		nodes = append(nodes, explorer.ResourceNode{
 			Version: "v1", Kind: "Pod", Namespace: namespace, Name: fmt.Sprintf("%s-%s-%s", name, hash, suffixes[index]),

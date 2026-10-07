@@ -124,8 +124,11 @@ type ResourceNode struct {
 	// RequiresPruning marks a resource that is no longer in Git and that a
 	// sync with prune would delete.
 	RequiresPruning bool
-	Parents         []ResourceReference
-	Children        []ResourceNode
+	// Orphaned marks a resource in the Application's namespace that no
+	// Application manages; only the Argo CD API reports these.
+	Orphaned bool
+	Parents  []ResourceReference
+	Children []ResourceNode
 }
 
 // ResourceReference identifies a resource that owns or precedes another resource.

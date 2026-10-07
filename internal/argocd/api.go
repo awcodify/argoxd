@@ -101,28 +101,37 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 
 	tree := explorer.ResourceTree{
 		Application: application,
-		Nodes:       make([]explorer.ResourceNode, 0, len(response.Nodes)),
+		Nodes:       make([]explorer.ResourceNode, 0, len(response.Nodes)+len(response.OrphanedNodes)),
 	}
+	pruning := s.resourcesToPrune(ctx, application)
 	for _, node := range response.Nodes {
-		parents := make([]explorer.ResourceReference, 0, len(node.ParentRefs))
-		for _, parent := range node.ParentRefs {
-			parents = append(parents, explorer.ResourceReference{
-				Group: parent.Group, Kind: parent.Kind, Namespace: parent.Namespace, Name: parent.Name,
-			})
-		}
-		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
-			Group:     node.Group,
-			Version:   node.Version,
-			Kind:      node.Kind,
-			Namespace: node.Namespace,
-			Name:      node.Name,
-			UID:       node.UID,
-			Sync:      node.Status,
-			Health:    node.Health.Status,
-			Parents:   parents,
-		})
+		resource := node.resourceNode()
+		resource.RequiresPruning = pruning[resource.Reference()]
+		tree.Nodes = append(tree.Nodes, resource)
+	}
+	for _, node := range response.OrphanedNodes {
+		resource := node.resourceNode()
+		resource.Orphaned = true
+		tree.Nodes = append(tree.Nodes, resource)
 	}
 	return tree, nil
+}
+
+// resourcesToPrune lists the resources a sync with prune would delete. The
+// resource tree does not say, so it comes from the Application. It is extra
+// information: when the Application cannot be read, nothing is marked.
+func (s *APISource) resourcesToPrune(ctx context.Context, application string) map[explorer.ResourceReference]bool {
+	var response applicationResources
+	if err := s.get(ctx, "/api/v1/applications/"+url.PathEscape(application), &response); err != nil {
+		return nil
+	}
+	pruning := make(map[explorer.ResourceReference]bool)
+	for _, resource := range response.Status.Resources {
+		if resource.RequiresPruning {
+			pruning[explorer.ResourceReference{Group: resource.Group, Kind: resource.Kind, Namespace: resource.Namespace, Name: resource.Name}] = true
+		}
+	}
+	return pruning
 }
 
 // SyncApplication starts a sync operation for an Application.
@@ -413,22 +422,53 @@ type clusterList struct {
 }
 
 type resourceTreeResponse struct {
-	Nodes []struct {
+	Nodes         []resourceTreeNode `json:"nodes"`
+	OrphanedNodes []resourceTreeNode `json:"orphanedNodes"`
+}
+
+type resourceTreeNode struct {
+	Group     string `json:"group"`
+	Version   string `json:"version"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+	Status    string `json:"status"`
+	Health    struct {
+		Status string `json:"status"`
+	} `json:"health"`
+	ParentRefs []struct {
 		Group     string `json:"group"`
-		Version   string `json:"version"`
 		Kind      string `json:"kind"`
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
-		UID       string `json:"uid"`
-		Status    string `json:"status"`
-		Health    struct {
-			Status string `json:"status"`
-		} `json:"health"`
-		ParentRefs []struct {
-			Group     string `json:"group"`
-			Kind      string `json:"kind"`
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"parentRefs"`
-	} `json:"nodes"`
+	} `json:"parentRefs"`
+}
+
+// resourceNode converts a node of the resource tree.
+func (n resourceTreeNode) resourceNode() explorer.ResourceNode {
+	parents := make([]explorer.ResourceReference, 0, len(n.ParentRefs))
+	for _, parent := range n.ParentRefs {
+		parents = append(parents, explorer.ResourceReference{
+			Group: parent.Group, Kind: parent.Kind, Namespace: parent.Namespace, Name: parent.Name,
+		})
+	}
+	return explorer.ResourceNode{
+		Group: n.Group, Version: n.Version, Kind: n.Kind, Namespace: n.Namespace, Name: n.Name,
+		UID: n.UID, Sync: n.Status, Health: n.Health.Status, Parents: parents,
+	}
+}
+
+// applicationResources are the resources in an Application's status, which
+// know whether a sync with prune would delete them.
+type applicationResources struct {
+	Status struct {
+		Resources []struct {
+			Group           string `json:"group"`
+			Kind            string `json:"kind"`
+			Namespace       string `json:"namespace"`
+			Name            string `json:"name"`
+			RequiresPruning bool   `json:"requiresPruning"`
+		} `json:"resources"`
+	} `json:"status"`
 }

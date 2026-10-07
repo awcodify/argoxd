@@ -176,3 +176,39 @@ func TestDemoSourceSyncClearsASyncErrorAndSucceeds(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoTreesShowPendingPrunesAndOrphans(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+	flagged := func(name string) (pruning, orphaned []string) {
+		tree, err := source.LoadResourceTree(ctx, name)
+		if err != nil {
+			t.Fatalf("LoadResourceTree(%s) error = %v", name, err)
+		}
+		for _, node := range tree.Nodes {
+			if node.RequiresPruning {
+				pruning = append(pruning, node.Name)
+			}
+			if node.Orphaned {
+				orphaned = append(orphaned, node.Name)
+			}
+		}
+		return pruning, orphaned
+	}
+
+	if pruning, _ := flagged("cart"); len(pruning) != 1 {
+		t.Fatalf("cart resources to prune = %v, want one", pruning)
+	}
+	if _, orphaned := flagged("prometheus"); len(orphaned) != 1 {
+		t.Fatalf("prometheus orphaned resources = %v, want one", orphaned)
+	}
+	if pruning, orphaned := flagged("checkout"); len(pruning)+len(orphaned) != 0 {
+		t.Fatalf("checkout is in sync but has pruning %v and orphans %v", pruning, orphaned)
+	}
+	if err := source.SyncApplication(ctx, "cart", SyncOptions{Prune: true}); err != nil {
+		t.Fatalf("SyncApplication() error = %v", err)
+	}
+	if pruning, _ := flagged("cart"); len(pruning) != 0 {
+		t.Fatalf("cart resources to prune after a sync = %v, want none", pruning)
+	}
+}

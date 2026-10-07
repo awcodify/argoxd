@@ -152,6 +152,12 @@ func drawCard(node explorer.ResourceNode, selected, context, marked bool) string
 	inner := cardWidth - 4
 	name := nameStyle.Render(truncateMiddle(node.Name, inner))
 	status := joinNonEmpty(statusBadge(node.Health), statusBadge(node.Sync))
+	if node.RequiresPruning {
+		status = joinNonEmpty(status, warningStyle.Render(pruneGlyph+" to prune"))
+	}
+	if node.Orphaned {
+		status = joinNonEmpty(status, warningStyle.Render(orphanGlyph+" orphaned"))
+	}
 	if status == "" {
 		status = mutedStyle.Render("no status reported")
 	}
@@ -189,6 +195,15 @@ func resourceSummary(nodes []explorer.ResourceNode) string {
 			counts[node.Sync]++
 		}
 	}
+	toPrune, orphaned := 0, 0
+	for _, node := range nodes {
+		if node.RequiresPruning {
+			toPrune++
+		}
+		if node.Orphaned {
+			orphaned++
+		}
+	}
 	var parts []string
 	for _, status := range summaryOrder {
 		if counts[status] == 0 {
@@ -200,6 +215,12 @@ func resourceSummary(nodes []explorer.ResourceNode) string {
 		}
 		text := lookupStatus(status).glyph + " " + strconv.Itoa(counts[status]) + " " + label
 		parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(status)).Render(text))
+	}
+	if toPrune > 0 {
+		parts = append(parts, warningStyle.Render(pruneGlyph+" "+strconv.Itoa(toPrune)+" to prune"))
+	}
+	if orphaned > 0 {
+		parts = append(parts, warningStyle.Render(orphanGlyph+" "+strconv.Itoa(orphaned)+" orphaned"))
 	}
 	return strings.Join(parts, "   ")
 }
@@ -231,6 +252,19 @@ func renderDetails(selected card) []string {
 			value = mutedStyle.Render("—")
 		}
 		lines = append(lines, " "+mutedStyle.Render(padRight(row[0], 11))+value)
+	}
+	var notes []string
+	if node.RequiresPruning {
+		notes = []string{"No longer in Git. It will be", "deleted by a sync with prune."}
+	}
+	if node.Orphaned {
+		notes = []string{"In the destination namespace but", "not managed by this application."}
+	}
+	if len(notes) > 0 {
+		lines = append(lines, "")
+	}
+	for _, note := range notes {
+		lines = append(lines, " "+warningStyle.Render(note))
 	}
 	return strings.Split(box{
 		border: lipgloss.RoundedBorder(),
