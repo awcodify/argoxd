@@ -32,6 +32,27 @@ type Application struct {
 	Revision    string
 	Destination string
 	LastSync    time.Time
+	// Conditions are the warnings and errors Argo CD reports for the Application.
+	Conditions []Condition
+	// Policy is how the Application syncs on its own.
+	Policy SyncPolicy
+}
+
+// Condition is a warning or error Argo CD reports for an Application, such as
+// a ComparisonError.
+type Condition struct {
+	Type    string
+	Message string
+}
+
+// SyncPolicy is the automation of an Application's syncs.
+type SyncPolicy struct {
+	// Automated syncs the Application whenever it is out of sync.
+	Automated bool
+	// SelfHeal also syncs when the live cluster drifts from Git.
+	SelfHeal bool
+	// Prune lets an automated sync delete resources that are no longer in Git.
+	Prune bool
 }
 
 // Project is an Argo CD project summary.
@@ -68,11 +89,14 @@ type ResourceNode struct {
 	Namespace string
 	Name      string
 	// UID identifies the live object; only the Argo CD API reports it.
-	UID      string
-	Sync     string
-	Health   string
-	Parents  []ResourceReference
-	Children []ResourceNode
+	UID    string
+	Sync   string
+	Health string
+	// RequiresPruning marks a resource that is no longer in Git and that a
+	// sync with prune would delete.
+	RequiresPruning bool
+	Parents         []ResourceReference
+	Children        []ResourceNode
 }
 
 // ResourceReference identifies a resource that owns or precedes another resource.

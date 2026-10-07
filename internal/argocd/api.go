@@ -67,7 +67,12 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 			Revision:    application.Spec.targetRevision(),
 			Destination: destination(application.Spec.Destination.Name, application.Spec.Destination.Server, application.Spec.Destination.Namespace),
 			LastSync:    application.Status.OperationState.FinishedAt,
+			Policy:      application.Spec.policy(),
 		})
+		for _, condition := range application.Status.Conditions {
+			last := &snapshot.Applications[len(snapshot.Applications)-1]
+			last.Conditions = append(last.Conditions, explorer.Condition{Type: condition.Type, Message: condition.Message})
+		}
 	}
 	for _, project := range projects.Items {
 		snapshot.Projects = append(snapshot.Projects, explorer.Project{
@@ -267,6 +272,10 @@ type applicationList struct {
 			OperationState struct {
 				FinishedAt time.Time `json:"finishedAt"`
 			} `json:"operationState"`
+			Conditions []struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"conditions"`
 		} `json:"status"`
 	} `json:"items"`
 }
@@ -285,6 +294,21 @@ type applicationSpec struct {
 		Server    string `json:"server"`
 		Namespace string `json:"namespace"`
 	} `json:"destination"`
+	SyncPolicy struct {
+		Automated *struct {
+			Prune    bool `json:"prune"`
+			SelfHeal bool `json:"selfHeal"`
+		} `json:"automated"`
+	} `json:"syncPolicy"`
+}
+
+// policy reads how an Application syncs on its own.
+func (s applicationSpec) policy() explorer.SyncPolicy {
+	automated := s.SyncPolicy.Automated
+	if automated == nil {
+		return explorer.SyncPolicy{}
+	}
+	return explorer.SyncPolicy{Automated: true, SelfHeal: automated.SelfHeal, Prune: automated.Prune}
 }
 
 // targetRevision reads the revision of a single-source Application, or of the

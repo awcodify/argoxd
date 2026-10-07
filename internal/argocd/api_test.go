@@ -266,3 +266,34 @@ func TestAPISourceReadsHistoryAndRollsBack(t *testing.T) {
 		t.Fatalf("rollback request = %q, want %q", rollback, want)
 	}
 }
+
+func TestAPISourceReadsConditionsAndSyncPolicy(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/applications":
+			_, _ = w.Write([]byte(`{"items":[
+				{"metadata":{"name":"checkout"},"spec":{"project":"store","syncPolicy":{"automated":{"prune":true,"selfHeal":true}}},
+				 "status":{"conditions":[{"type":"ComparisonError","message":"repository not found"}]}},
+				{"metadata":{"name":"manual"},"spec":{"project":"store"}}]}`))
+		default:
+			_, _ = w.Write([]byte(`{"items":[]}`))
+		}
+	}))
+	defer server.Close()
+
+	snapshot, err := NewAPISource(server.URL, "", false).Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	checkout, manual := snapshot.Applications[0], snapshot.Applications[1]
+	if want := []explorer.Condition{{Type: "ComparisonError", Message: "repository not found"}}; !slices.Equal(checkout.Conditions, want) {
+		t.Fatalf("conditions = %+v, want %+v", checkout.Conditions, want)
+	}
+	if want := (explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true}); checkout.Policy != want {
+		t.Fatalf("policy = %+v, want %+v", checkout.Policy, want)
+	}
+	if len(manual.Conditions) != 0 || manual.Policy != (explorer.SyncPolicy{}) {
+		t.Fatalf("manual application = %+v, want no conditions and no automation", manual)
+	}
+}

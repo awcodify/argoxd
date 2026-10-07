@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -267,5 +268,73 @@ func TestKubernetesSourceRollbackRefusesWhileAnotherOperationIsPending(t *testin
 	got, _ := source.getApplication(context.Background(), "checkout")
 	if revision, _, _ := unstructured.NestedString(got.Object, "operation", "sync", "revision"); revision != "ccc3333" {
 		t.Fatalf("the pending operation was overwritten: %v", got.Object["operation"])
+	}
+}
+
+func TestSnapshotReadsConditionsAndSyncPolicy(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"spec": map[string]any{
+			"syncPolicy": map[string]any{
+				"automated": map[string]any{"prune": true, "selfHeal": true},
+			},
+		},
+		"status": map[string]any{
+			"conditions": []any{
+				map[string]any{"type": "ComparisonError", "message": "repository not found"},
+				map[string]any{"type": "SyncError", "message": "one or more objects failed to apply"},
+			},
+		},
+	}}, {Object: map[string]any{
+		"metadata": map[string]any{"name": "manual"},
+		"spec":     map[string]any{},
+	}}}
+
+	snapshot := snapshotFromKubernetesResources(applications, nil, nil)
+
+	checkout := snapshot.Applications[0]
+	wantConditions := []explorer.Condition{
+		{Type: "ComparisonError", Message: "repository not found"},
+		{Type: "SyncError", Message: "one or more objects failed to apply"},
+	}
+	if !slices.Equal(checkout.Conditions, wantConditions) {
+		t.Fatalf("conditions = %+v, want %+v", checkout.Conditions, wantConditions)
+	}
+	if want := (explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true}); checkout.Policy != want {
+		t.Fatalf("policy = %+v, want %+v", checkout.Policy, want)
+	}
+	manual := snapshot.Applications[1]
+	if len(manual.Conditions) != 0 || manual.Policy != (explorer.SyncPolicy{}) {
+		t.Fatalf("manual application = %+v, want no conditions and no automation", manual)
+	}
+}
+
+func TestSnapshotTreatsAutomatedSyncWithoutOptionsAsAutomated(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"spec":     map[string]any{"syncPolicy": map[string]any{"automated": map[string]any{}}},
+	}}}
+
+	policy := snapshotFromKubernetesResources(applications, nil, nil).Applications[0].Policy
+
+	if want := (explorer.SyncPolicy{Automated: true}); policy != want {
+		t.Fatalf("policy = %+v, want %+v", policy, want)
+	}
+}
+
+func TestResourceTreeFromApplicationReadsRequiresPruning(t *testing.T) {
+	application := unstructured.Unstructured{Object: map[string]any{
+		"status": map[string]any{
+			"resources": []any{
+				map[string]any{"kind": "ConfigMap", "name": "old", "requiresPruning": true},
+				map[string]any{"kind": "ConfigMap", "name": "current"},
+			},
+		},
+	}}
+
+	nodes := resourceTreeFromApplication(application).Nodes
+
+	if !nodes[0].RequiresPruning || nodes[1].RequiresPruning {
+		t.Fatalf("requires pruning = %v, %v, want true, false", nodes[0].RequiresPruning, nodes[1].RequiresPruning)
 	}
 }

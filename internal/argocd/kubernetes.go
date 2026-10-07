@@ -229,6 +229,8 @@ func snapshotFromKubernetesResources(applications, projects, clusters []unstruct
 			Revision:    targetRevision(application.Object),
 			Destination: destination(nestedString(application.Object, "spec", "destination", "name"), nestedString(application.Object, "spec", "destination", "server"), nestedString(application.Object, "spec", "destination", "namespace")),
 			LastSync:    parseTime(nestedString(application.Object, "status", "operationState", "finishedAt")),
+			Conditions:  conditions(application.Object),
+			Policy:      syncPolicy(application.Object),
 		})
 	}
 	for _, project := range projects {
@@ -267,6 +269,30 @@ func targetRevision(application map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// conditions reads the warnings and errors in an Application's status.
+func conditions(application map[string]any) []explorer.Condition {
+	items, _, _ := unstructured.NestedSlice(application, "status", "conditions")
+	var conditions []explorer.Condition
+	for _, item := range items {
+		if object, ok := item.(map[string]any); ok {
+			conditions = append(conditions, explorer.Condition{Type: nestedString(object, "type"), Message: nestedString(object, "message")})
+		}
+	}
+	return conditions
+}
+
+// syncPolicy reads how an Application syncs on its own. An empty automated
+// block still means automated sync.
+func syncPolicy(application map[string]any) explorer.SyncPolicy {
+	automated, found, _ := unstructured.NestedMap(application, "spec", "syncPolicy", "automated")
+	if !found {
+		return explorer.SyncPolicy{}
+	}
+	prune, _, _ := unstructured.NestedBool(automated, "prune")
+	selfHeal, _, _ := unstructured.NestedBool(automated, "selfHeal")
+	return explorer.SyncPolicy{Automated: true, SelfHeal: selfHeal, Prune: prune}
 }
 
 // destination describes where an Application deploys, e.g. "in-cluster/store".
@@ -315,7 +341,14 @@ func resourceTreeFromApplication(application unstructured.Unstructured) explorer
 			Name:      nestedString(object, "name"),
 			Sync:      nestedString(object, "status"),
 			Health:    nestedString(object, "health", "status"),
+
+			RequiresPruning: requiresPruning(object),
 		})
 	}
 	return tree
+}
+
+func requiresPruning(resource map[string]any) bool {
+	required, _, _ := unstructured.NestedBool(resource, "requiresPruning")
+	return required
 }
