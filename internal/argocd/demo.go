@@ -55,6 +55,7 @@ func NewDemoSource() *DemoSource {
 		app("ingress-nginx", "platform", "platform", "Synced", "Healthy", "1a6e44c", 72*time.Hour),
 		app("grafana", "observability", "observability", "Synced", "Healthy", "e05b8d3", 48*time.Hour),
 		app("prometheus", "observability", "observability", "OutOfSync", "Healthy", "e05b8d3", 48*time.Hour),
+		app("platform-root", "argocd", "platform", "Synced", "Healthy", "1a6e44c", 72*time.Hour),
 	}
 	applications[3].Conditions = []explorer.Condition{
 		{Type: "SyncError", Message: "one or more objects failed to apply, reason: Deployment.apps \"billing-worker\" is invalid: spec.template.spec.containers[0].image: Required value"},
@@ -147,6 +148,9 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 	if err != nil {
 		return explorer.ResourceTree{}, err
 	}
+	if name == "platform-root" {
+		return s.appOfAppsTree(name), nil
+	}
 	namespace := strings.TrimPrefix(application.Destination, "in-cluster/")
 	deploySync := "Synced"
 	if application.Sync == "OutOfSync" {
@@ -188,6 +192,26 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 		})
 	}
 	return explorer.ResourceTree{Application: name, Nodes: nodes}, nil
+}
+
+// appOfAppsChildren are the Applications the sample app of apps deploys.
+var appOfAppsChildren = []string{"ingress-nginx", "grafana", "prometheus"}
+
+// appOfAppsTree is the resources of an Application that deploys other
+// Applications: one card for each of them, with the status they have now.
+func (s *DemoSource) appOfAppsTree(name string) explorer.ResourceTree {
+	tree := explorer.ResourceTree{Application: name}
+	for _, childName := range appOfAppsChildren {
+		child, err := s.find(childName)
+		if err != nil {
+			continue
+		}
+		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
+			Group: "argoproj.io", Version: "v1alpha1", Kind: "Application", Namespace: "argocd", Name: child.Name,
+			Sync: child.Sync, Health: child.Health,
+		})
+	}
+	return tree
 }
 
 var podSuffixes = [...]string{"x7k2p", "m9q4w", "t5v8z"}

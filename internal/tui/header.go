@@ -91,13 +91,17 @@ func (m Model) keyHints() []keyHint {
 	case historyViewMode:
 		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
-		return []keyHint{
+		hints := []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
 			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Hard refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
+		if m.onChildApplication() {
+			hints = append([]keyHint{{"enter", "Open app"}}, hints...)
+		}
+		return hints
 	}
 
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}

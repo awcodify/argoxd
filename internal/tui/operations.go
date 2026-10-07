@@ -25,7 +25,9 @@ type loadedSnapshot struct {
 type loadedTree struct {
 	tree       explorer.ResourceTree
 	background bool
-	err        error
+	// child means the tree is of an Application the open one deploys.
+	child bool
+	err   error
 }
 
 type loadedText struct {

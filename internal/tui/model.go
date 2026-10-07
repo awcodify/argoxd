@@ -34,6 +34,9 @@ type Model struct {
 	view            viewMode
 	tree            []treeItem
 	resourceTree    explorer.ResourceTree
+	// parents are the Applications whose dependency views are left open while a
+	// child Application is shown, the first one opened first.
+	parents         []treeFrame
 	treeCursor      int
 	treeSearch      string
 	treeFilter      explorer.Filter
@@ -217,6 +220,9 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+		if m.view == applicationTreeView {
+			return m.openChildApplication()
+		}
 		m.toggleTreeItem()
 	case " ":
 		m.toggleMark()
@@ -229,6 +235,10 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.markCount() > 0 {
 			m.clearMarks()
+			break
+		}
+		if len(m.parents) > 0 {
+			m.leaveChild()
 			break
 		}
 		m.closeTree()
@@ -317,6 +327,7 @@ func (m *Model) showScreen(screen explorer.Screen) {
 func (m *Model) closeTree() {
 	m.view = listView
 	m.tree = nil
+	m.parents = nil
 	m.resourceTree = explorer.ResourceTree{}
 	m.treeCursor = 0
 	m.treeSearch = ""
@@ -404,6 +415,11 @@ func (m *Model) applyTree(message loadedTree) {
 	}
 	m.err = message.err
 	if message.err == nil {
+		if message.child && m.view == applicationTreeView {
+			m.enterChild()
+		} else {
+			m.parents = nil
+		}
 		m.view = applicationTreeView
 		m.resourceTree = message.tree
 		m.treeCursor = 0

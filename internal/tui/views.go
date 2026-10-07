@@ -181,12 +181,12 @@ func (m Model) renderCrumbs() string {
 	case inventoryTreeView:
 		crumbs = []string{"inventory"}
 	case applicationTreeView:
-		crumbs = append(crumbs, m.resourceTree.Application)
+		crumbs = append(crumbs, m.treePath()...)
 	case textViewMode:
 		if m.viewerFromList {
 			crumbs = append(crumbs, m.viewer.subject, m.viewer.kind)
 		} else {
-			crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
+			crumbs = append(append(crumbs, m.treePath()...), m.viewer.kind)
 		}
 	case historyViewMode:
 		crumbs = append(crumbs, m.history.application, "history")

@@ -212,3 +212,36 @@ func TestDemoTreesShowPendingPrunesAndOrphans(t *testing.T) {
 		t.Fatalf("cart resources to prune after a sync = %v, want none", pruning)
 	}
 }
+
+func TestDemoHasAnAppOfAppsWhoseChildrenAreApplications(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+	snapshot, _ := source.Load(ctx)
+	byName := map[string]explorer.Application{}
+	for _, application := range snapshot.Applications {
+		byName[application.Name] = application
+	}
+
+	tree, err := source.LoadResourceTree(ctx, "platform-root")
+	if err != nil {
+		t.Fatalf("LoadResourceTree() error = %v", err)
+	}
+
+	children := 0
+	for _, node := range tree.Nodes {
+		if node.Kind != "Application" {
+			continue
+		}
+		children++
+		child, found := byName[node.Name]
+		if !found || node.Group != "argoproj.io" || node.Sync != child.Sync || node.Health != child.Health {
+			t.Fatalf("child card %+v does not match the application %+v", node, child)
+		}
+		if _, err := source.LoadResourceTree(ctx, node.Name); err != nil {
+			t.Fatalf("LoadResourceTree(%s) error = %v", node.Name, err)
+		}
+	}
+	if children < 2 {
+		t.Fatalf("platform-root deploys %d applications, want at least 2", children)
+	}
+}
