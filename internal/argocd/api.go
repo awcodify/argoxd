@@ -166,6 +166,30 @@ func (s *APISource) RefreshApplication(ctx context.Context, application string) 
 	return nil
 }
 
+var _ SyncPolicySetter = (*APISource)(nil)
+
+// SetSyncPolicy turns auto-sync on or off and sets its self-heal and prune
+// options, with the same merge patch the Kubernetes source applies.
+func (s *APISource) SetSyncPolicy(ctx context.Context, application string, policy explorer.SyncPolicy) error {
+	patch, err := json.Marshal(syncPolicyPatch(policy))
+	if err != nil {
+		return fmt.Errorf("encode sync policy: %w", err)
+	}
+	body, err := json.Marshal(patchRequest{Patch: string(patch), PatchType: "merge"})
+	if err != nil {
+		return fmt.Errorf("encode sync policy request: %w", err)
+	}
+	if err := s.request(ctx, http.MethodPatch, "/api/v1/applications/"+url.PathEscape(application), bytes.NewBuffer(body), nil); err != nil {
+		return fmt.Errorf("set sync policy: %w", err)
+	}
+	return nil
+}
+
+type patchRequest struct {
+	Patch     string `json:"patch"`
+	PatchType string `json:"patchType"`
+}
+
 // DeleteApplication deletes an Application and its managed resources.
 func (s *APISource) DeleteApplication(ctx context.Context, application string) error {
 	path := "/api/v1/applications/" + url.PathEscape(application)

@@ -205,6 +205,8 @@ type fakeSource struct {
 	deletedApps     []string
 	// failures makes the action on the named Application or resource fail.
 	failures map[string]error
+
+	policies []policyCall
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {

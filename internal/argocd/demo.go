@@ -34,6 +34,7 @@ var (
 	_ ResourceActor       = (*DemoSource)(nil)
 	_ EventLister         = (*DemoSource)(nil)
 	_ ResourceSyncer      = (*DemoSource)(nil)
+	_ SyncPolicySetter    = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -65,6 +66,9 @@ func NewDemoSource() *DemoSource {
 	for index := range applications {
 		applications[index].Operation = sampleOperation(applications[index])
 	}
+	applications[1].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true} // checkout
+	applications[2].Policy = explorer.SyncPolicy{Automated: true}                              // search
+	applications[5].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true}              // ingress-nginx
 	history := make(map[string][]explorer.HistoryEntry, len(applications))
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)
@@ -192,6 +196,11 @@ func (s *DemoSource) SyncApplication(_ context.Context, name string, options Syn
 		})
 		application.Operation = sampleOperation(*application)
 	})
+}
+
+// SetSyncPolicy changes the sample Application's sync policy.
+func (s *DemoSource) SetSyncPolicy(_ context.Context, name string, policy explorer.SyncPolicy) error {
+	return s.update(name, func(application *explorer.Application) { application.Policy = policy })
 }
 
 // SyncResources syncs the Application: the sample data does not track which

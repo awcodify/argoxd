@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,8 @@ import (
 	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+var errNoSyncPolicy = errors.New("the active source cannot change the sync policy")
 
 // confirmKind is the action a confirmation asks about.
 type confirmKind int
@@ -22,6 +25,7 @@ const (
 	confirmRestart
 	confirmDeleteResources
 	confirmRollback
+	confirmSyncPolicy
 )
 
 // confirmation asks before an action runs, listing everything it will touch.
@@ -36,6 +40,8 @@ type confirmation struct {
 	resources    []explorer.ResourceNode
 	entry        explorer.HistoryEntry
 	options      argocd.SyncOptions
+	// policy is the sync policy to set, which the dialog lets the user change.
+	policy explorer.SyncPolicy
 }
 
 // target is one line of the list in a confirmation.
@@ -101,6 +107,8 @@ func (c confirmation) question() string {
 		return "Delete " + c.subject() + "?"
 	case confirmRollback:
 		return "Roll back " + c.application + " to " + revisionLabel(c.entry) + "?"
+	case confirmSyncPolicy:
+		return "Set the sync policy of " + c.subject() + "?"
 	}
 	return ""
 }
@@ -126,7 +134,11 @@ func (m Model) targets(c confirmation) []target {
 	}
 	for _, name := range names {
 		application := m.applicationNamed(name)
-		targets = append(targets, target{name, joinNonEmpty(application.Sync, application.Health)})
+		detail := joinNonEmpty(application.Sync, application.Health)
+		if c.kind == confirmSyncPolicy {
+			detail = policyLabel(application.Policy)
+		}
+		targets = append(targets, target{name, detail})
 	}
 	for _, resource := range c.resources {
 		targets = append(targets, target{resourceName(resource), resource.Namespace})
@@ -157,6 +169,11 @@ func (c confirmation) keys() string {
 		confirm = "roll back"
 	}
 	line := keycap("enter", confirm)
+	if c.kind == confirmSyncPolicy {
+		return keycap("enter", "apply") + "  " + keycap("a", "auto-sync "+toggle(c.policy.Automated)) +
+			"  " + keycap("h", "self-heal "+toggle(c.policy.SelfHeal)) + "  " + keycap("p", "prune "+toggle(c.policy.Prune)) +
+			"  " + keycap("esc", "cancel")
+	}
 	if c.usesOptions() {
 		line += "  " + keycap("p", "prune "+toggle(c.options.Prune)) + "  " + keycap("r", "dry run "+toggle(c.options.DryRun))
 	}
@@ -173,6 +190,9 @@ func (m Model) renderConfirmation(width, height int) []string {
 	}
 	targets := m.targets(c)
 	room := max(1, height-5)
+	if c.kind == confirmSyncPolicy {
+		room = max(1, height-7)
+	}
 	hidden := 0
 	if len(targets) > room {
 		hidden = len(targets) - (room - 1)
@@ -190,6 +210,9 @@ func (m Model) renderConfirmation(width, height int) []string {
 	if hidden > 0 {
 		lines = append(lines, "   "+mutedStyle.Render(fmt.Sprintf("… and %d more", hidden)))
 	}
+	if c.kind == confirmSyncPolicy {
+		lines = append(lines, "", " "+mutedStyle.Render("Self-heal and prune need auto-sync. Auto-sync also undoes a rollback, so turn it off first."))
+	}
 	return append(lines, "", " "+c.keys())
 }
 
@@ -197,9 +220,20 @@ func (m Model) renderConfirmation(width, height int) []string {
 // and p and r toggle prune and dry run where they apply.
 func (m Model) updateConfirm(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch message.String() {
+	case "a":
+		if m.confirm.kind == confirmSyncPolicy {
+			m.confirm.policy = toggleAutoSync(m.confirm.policy)
+		}
+	case "h":
+		if m.confirm.kind == confirmSyncPolicy && m.confirm.policy.Automated {
+			m.confirm.policy.SelfHeal = !m.confirm.policy.SelfHeal
+		}
 	case "p":
 		if m.confirm.usesOptions() {
 			m.confirm.options.Prune = !m.confirm.options.Prune
+		}
+		if m.confirm.kind == confirmSyncPolicy && m.confirm.policy.Automated {
+			m.confirm.policy.Prune = !m.confirm.policy.Prune
 		}
 	case "r":
 		if m.confirm.usesOptions() {
@@ -258,8 +292,60 @@ func (m Model) perform(c confirmation) tea.Cmd {
 		return m.actOnResources(c)
 	case confirmRollback:
 		return m.rollback(c)
+	case confirmSyncPolicy:
+		return m.setSyncPolicy(c)
 	}
 	return nil
+}
+
+// toggleAutoSync turns auto-sync on or off. Self-heal and prune only exist
+// while it is on, so turning it off drops them.
+func toggleAutoSync(policy explorer.SyncPolicy) explorer.SyncPolicy {
+	if policy.Automated {
+		return explorer.SyncPolicy{}
+	}
+	return explorer.SyncPolicy{Automated: true}
+}
+
+// policyLabel describes how an Application syncs, e.g. "auto-sync · self-heal".
+func policyLabel(policy explorer.SyncPolicy) string {
+	if !policy.Automated {
+		return "manual sync"
+	}
+	parts := []string{"auto-sync"}
+	if policy.SelfHeal {
+		parts = append(parts, "self-heal")
+	}
+	if policy.Prune {
+		parts = append(parts, "prune")
+	}
+	return strings.Join(parts, " · ")
+}
+
+// askSyncPolicy opens the dialog for the marked or selected Applications. It
+// starts from the policy of the first one.
+func (m Model) askSyncPolicy() Model {
+	if names := m.applicationTargets(); len(names) > 0 {
+		m.confirm = forApplications(confirmSyncPolicy, names)
+		m.confirm.policy = m.applicationNamed(names[0]).Policy
+	}
+	return m
+}
+
+// setSyncPolicy gives each Application the policy chosen in the dialog.
+func (m Model) setSyncPolicy(c confirmation) tea.Cmd {
+	const action = "sync policy"
+	setter, ok := m.source.(argocd.SyncPolicySetter)
+	if !ok {
+		return func() tea.Msg { return operationCompleted{action: action, err: errNoSyncPolicy} }
+	}
+	names := c.applications
+	if len(names) == 0 {
+		names = []string{c.application}
+	}
+	return m.each(action, c.subject(), c.application, names, false, func(ctx context.Context, index int) error {
+		return setter.SetSyncPolicy(ctx, names[index], c.policy)
+	})
 }
 
 // eachApplication runs a call for each Application in turn, each within its own

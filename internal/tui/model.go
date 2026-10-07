@@ -250,6 +250,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if application := m.selectedApplication(); application != "" {
 			return m.openHistory(application)
 		}
+	case "P":
+		m = m.askSyncPolicy()
 	case "R":
 		m = m.askApplicationAction(confirmHardRefresh)
 	case "D":

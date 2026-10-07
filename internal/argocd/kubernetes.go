@@ -158,6 +158,16 @@ func (s *KubernetesSource) RefreshApplication(ctx context.Context, application s
 	return nil
 }
 
+var _ SyncPolicySetter = (*KubernetesSource)(nil)
+
+// SetSyncPolicy turns auto-sync on or off and sets its self-heal and prune options.
+func (s *KubernetesSource) SetSyncPolicy(ctx context.Context, application string, policy explorer.SyncPolicy) error {
+	if err := s.patchApplication(ctx, application, syncPolicyPatch(policy)); err != nil {
+		return fmt.Errorf("set sync policy of application %q: %w", application, err)
+	}
+	return nil
+}
+
 func (s *KubernetesSource) patchApplication(ctx context.Context, application string, patch map[string]any) error {
 	client, err := s.client()
 	if err != nil {
