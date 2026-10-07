@@ -218,6 +218,9 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case explorer.ProjectsScreen:
 				m.openProjectApplications()
 				return m, nil
+			case explorer.ApplicationSetsScreen:
+				m.openApplicationSetApplications()
+				return m, nil
 			}
 		}
 		if m.view == applicationTreeView {
@@ -274,6 +277,17 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// openApplicationSetApplications lists the Applications the selected
+// ApplicationSet generated.
+func (m *Model) openApplicationSetApplications() {
+	applicationSet := m.explorer.SelectedName()
+	if applicationSet == "" {
+		return
+	}
+	m.showScreen(explorer.ApplicationsScreen)
+	m.explorer.SetOwner(applicationSet)
 }
 
 // openProjectApplications filters Applications to the selected Project.

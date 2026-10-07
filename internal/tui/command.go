@@ -20,6 +20,7 @@ var commands = []viewCommand{
 	{names: []string{"app", "apps", "applications"}, screen: explorer.ApplicationsScreen, takesProject: true},
 	{names: []string{"proj", "projects"}, screen: explorer.ProjectsScreen},
 	{names: []string{"cluster", "clusters"}, screen: explorer.ClustersScreen},
+	{names: []string{"appset", "appsets", "applicationset", "applicationsets"}, screen: explorer.ApplicationSetsScreen},
 	{names: []string{"settings"}, screen: explorer.SettingsScreen},
 }
 

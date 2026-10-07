@@ -67,6 +67,15 @@ func NewDemoSource() *DemoSource {
 	for index := range applications {
 		applications[index].Operation = sampleOperation(applications[index])
 	}
+	for _, index := range []int{0, 1, 2} { // cart, checkout, search
+		applications[index].Owner = "store-services"
+	}
+	for _, index := range []int{3, 4} { // billing-worker, payments
+		applications[index].Owner = "payments-envs"
+	}
+	for _, index := range []int{5, 6, 7} { // ingress-nginx, grafana, prometheus
+		applications[index].Owner = "cluster-addons"
+	}
 	applications[1].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true} // checkout
 	applications[2].Policy = explorer.SyncPolicy{Automated: true}                              // search
 	applications[5].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true}              // ingress-nginx
@@ -128,6 +137,13 @@ func (s *DemoSource) Load(context.Context) (explorer.Snapshot, error) {
 	defer s.mu.Unlock()
 	return explorer.Snapshot{
 		Applications: append([]explorer.Application(nil), s.applications...),
+		ApplicationSets: []explorer.ApplicationSet{
+			{Name: "store-services", Namespace: "argocd", Generators: []string{"git"}},
+			{Name: "payments-envs", Namespace: "argocd", Generators: []string{"matrix(list, clusters)"}},
+			{Name: "cluster-addons", Namespace: "argocd", Generators: []string{"clusters"}, Problems: []explorer.Condition{
+				{Type: "ErrorOccurred", Message: "cluster staging: unable to reach https://staging.example.com"},
+			}},
+		},
 		Projects: []explorer.Project{
 			{Name: "store", Description: "Storefront services"},
 			{Name: "payments", Description: "Billing and payment processing"},

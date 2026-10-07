@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -25,6 +26,9 @@ var (
 	}
 	projectsResource = schema.GroupVersionResource{
 		Group: "argoproj.io", Version: "v1alpha1", Resource: "appprojects",
+	}
+	applicationSetsResource = schema.GroupVersionResource{
+		Group: "argoproj.io", Version: "v1alpha1", Resource: "applicationsets",
 	}
 	secretsResource = schema.GroupVersionResource{
 		Version: "v1", Resource: "secrets",
@@ -74,7 +78,49 @@ func (s *KubernetesSource) Load(ctx context.Context) (explorer.Snapshot, error) 
 	if err != nil {
 		return explorer.Snapshot{}, fmt.Errorf("list clusters: %w", err)
 	}
-	return snapshotFromKubernetesResources(applications.Items, projects.Items, clusters.Items), nil
+	snapshot := snapshotFromKubernetesResources(applications.Items, projects.Items, clusters.Items)
+
+	// Argo CD may not have ApplicationSets, or the identity may not list them.
+	applicationSets, err := client.Resource(applicationSetsResource).Namespace(s.namespace).List(ctx, metav1.ListOptions{})
+	if err != nil && !apierrors.IsNotFound(err) && !apierrors.IsForbidden(err) {
+		return explorer.Snapshot{}, fmt.Errorf("list application sets: %w", err)
+	}
+	if err == nil {
+		snapshot.ApplicationSets = applicationSetsFromKubernetesResources(applicationSets.Items)
+	}
+	return snapshot, nil
+}
+
+func applicationSetsFromKubernetesResources(items []unstructured.Unstructured) []explorer.ApplicationSet {
+	applicationSets := make([]explorer.ApplicationSet, 0, len(items))
+	for _, item := range items {
+		generators, _, _ := unstructured.NestedSlice(item.Object, "spec", "generators")
+		var conditions []appSetCondition
+		statuses, _, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
+		for _, status := range statuses {
+			if fields, ok := status.(map[string]any); ok {
+				conditions = append(conditions, appSetCondition{
+					Type: nestedString(fields, "type"), Status: nestedString(fields, "status"), Message: nestedString(fields, "message"),
+				})
+			}
+		}
+		applicationSets = append(applicationSets, explorer.ApplicationSet{
+			Name: item.GetName(), Namespace: item.GetNamespace(),
+			Generators: generatorSummary(generators), Problems: applicationSetProblems(conditions),
+		})
+	}
+	return applicationSets
+}
+
+// applicationSetOwner names the ApplicationSet that generated an Application.
+func applicationSetOwner(application map[string]any) string {
+	owners, _, _ := unstructured.NestedSlice(application, "metadata", "ownerReferences")
+	for _, owner := range owners {
+		if fields, ok := owner.(map[string]any); ok && nestedString(fields, "kind") == "ApplicationSet" {
+			return nestedString(fields, "name")
+		}
+	}
+	return ""
 }
 
 // LoadResourceTree returns the resources reported in the Application status
@@ -242,6 +288,7 @@ func snapshotFromKubernetesResources(applications, projects, clusters []unstruct
 			Conditions:  conditions(application.Object),
 			Policy:      syncPolicy(application.Object),
 			Operation:   lastOperation(application.Object),
+			Owner:       applicationSetOwner(application.Object),
 		})
 	}
 	for _, project := range projects {

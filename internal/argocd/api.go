@@ -69,6 +69,7 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 			LastSync:    application.Status.OperationState.finishedAt(),
 			Policy:      application.Spec.policy(),
 			Operation:   application.Status.OperationState.operation(),
+			Owner:       application.Metadata.applicationSetOwner(),
 		})
 		for _, condition := range application.Status.Conditions {
 			last := &snapshot.Applications[len(snapshot.Applications)-1]
@@ -83,6 +84,19 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 	}
 	for _, cluster := range clusters.Items {
 		snapshot.Clusters = append(snapshot.Clusters, explorer.Cluster{Name: cluster.Name, Server: cluster.Server})
+	}
+
+	// Argo CD may not have ApplicationSets, or the token may not list them.
+	var applicationSets applicationSetList
+	if err := s.get(ctx, "/api/v1/applicationsets", &applicationSets); err != nil && !unavailable(err) {
+		return explorer.Snapshot{}, fmt.Errorf("load application sets: %w", err)
+	}
+	for _, applicationSet := range applicationSets.Items {
+		snapshot.ApplicationSets = append(snapshot.ApplicationSets, explorer.ApplicationSet{
+			Name: applicationSet.Metadata.Name, Namespace: applicationSet.Metadata.Namespace,
+			Generators: generatorSummary(applicationSet.Spec.Generators),
+			Problems:   applicationSetProblems(applicationSet.Status.Conditions),
+		})
 	}
 	return snapshot, nil
 }
@@ -258,7 +272,10 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
-		return nil, fmt.Errorf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))
+		return nil, &httpStatusError{
+			message: fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body)),
+			code:    response.StatusCode,
+		}
 	}
 	return response, nil
 }
@@ -288,8 +305,34 @@ type syncResource struct {
 }
 
 type metadata struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace"`
+	OwnerReferences []struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	} `json:"ownerReferences"`
+}
+
+// applicationSetOwner names the ApplicationSet that generated the resource.
+func (m metadata) applicationSetOwner() string {
+	for _, owner := range m.OwnerReferences {
+		if owner.Kind == "ApplicationSet" {
+			return owner.Name
+		}
+	}
+	return ""
+}
+
+type applicationSetList struct {
+	Items []struct {
+		Metadata metadata `json:"metadata"`
+		Spec     struct {
+			Generators []any `json:"generators"`
+		} `json:"spec"`
+		Status struct {
+			Conditions []appSetCondition `json:"conditions"`
+		} `json:"status"`
+	} `json:"items"`
 }
 
 type applicationList struct {

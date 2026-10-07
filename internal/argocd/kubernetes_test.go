@@ -130,9 +130,10 @@ func TestKubernetesSourceTreeIncludesOwnedResources(t *testing.T) {
 func fakeKubernetesSource(objects ...runtime.Object) *KubernetesSource {
 	listKinds := map[schema.GroupVersionResource]string{
 		{Group: "apps", Version: "v1", Resource: "deployments"}: "DeploymentList",
-		applicationsResource: "ApplicationList",
-		projectsResource:     "AppProjectList",
-		secretsResource:      "SecretList",
+		applicationsResource:    "ApplicationList",
+		applicationSetsResource: "ApplicationSetList",
+		projectsResource:        "AppProjectList",
+		secretsResource:         "SecretList",
 	}
 	for _, resource := range ownedResources {
 		listKinds[resource] = "List"

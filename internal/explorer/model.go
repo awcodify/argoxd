@@ -13,13 +13,15 @@ const (
 	ProjectsScreen
 	ClustersScreen
 	SettingsScreen
+	ApplicationSetsScreen
 )
 
 // Snapshot is the Argo CD state displayed by the explorer.
 type Snapshot struct {
-	Applications []Application
-	Projects     []Project
-	Clusters     []Cluster
+	Applications    []Application
+	Projects        []Project
+	Clusters        []Cluster
+	ApplicationSets []ApplicationSet
 }
 
 // Application is an Argo CD application summary.
@@ -38,6 +40,20 @@ type Application struct {
 	Policy SyncPolicy
 	// Operation is the Application's last sync; nil if it never synced.
 	Operation *Operation
+	// Owner is the ApplicationSet that generated the Application; empty if
+	// someone created it.
+	Owner string
+}
+
+// ApplicationSet generates Applications from templates, one for each set of
+// parameters its generators produce.
+type ApplicationSet struct {
+	Name      string
+	Namespace string
+	// Generators names the generators, such as "git" or "matrix(git, clusters)".
+	Generators []string
+	// Problems are the conditions that say something is wrong, such as an ErrorOccurred.
+	Problems []Condition
 }
 
 // Operation is the outcome of an Application's last sync.
@@ -145,8 +161,11 @@ type Model struct {
 	screen   Screen
 	cursor   int
 	project  string
-	search   string
-	filter   Filter
+	// owner narrows Applications to those an ApplicationSet generated; it and
+	// project replace each other.
+	owner  string
+	search string
+	filter Filter
 }
 
 // NewModel creates an explorer with Applications selected.
@@ -202,8 +221,42 @@ func (m Model) Project() string {
 
 // SetProject filters Applications by project and resets the selection.
 func (m *Model) SetProject(project string) {
-	m.project = project
+	m.project, m.owner = project, ""
 	m.cursor = 0
+}
+
+// Owner returns the ApplicationSet whose Applications are shown; empty means any.
+func (m Model) Owner() string {
+	return m.owner
+}
+
+// SetOwner shows only the Applications an ApplicationSet generated, replacing
+// the project filter, and resets the selection.
+func (m *Model) SetOwner(owner string) {
+	m.project, m.owner = "", owner
+	m.cursor = 0
+}
+
+// ApplicationSets returns the ApplicationSets that match the search.
+func (m Model) ApplicationSets() []ApplicationSet {
+	var matches []ApplicationSet
+	for _, applicationSet := range m.snapshot.ApplicationSets {
+		if m.matchesSearch(applicationSet.Name) {
+			matches = append(matches, applicationSet)
+		}
+	}
+	return matches
+}
+
+// GeneratedApplications counts the Applications an ApplicationSet generated.
+func (m Model) GeneratedApplications(name string) int {
+	generated := 0
+	for _, application := range m.snapshot.Applications {
+		if application.Owner == name {
+			generated++
+		}
+	}
+	return generated
 }
 
 // Search returns the text rows on the current screen are searched by.
@@ -233,7 +286,7 @@ func (m *Model) SetFilter(filter Filter) {
 func (m Model) Applications() []Application {
 	var matches []Application
 	for _, application := range m.snapshot.Applications {
-		if (m.project == "" || application.Project == m.project) && m.matchesSearch(application.Name) &&
+		if (m.project == "" || application.Project == m.project) && (m.owner == "" || application.Owner == m.owner) && m.matchesSearch(application.Name) &&
 			m.filter.Matches(application.Sync, application.Health, "") {
 			matches = append(matches, application)
 		}
@@ -294,6 +347,10 @@ func (m Model) rowNames() []string {
 	case ClustersScreen:
 		for _, cluster := range m.Clusters() {
 			names = append(names, cluster.Name)
+		}
+	case ApplicationSetsScreen:
+		for _, applicationSet := range m.ApplicationSets() {
+			names = append(names, applicationSet.Name)
 		}
 	}
 	return names
