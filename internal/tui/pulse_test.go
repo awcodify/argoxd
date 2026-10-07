@@ -1,11 +1,86 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/awcodify/argoxd/internal/explorer"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
+
+func cells(bar string) (filled, empty int) {
+	plain := ansi.Strip(bar)
+	return strings.Count(plain, "█"), strings.Count(plain, "░")
+}
+
+func segmentWidths(counts map[string]int, order []string, width int) map[string]int {
+	widths := map[string]int{}
+	for _, segment := range barSegments(counts, order, width) {
+		widths[segment.status] = segment.cells
+	}
+	return widths
+}
+
+func TestBarSegmentsShareTheWidthInProportionToTheCounts(t *testing.T) {
+	got := segmentWidths(map[string]int{"Healthy": 3, "Degraded": 1}, []string{"Healthy", "Degraded"}, 8)
+
+	if got["Healthy"] != 6 || got["Degraded"] != 2 {
+		t.Fatalf("segments = %v, want Healthy 6 and Degraded 2", got)
+	}
+	if got := segmentWidths(map[string]int{"Healthy": 3}, []string{"Healthy"}, 8); got["Healthy"] != 8 {
+		t.Fatalf("a single status should fill the bar, got %v", got)
+	}
+}
+
+func TestBarSegmentsGiveEveryStatusAtLeastOneCellAndFillTheWidth(t *testing.T) {
+	for _, width := range []int{3, 10, 17, 40} {
+		got := segmentWidths(map[string]int{"Healthy": 200, "Degraded": 1, "Missing": 1}, []string{"Healthy", "Degraded", "Missing"}, width)
+
+		total := 0
+		for status, cells := range got {
+			if cells < 1 {
+				t.Fatalf("width %d: %s has %d cells, want at least 1 (%v)", width, status, cells, got)
+			}
+			total += cells
+		}
+		if total != width || len(got) != 3 {
+			t.Fatalf("width %d: segments %v fill %d cells, want %d", width, got, total, width)
+		}
+	}
+}
+
+func TestBarSegmentsIncludeStatusesOutsideTheUsualOrder(t *testing.T) {
+	got := segmentWidths(map[string]int{"Healthy": 1, "Hibernating": 1}, []string{"Healthy"}, 6)
+
+	if got["Healthy"] != 3 || got["Hibernating"] != 3 {
+		t.Fatalf("segments = %v, want 3 and 3", got)
+	}
+}
+
+func TestStackedBarDrawsOneBlockPerCell(t *testing.T) {
+	if filled, empty := cells(stackedBar(map[string]int{"Healthy": 3, "Degraded": 1}, []string{"Healthy", "Degraded"}, 8)); filled != 8 || empty != 0 {
+		t.Fatalf("bar has %d filled and %d empty cells, want 8 and 0", filled, empty)
+	}
+}
+
+func TestStackedBarOfNothingIsAnEmptyTrack(t *testing.T) {
+	if filled, empty := cells(stackedBar(nil, []string{"Healthy"}, 6)); filled != 0 || empty != 6 {
+		t.Fatalf("empty bar has %d filled and %d empty cells, want 0 and 6", filled, empty)
+	}
+}
+
+func TestProgressBarFillsInProportion(t *testing.T) {
+	for _, test := range []struct {
+		done, total, filled int
+	}{{0, 8, 0}, {4, 8, 5}, {8, 8, 10}, {1, 100, 1}, {0, 0, 0}} {
+		bar := progressBar(test.done, test.total, 10)
+		if filled, empty := cells(bar); filled != test.filled || filled+empty != 10 {
+			t.Fatalf("progressBar(%d, %d, 10) has %d filled and %d empty cells, want %d filled of 10", test.done, test.total, filled, empty, test.filled)
+		}
+	}
+}
 
 func pulseSnapshot() explorer.Snapshot {
 	snapshot := storeSnapshot() // grafana is Synced and Healthy; checkout is OutOfSync and Degraded
@@ -19,20 +94,73 @@ func pulseSnapshot() explorer.Snapshot {
 	return snapshot
 }
 
-func TestPulseCommandShowsTheOverview(t *testing.T) {
+func TestPulseCommandShowsTheOverviewInPanels(t *testing.T) {
 	for _, name := range []string{":pulse", ":overview"} {
 		model := resize(New(nil, "test", "argocd", pulseSnapshot()), 140, 30)
 
 		view := command(model, name).View()
 
 		for _, want := range []string{
-			"pulse · 1", "2 applications", "2 application sets", "1 with problems",
-			"1 Healthy", "1 Degraded", "1 Synced", "1 out of sync", "auto-sync on 1 of 2",
+			"pulse · 1", "╭─ applications", "╭─ health", "╭─ sync", "╭─ policy",
+			"2 applications", "2 application sets", "1 with problems",
+			"Healthy", "Degraded", "Synced", "Out of sync", "1 of 2",
 		} {
 			if !strings.Contains(view, want) {
 				t.Fatalf("%s does not show %q:\n%s", name, want, view)
 			}
 		}
+	}
+}
+
+func TestPulseLegendsPairEachStatusWithItsCount(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", pulseSnapshot()), 140, 30)
+
+	view := ansi.Strip(command(model, ":pulse").View())
+
+	for _, status := range []string{"Healthy", "Degraded", "Synced", "Out of sync"} {
+		if !regexp.MustCompile(status + `\s+1\s`).MatchString(view) {
+			t.Fatalf("no legend entry pairs %s with its count of 1:\n%s", status, view)
+		}
+	}
+}
+
+func TestPulsePanelsDrawBarsAndStayWithinTheScreen(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", pulseSnapshot()), 140, 30)
+
+	view := command(model, ":pulse").View()
+
+	if !strings.Contains(view, "█") || !strings.Contains(view, "░") {
+		t.Fatalf("the panels draw no bars:\n%s", view)
+	}
+	for index, line := range strings.Split(view, "\n") {
+		if width := lipgloss.Width(line); width > 140 {
+			t.Fatalf("line %d is %d columns wide on a 140 column screen: %q", index, width, line)
+		}
+	}
+}
+
+func TestPulseFallsBackToTextOnANarrowScreen(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", pulseSnapshot()), 80, 30)
+
+	view := command(model, ":pulse").View()
+
+	for _, want := range []string{"2 applications", "2 application sets", "1 with problems", "1 Healthy", "1 Degraded", "1 Synced", "1 out of sync", "auto-sync on 1 of 2", "checkout"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("the text summary does not show %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "╭─ health") {
+		t.Fatalf("a narrow screen should not draw panels:\n%s", view)
+	}
+}
+
+func TestPulseFallsBackToTextOnAShortScreen(t *testing.T) {
+	model := resize(New(nil, "test", "argocd", pulseSnapshot()), 140, 18)
+
+	view := command(model, ":pulse").View()
+
+	if strings.Contains(view, "╭─ health") || !strings.Contains(view, "checkout") {
+		t.Fatalf("a short screen should keep the list and drop the panels:\n%s", view)
 	}
 }
 
