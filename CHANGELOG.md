@@ -6,10 +6,10 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Added
 
-- **Conditions.** An Application with conditions, such as a `ComparisonError` or `SyncError`, has a `⚠` on the list, and the dependency view lists its first three conditions above the cards.
+- **Conditions.** An Application with conditions, such as a `ComparisonError` or `SyncError`, has a `⚠` on the list, and the dependency view shows the first three, up to two lines each, in a summary box below the cards.
 - **Sync details.** `i` shows how an Application's last sync went: its phase, message, revision and times, and the result for each resource or hook, with the ones that did not sync first.
 - **Sync policy.** `P` turns auto-sync, self-heal and prune on or off for the marked or selected Applications. Other sync options are left as they are.
-- **Resources to prune and orphans.** Dependency cards show `✂ to prune` for a resource that a sync with prune would delete and `◌ orphaned` for one that no Application manages. The summary strip counts both.
+- **Resources to prune and orphans.** Dependency cards show `✂ to prune` for a resource that a sync with prune would delete and `◌ orphaned` for one that no Application manages. The summary box counts both.
 - **App of apps.** Enter on a card that is an Application opens its dependencies, Esc returns to the parent, and the breadcrumbs show the path.
 - **ApplicationSets.** `:appset` lists them with their generators, how many Applications each generated and any problem it reports. Enter shows the Applications it generated.
 - **Pulse.** `:pulse` (or `:overview`) shows Applications by health and sync status as bars, how many use auto-sync, self-heal and prune, and the Applications that need attention with the reasons. Narrow or short terminals get a text summary.

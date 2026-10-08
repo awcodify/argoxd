@@ -28,7 +28,7 @@ func TestApplicationsListMarksApplicationsWithConditions(t *testing.T) {
 	}
 }
 
-func TestDependencyViewShowsEachConditionAboveTheCards(t *testing.T) {
+func TestDependencyViewShowsEachConditionInTheSummaryBelowTheCards(t *testing.T) {
 	source := &fakeSource{
 		snapshot: snapshotWithConditions(
 			explorer.Condition{Type: "ComparisonError", Message: "repository not found"},
@@ -44,8 +44,8 @@ func TestDependencyViewShowsEachConditionAboveTheCards(t *testing.T) {
 			t.Fatalf("dependency view does not show %q:\n%s", want, view)
 		}
 	}
-	if banner, card := strings.Index(view, "ComparisonError"), strings.Index(view, "Deployment"); banner > card {
-		t.Fatalf("conditions should come before the cards:\n%s", view)
+	if condition, card := strings.Index(view, "ComparisonError"), strings.Index(view, "Deployment"); condition < card {
+		t.Fatalf("conditions should come after the cards, in the summary at the bottom:\n%s", view)
 	}
 }
 
@@ -74,7 +74,7 @@ func TestDependencyViewWithoutConditionsHasNoBanner(t *testing.T) {
 	}
 }
 
-func TestDependencyViewKeepsTheSelectedCardVisibleBelowTheBanner(t *testing.T) {
+func TestDependencyViewKeepsTheSelectedCardVisibleAboveTheSummary(t *testing.T) {
 	source := &fakeSource{
 		snapshot: snapshotWithConditions(explorer.Condition{Type: "SyncError", Message: "boom"}),
 		tree:     checkoutTree(),

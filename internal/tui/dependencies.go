@@ -15,8 +15,10 @@ const (
 	detailsWidth = 40
 	minTreeWidth = 56
 	// maxBannerConditions is how many of an Application's conditions are listed
-	// above its cards.
+	// in the summary below its cards.
 	maxBannerConditions = 3
+	// maxConditionLines is how many lines one condition may take before it is cut.
+	maxConditionLines = 2
 )
 
 // summaryOrder lists the statuses counted in the summary strip.
@@ -28,8 +30,9 @@ type card struct {
 	owner string
 }
 
-// renderDependencies shows a status summary, the Application and its managed
-// resources as a tree of cards, and the details of the selected card.
+// renderDependencies shows the Application and its managed resources as a tree
+// of cards, the details of the selected card beside it, and below them a
+// summary of the resources' statuses and the Application's conditions.
 func (m Model) renderDependencies(width, height int) []string {
 	root := m.dependencyRoot()
 
@@ -38,41 +41,82 @@ func (m Model) renderDependencies(width, height int) []string {
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
-	banner := conditionBanner(m.application().Conditions, width)
-	treeHeight := max(0, height-2-len(banner))
+	summary := m.renderSummary(width)
+	treeHeight := max(0, height-len(summary))
 	tree = tree[scrollOffset(m.treeCursor, cardHeight, treeHeight):]
 
-	lines := append([]string{" " + resourceSummary(m.resourceTree.Nodes)}, banner...)
-	lines = append(lines, "")
+	var lines []string
 	if width < minTreeWidth+detailsWidth {
-		return append(lines, tree...)
+		lines = tree[:min(len(tree), treeHeight)]
+	} else {
+		details := renderDetails(flatten(root, "")[m.treeCursor])
+		treeWidth := width - detailsWidth - 2
+		for row := 0; row < treeHeight && (row < len(tree) || row < len(details)); row++ {
+			left, right := "", ""
+			if row < len(tree) {
+				left = ansi.Truncate(tree[row], treeWidth, "…")
+			}
+			if row < len(details) {
+				right = details[row]
+			}
+			lines = append(lines, padRight(left, treeWidth)+" "+right)
+		}
 	}
+	// The summary stays at the bottom, whatever the number of cards.
+	for len(lines) < treeHeight {
+		lines = append(lines, "")
+	}
+	return append(lines, summary...)
+}
 
-	details := renderDetails(flatten(root, "")[m.treeCursor])
-	treeWidth := width - detailsWidth - 2
-	for row := 0; row < treeHeight && (row < len(tree) || row < len(details)); row++ {
-		left, right := "", ""
-		if row < len(tree) {
-			left = ansi.Truncate(tree[row], treeWidth, "…")
-		}
-		if row < len(details) {
-			right = details[row]
-		}
-		lines = append(lines, padRight(left, treeWidth)+" "+right)
+// renderSummary frames the count of resources by status and the first
+// maxBannerConditions conditions of the Application. The frame is amber when
+// there are conditions.
+func (m Model) renderSummary(width int) []string {
+	conditions := m.application().Conditions
+	content := []string{" " + resourceSummary(m.resourceTree.Nodes)}
+	for _, line := range conditionBanner(conditions, width-7) { // two margins, two borders and the box's own margin
+		content = append(content, " "+line)
+	}
+	color := colorBorder
+	if len(conditions) > 0 {
+		color = colorAmber
+	}
+	lines := strings.Split(box{
+		border: lipgloss.RoundedBorder(),
+		color:  color,
+		title:  " " + accentStyle.Render("summary") + " ",
+		width:  max(0, width-2),
+		height: len(content) + 2,
+	}.render(content), "\n")
+	for row := range lines {
+		lines[row] = " " + lines[row]
 	}
 	return lines
 }
 
 // conditionBanner lists the first maxBannerConditions of an Application's
-// conditions, one per line, and counts the rest.
+// conditions and counts the rest. A condition takes up to maxConditionLines
+// lines of width, the later ones indented under its type, and is cut with an
+// ellipsis if it needs more.
 func conditionBanner(conditions []explorer.Condition, width int) []string {
 	var lines []string
 	for _, condition := range conditions[:min(len(conditions), maxBannerConditions)] {
-		line := " " + conditionGlyph + " " + condition.Type + ": " + condition.Message
-		lines = append(lines, warningStyle.Render(ansi.Truncate(line, width, "…")))
+		text := conditionGlyph + " " + condition.Type + ": " + condition.Message
+		wrapped := strings.Split(ansi.Wrap(text, max(1, width-2), ""), "\n")
+		if len(wrapped) > maxConditionLines {
+			wrapped = wrapped[:maxConditionLines]
+			wrapped[maxConditionLines-1] = strings.TrimRight(wrapped[maxConditionLines-1], " ") + "…"
+		}
+		for row, line := range wrapped {
+			if row > 0 {
+				line = "  " + line
+			}
+			lines = append(lines, warningStyle.Render(line))
+		}
 	}
 	if more := len(conditions) - maxBannerConditions; more > 0 {
-		lines = append(lines, mutedStyle.Render("   +"+strconv.Itoa(more)+" more"))
+		lines = append(lines, mutedStyle.Render("  +"+strconv.Itoa(more)+" more"))
 	}
 	return lines
 }

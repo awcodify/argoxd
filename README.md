@@ -96,7 +96,7 @@ Rollback follows `argocd app rollback`: Argo CD refuses it while the Application
 
 ### Conditions and sync details
 
-An Application that Argo CD reports conditions for, such as a `ComparisonError` or a `SyncError`, has a `⚠` after its name on the list. The dependency view lists its first three conditions above the cards and counts the rest.
+An Application that Argo CD reports conditions for, such as a `ComparisonError` or a `SyncError`, has a `⚠` after its name on the list. The dependency view shows the first three in a `summary` box below the cards, next to the count of resources by status; each takes up to two lines, and the rest are counted. The box is amber when there are conditions.
 
 `i` shows how the Application's last sync went: its phase, message and revision, how long ago it started and finished, and what it did to each resource or hook (its sync phase and result), with the resources that did not sync first. It works on the Applications list, in the dependency view and in the overview.
 
@@ -106,7 +106,7 @@ An Application that Argo CD reports conditions for, such as a `ComparisonError` 
 
 ### Resources to prune and orphans
 
-In the dependency view `✂ to prune` marks a resource that is no longer in Git and that a sync with prune would delete, and `◌ orphaned` marks a resource in the destination namespace that no Application manages. The summary strip counts both and the details pane explains each. Resources to prune work with both sources; with `--source api` they need the token to be able to read the Application, and without that they are not marked. Orphans only come from the Argo CD API, and only when the AppProject monitors orphaned resources.
+In the dependency view `✂ to prune` marks a resource that is no longer in Git and that a sync with prune would delete, and `◌ orphaned` marks a resource in the destination namespace that no Application manages. The summary box counts both and the details pane explains each. Resources to prune work with both sources; with `--source api` they need the token to be able to read the Application, and without that they are not marked. Orphans only come from the Argo CD API, and only when the AppProject monitors orphaned resources.
 
 ### App of apps
 
