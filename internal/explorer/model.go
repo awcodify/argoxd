@@ -13,13 +13,16 @@ const (
 	ProjectsScreen
 	ClustersScreen
 	SettingsScreen
+	ApplicationSetsScreen
+	PulseScreen
 )
 
 // Snapshot is the Argo CD state displayed by the explorer.
 type Snapshot struct {
-	Applications []Application
-	Projects     []Project
-	Clusters     []Cluster
+	Applications    []Application
+	Projects        []Project
+	Clusters        []Cluster
+	ApplicationSets []ApplicationSet
 }
 
 // Application is an Argo CD application summary.
@@ -32,6 +35,70 @@ type Application struct {
 	Revision    string
 	Destination string
 	LastSync    time.Time
+	// Conditions are the warnings and errors Argo CD reports for the Application.
+	Conditions []Condition
+	// Policy is how the Application syncs on its own.
+	Policy SyncPolicy
+	// Operation is the Application's last sync; nil if it never synced.
+	Operation *Operation
+	// Owner is the ApplicationSet that generated the Application; empty if
+	// someone created it.
+	Owner string
+}
+
+// ApplicationSet generates Applications from templates, one for each set of
+// parameters its generators produce.
+type ApplicationSet struct {
+	Name      string
+	Namespace string
+	// Generators names the generators, such as "git" or "matrix(git, clusters)".
+	Generators []string
+	// Problems are the conditions that say something is wrong, such as an ErrorOccurred.
+	Problems []Condition
+}
+
+// Operation is the outcome of an Application's last sync.
+type Operation struct {
+	// Phase is Running, Succeeded, Failed, Error or Terminating.
+	Phase      string
+	Message    string
+	Revision   string
+	StartedAt  time.Time
+	FinishedAt time.Time
+	Results    []OperationResult
+}
+
+// OperationResult is what a sync did to one resource or hook.
+type OperationResult struct {
+	Group     string
+	Kind      string
+	Namespace string
+	Name      string
+	// Status is the result of applying the resource, such as Synced or SyncFailed.
+	Status  string
+	Message string
+	// HookType is set for a hook, such as PreSync.
+	HookType  string
+	HookPhase string
+	// SyncPhase is when in the sync the resource was applied: PreSync, Sync, PostSync or SyncFail.
+	SyncPhase string
+}
+
+// Condition is a warning or error Argo CD reports for an Application, such as
+// a ComparisonError.
+type Condition struct {
+	Type    string
+	Message string
+}
+
+// SyncPolicy is the automation of an Application's syncs.
+type SyncPolicy struct {
+	// Automated syncs the Application whenever it is out of sync.
+	Automated bool
+	// SelfHeal also syncs when the live cluster drifts from Git.
+	SelfHeal bool
+	// Prune lets an automated sync delete resources that are no longer in Git.
+	Prune bool
 }
 
 // Project is an Argo CD project summary.
@@ -68,9 +135,15 @@ type ResourceNode struct {
 	Namespace string
 	Name      string
 	// UID identifies the live object; only the Argo CD API reports it.
-	UID      string
-	Sync     string
-	Health   string
+	UID    string
+	Sync   string
+	Health string
+	// RequiresPruning marks a resource that is no longer in Git and that a
+	// sync with prune would delete.
+	RequiresPruning bool
+	// Orphaned marks a resource in the Application's namespace that no
+	// Application manages; only the Argo CD API reports these.
+	Orphaned bool
 	Parents  []ResourceReference
 	Children []ResourceNode
 }
@@ -89,8 +162,11 @@ type Model struct {
 	screen   Screen
 	cursor   int
 	project  string
-	search   string
-	filter   Filter
+	// owner narrows Applications to those an ApplicationSet generated; it and
+	// project replace each other.
+	owner  string
+	search string
+	filter Filter
 }
 
 // NewModel creates an explorer with Applications selected.
@@ -139,6 +215,17 @@ func (m *Model) SelectRow(index int) bool {
 	return true
 }
 
+// SelectName selects the row with the name on the current screen when it exists.
+func (m *Model) SelectName(name string) bool {
+	for index, row := range m.rowNames() {
+		if row == name {
+			m.cursor = index
+			return true
+		}
+	}
+	return false
+}
+
 // Project returns the project Applications are filtered by; empty means all projects.
 func (m Model) Project() string {
 	return m.project
@@ -146,8 +233,42 @@ func (m Model) Project() string {
 
 // SetProject filters Applications by project and resets the selection.
 func (m *Model) SetProject(project string) {
-	m.project = project
+	m.project, m.owner = project, ""
 	m.cursor = 0
+}
+
+// Owner returns the ApplicationSet whose Applications are shown; empty means any.
+func (m Model) Owner() string {
+	return m.owner
+}
+
+// SetOwner shows only the Applications an ApplicationSet generated, replacing
+// the project filter, and resets the selection.
+func (m *Model) SetOwner(owner string) {
+	m.project, m.owner = "", owner
+	m.cursor = 0
+}
+
+// ApplicationSets returns the ApplicationSets that match the search.
+func (m Model) ApplicationSets() []ApplicationSet {
+	var matches []ApplicationSet
+	for _, applicationSet := range m.snapshot.ApplicationSets {
+		if m.matchesSearch(applicationSet.Name) {
+			matches = append(matches, applicationSet)
+		}
+	}
+	return matches
+}
+
+// GeneratedApplications counts the Applications an ApplicationSet generated.
+func (m Model) GeneratedApplications(name string) int {
+	generated := 0
+	for _, application := range m.snapshot.Applications {
+		if application.Owner == name {
+			generated++
+		}
+	}
+	return generated
 }
 
 // Search returns the text rows on the current screen are searched by.
@@ -177,7 +298,7 @@ func (m *Model) SetFilter(filter Filter) {
 func (m Model) Applications() []Application {
 	var matches []Application
 	for _, application := range m.snapshot.Applications {
-		if (m.project == "" || application.Project == m.project) && m.matchesSearch(application.Name) &&
+		if (m.project == "" || application.Project == m.project) && (m.owner == "" || application.Owner == m.owner) && m.matchesSearch(application.Name) &&
 			m.filter.Matches(application.Sync, application.Health, "") {
 			matches = append(matches, application)
 		}
@@ -238,6 +359,14 @@ func (m Model) rowNames() []string {
 	case ClustersScreen:
 		for _, cluster := range m.Clusters() {
 			names = append(names, cluster.Name)
+		}
+	case ApplicationSetsScreen:
+		for _, applicationSet := range m.ApplicationSets() {
+			names = append(names, applicationSet.Name)
+		}
+	case PulseScreen:
+		for _, item := range m.Attention() {
+			names = append(names, item.Application.Name)
 		}
 	}
 	return names

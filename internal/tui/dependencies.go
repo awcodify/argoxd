@@ -14,6 +14,11 @@ const (
 	cardHeight   = 4
 	detailsWidth = 40
 	minTreeWidth = 56
+	// maxBannerConditions is how many of an Application's conditions are listed
+	// in the summary below its cards.
+	maxBannerConditions = 3
+	// maxConditionLines is how many lines one condition may take before it is cut.
+	maxConditionLines = 2
 )
 
 // summaryOrder lists the statuses counted in the summary strip.
@@ -25,8 +30,9 @@ type card struct {
 	owner string
 }
 
-// renderDependencies shows a status summary, the Application and its managed
-// resources as a tree of cards, and the details of the selected card.
+// renderDependencies shows the Application and its managed resources as a tree
+// of cards, the details of the selected card beside it, and below them a
+// summary of the resources' statuses and the Application's conditions.
 func (m Model) renderDependencies(width, height int) []string {
 	root := m.dependencyRoot()
 
@@ -35,25 +41,82 @@ func (m Model) renderDependencies(width, height int) []string {
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
-	treeHeight := max(0, height-2)
+	summary := m.renderSummary(width)
+	treeHeight := max(0, height-len(summary))
 	tree = tree[scrollOffset(m.treeCursor, cardHeight, treeHeight):]
 
-	lines := []string{" " + resourceSummary(m.resourceTree.Nodes), ""}
+	var lines []string
 	if width < minTreeWidth+detailsWidth {
-		return append(lines, tree...)
+		lines = tree[:min(len(tree), treeHeight)]
+	} else {
+		details := renderDetails(flatten(root, "")[m.treeCursor])
+		treeWidth := width - detailsWidth - 2
+		for row := 0; row < treeHeight && (row < len(tree) || row < len(details)); row++ {
+			left, right := "", ""
+			if row < len(tree) {
+				left = ansi.Truncate(tree[row], treeWidth, "…")
+			}
+			if row < len(details) {
+				right = details[row]
+			}
+			lines = append(lines, padRight(left, treeWidth)+" "+right)
+		}
 	}
+	// The summary stays at the bottom, whatever the number of cards.
+	for len(lines) < treeHeight {
+		lines = append(lines, "")
+	}
+	return append(lines, summary...)
+}
 
-	details := renderDetails(flatten(root, "")[m.treeCursor])
-	treeWidth := width - detailsWidth - 2
-	for row := 0; row < treeHeight && (row < len(tree) || row < len(details)); row++ {
-		left, right := "", ""
-		if row < len(tree) {
-			left = ansi.Truncate(tree[row], treeWidth, "…")
+// renderSummary frames the count of resources by status and the first
+// maxBannerConditions conditions of the Application. The frame is amber when
+// there are conditions.
+func (m Model) renderSummary(width int) []string {
+	conditions := m.application().Conditions
+	content := []string{" " + resourceSummary(m.resourceTree.Nodes)}
+	for _, line := range conditionBanner(conditions, width-7) { // two margins, two borders and the box's own margin
+		content = append(content, " "+line)
+	}
+	color := colorBorder
+	if len(conditions) > 0 {
+		color = colorAmber
+	}
+	lines := strings.Split(box{
+		border: lipgloss.RoundedBorder(),
+		color:  color,
+		title:  " " + accentStyle.Render("summary") + " ",
+		width:  max(0, width-2),
+		height: len(content) + 2,
+	}.render(content), "\n")
+	for row := range lines {
+		lines[row] = " " + lines[row]
+	}
+	return lines
+}
+
+// conditionBanner lists the first maxBannerConditions of an Application's
+// conditions and counts the rest. A condition takes up to maxConditionLines
+// lines of width, the later ones indented under its type, and is cut with an
+// ellipsis if it needs more.
+func conditionBanner(conditions []explorer.Condition, width int) []string {
+	var lines []string
+	for _, condition := range conditions[:min(len(conditions), maxBannerConditions)] {
+		text := conditionGlyph + " " + condition.Type + ": " + condition.Message
+		wrapped := strings.Split(ansi.Wrap(text, max(1, width-2), ""), "\n")
+		if len(wrapped) > maxConditionLines {
+			wrapped = wrapped[:maxConditionLines]
+			wrapped[maxConditionLines-1] = strings.TrimRight(wrapped[maxConditionLines-1], " ") + "…"
 		}
-		if row < len(details) {
-			right = details[row]
+		for row, line := range wrapped {
+			if row > 0 {
+				line = "  " + line
+			}
+			lines = append(lines, warningStyle.Render(line))
 		}
-		lines = append(lines, padRight(left, treeWidth)+" "+right)
+	}
+	if more := len(conditions) - maxBannerConditions; more > 0 {
+		lines = append(lines, mutedStyle.Render("  +"+strconv.Itoa(more)+" more"))
 	}
 	return lines
 }
@@ -133,6 +196,12 @@ func drawCard(node explorer.ResourceNode, selected, context, marked bool) string
 	inner := cardWidth - 4
 	name := nameStyle.Render(truncateMiddle(node.Name, inner))
 	status := joinNonEmpty(statusBadge(node.Health), statusBadge(node.Sync))
+	if node.RequiresPruning {
+		status = joinNonEmpty(status, warningStyle.Render(pruneGlyph+" to prune"))
+	}
+	if node.Orphaned {
+		status = joinNonEmpty(status, warningStyle.Render(orphanGlyph+" orphaned"))
+	}
 	if status == "" {
 		status = mutedStyle.Render("no status reported")
 	}
@@ -170,6 +239,15 @@ func resourceSummary(nodes []explorer.ResourceNode) string {
 			counts[node.Sync]++
 		}
 	}
+	toPrune, orphaned := 0, 0
+	for _, node := range nodes {
+		if node.RequiresPruning {
+			toPrune++
+		}
+		if node.Orphaned {
+			orphaned++
+		}
+	}
 	var parts []string
 	for _, status := range summaryOrder {
 		if counts[status] == 0 {
@@ -181,6 +259,12 @@ func resourceSummary(nodes []explorer.ResourceNode) string {
 		}
 		text := lookupStatus(status).glyph + " " + strconv.Itoa(counts[status]) + " " + label
 		parts = append(parts, lipgloss.NewStyle().Foreground(statusColor(status)).Render(text))
+	}
+	if toPrune > 0 {
+		parts = append(parts, warningStyle.Render(pruneGlyph+" "+strconv.Itoa(toPrune)+" to prune"))
+	}
+	if orphaned > 0 {
+		parts = append(parts, warningStyle.Render(orphanGlyph+" "+strconv.Itoa(orphaned)+" orphaned"))
 	}
 	return strings.Join(parts, "   ")
 }
@@ -212,6 +296,19 @@ func renderDetails(selected card) []string {
 			value = mutedStyle.Render("—")
 		}
 		lines = append(lines, " "+mutedStyle.Render(padRight(row[0], 11))+value)
+	}
+	var notes []string
+	if node.RequiresPruning {
+		notes = []string{"No longer in Git. It will be", "deleted by a sync with prune."}
+	}
+	if node.Orphaned {
+		notes = []string{"In the destination namespace but", "not managed by this application."}
+	}
+	if len(notes) > 0 {
+		lines = append(lines, "")
+	}
+	for _, note := range notes {
+		lines = append(lines, " "+warningStyle.Render(note))
 	}
 	return strings.Split(box{
 		border: lipgloss.RoundedBorder(),

@@ -85,6 +85,25 @@ type ResourceActor interface {
 	DeleteResource(ctx context.Context, application string, resource explorer.ResourceNode) error
 }
 
+// SyncPolicySetter changes how an Application syncs on its own.
+type SyncPolicySetter interface {
+	// SetSyncPolicy turns auto-sync on or off and sets its self-heal and prune
+	// options. Self-heal and prune only apply while auto-sync is on, and are
+	// dropped with it.
+	SetSyncPolicy(ctx context.Context, application string, policy explorer.SyncPolicy) error
+}
+
+// syncPolicyPatch is the merge patch that gives an Application the policy. It
+// leaves the rest of the Application's sync policy, such as its sync options,
+// as it is.
+func syncPolicyPatch(policy explorer.SyncPolicy) map[string]any {
+	var automated any
+	if policy.Automated {
+		automated = map[string]any{"prune": policy.Prune, "selfHeal": policy.SelfHeal}
+	}
+	return map[string]any{"spec": map[string]any{"syncPolicy": map[string]any{"automated": automated}}}
+}
+
 // Restartable reports whether resources of the kind can be restarted.
 func Restartable(kind string) bool {
 	switch kind {

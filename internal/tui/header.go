@@ -91,18 +91,25 @@ func (m Model) keyHints() []keyHint {
 	case historyViewMode:
 		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
-		return []keyHint{
-			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"},
-			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"R", "Hard refresh"}, {"D", "Delete"},
+		hints := []keyHint{
+			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
+			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Hard refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
+		if m.onChildApplication() {
+			hints = append([]keyHint{{"enter", "Open app"}}, hints...)
+		}
+		return hints
 	}
 
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}
 	if m.view == listView {
 		hints = append(hints, keyHint{"/", "Search"})
+		if m.origin.set {
+			hints = append(hints, keyHint{"esc", "Back"})
+		}
 		if m.explorer.Screen() == explorer.ApplicationsScreen {
 			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"}, keyHint{"space", "Mark"})
 		}
@@ -111,9 +118,9 @@ func (m Model) keyHints() []keyHint {
 	}
 	if m.selectedApplication() != "" {
 		if m.view == listView {
-			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"})
+			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"}, keyHint{"i", "Sync details"})
 		}
-		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
+		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"P", "Sync policy"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }

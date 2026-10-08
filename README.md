@@ -1,6 +1,6 @@
 # argoxd
 
-`argoxd` is an interactive terminal user interface for Argo CD, inspired by the resource-focused workflow of k9s. It lists Applications, AppProjects, destination clusters, and connection settings from either the Kubernetes API or the Argo CD API.
+`argoxd` is an interactive terminal user interface for Argo CD, inspired by the resource-focused workflow of k9s. It lists Applications, ApplicationSets, AppProjects, destination clusters, and connection settings from either the Kubernetes API or the Argo CD API.
 
 ![argoxd demo](demo/demo.gif)
 
@@ -46,6 +46,8 @@ argoxd --kubeconfig ~/.kube/config --context production
 
 The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`, and viewing events needs `list` on `events` in the namespaces involved (and in the Argo CD namespace for an Application's own events). Restarting a workload needs `patch` on it and deleting a Pod needs `delete` on `pods`. With `--source api`, the token needs Argo CD's `action/…/restart` and resource delete permissions.
 
+ApplicationSets are optional. With `list` on `applicationsets.argoproj.io` (or access to `/api/v1/applicationsets` with `--source api`) they appear under `:appset`; without it, or on an Argo CD that has none, they are left out and everything else still loads. Changing an Application's sync policy (`P`) needs `patch` on `applications.argoproj.io`, or permission to update Applications with `--source api`.
+
 Resources reload every 5 seconds. Change this with `--refresh 30s`, or turn it off with `--refresh 0`. Requests that take longer than 15 seconds are abandoned and reported as errors.
 
 ## Connect to the Argo CD API
@@ -90,7 +92,33 @@ Press Space to mark Applications on the list, or resource cards in this view. `s
 
 Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run.
 
-Rollback follows `argocd app rollback`: Argo CD refuses it while the Application has auto-sync enabled, so disable auto-sync first. With `--source kubeconfig` the identity also needs to `get` and `patch` `applications.argoproj.io`.
+Rollback follows `argocd app rollback`: Argo CD refuses it while the Application has auto-sync enabled, so disable auto-sync first (`P`). With `--source kubeconfig` the identity also needs to `get` and `patch` `applications.argoproj.io`.
+
+### Conditions and sync details
+
+An Application that Argo CD reports conditions for, such as a `ComparisonError` or a `SyncError`, has a `⚠` after its name on the list. The dependency view shows the first three in a `summary` box below the cards, next to the count of resources by status; each takes up to two lines, and the rest are counted. The box is amber when there are conditions.
+
+`i` shows how the Application's last sync went: its phase, message and revision, how long ago it started and finished, and what it did to each resource or hook (its sync phase and result), with the resources that did not sync first. It works on the Applications list, in the dependency view and in the overview.
+
+### Sync policy
+
+`P` sets how the marked or selected Applications sync on their own. The dialog starts from the first Application's policy: `a` toggles auto-sync, `h` self-heal and `p` prune, and Enter applies it. Self-heal and prune only count while auto-sync is on, so turning it off clears them. Other sync options, such as `CreateNamespace=true`, are left as they are.
+
+### Resources to prune and orphans
+
+In the dependency view `✂ to prune` marks a resource that is no longer in Git and that a sync with prune would delete, and `◌ orphaned` marks a resource in the destination namespace that no Application manages. The summary box counts both and the details pane explains each. Resources to prune work with both sources; with `--source api` they need the token to be able to read the Application, and without that they are not marked. Orphans only come from the Argo CD API, and only when the AppProject monitors orphaned resources.
+
+### App of apps
+
+A card that is itself an Application, as an app of apps deploys, opens with Enter. Esc returns to the Application it came from, with its cursor, search, filter and marks as they were, and the breadcrumbs show the whole path. Actions in the child act on the child. Cards of child Applications can be marked and synced selectively like any other resource.
+
+### ApplicationSets
+
+`:appset` lists each ApplicationSet with its generators (such as `git` or `matrix(list, clusters)`), how many Applications it generated, and its status: `OK`, or the problem it reports. Enter shows the Applications it generated (`applications · appset/<name>`), and Esc returns to the ApplicationSets list with the same one selected. `0` or choosing a project shows every Application again.
+
+### Pulse
+
+`:pulse` (or `:overview`) shows the state of everything at once. On a terminal at least 100 columns wide it draws four panels: the number of Applications and ApplicationSets, health and sync as bars sized by count with a legend, and how many Applications use auto-sync, self-heal and prune. Narrower or shorter terminals get the same counts as text. Below them it lists the Applications that need attention, worst first: degraded or missing ones, ones whose last sync failed, and ones with conditions, with the reasons. Enter opens one, and `i`, `e`, `s`, `P`, `h`, `R` and `D` work on its row.
 
 ## Commands
 
@@ -105,6 +133,8 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `:app`, `:apps`, `:applications` | Applications, optionally filtered: `:app store`, `:app all` |
 | `:proj`, `:projects` | Projects |
 | `:cluster`, `:clusters` | Clusters |
+| `:appset`, `:appsets`, `:applicationset`, `:applicationsets` | ApplicationSets |
+| `:pulse`, `:overview` | Overview of the Applications that need attention |
 | `:settings` | Connection settings |
 | `:q`, `:quit` | Quit |
 
@@ -121,17 +151,19 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `j` / Down, `k` / Up | Move the selection, or scroll a YAML, diff or log view |
 | `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
-| Enter | Open the selected Application's dependencies |
+| Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
 | Space | Mark or unmark the selected Application, or the selected resource card, and move to the next; `s`, `R`, `D`, `x` and `X` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
 | `y` / `d` / `l` | Show the selected card's YAML, diff, or logs. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
 | `f` | In a log view, follow new lines as they arrive (the last 10,000 are kept); press again, or Esc, to stop |
 | `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
 | `p` | In the log of a workload, or of a Pod it runs, open a bar to choose one of the workload's Pods, or `all`; it works like the container bar and matches any part of a Pod's name |
 | Left / Right | Expand or collapse the selected inventory node |
-| Esc | Go back, or clear the search and filters |
+| Esc | Go back, or clear the search and filters. From the Applications of a project or an ApplicationSet it returns to that list |
 | `e` | Show the events of the selected Application, or of the selected card and its Pods. In the events view, `/` keeps only the lines that contain the text |
 | `s` | Sync the marked Applications, or the marked resources in the dependency view, else the selected Application. Confirm with Enter; toggle `p` prune and `r` dry run first if needed |
 | `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
+| `i` | Show how the selected Application's last sync went, resource by resource |
+| `P` | Set the sync policy of the marked or selected Applications: `a` auto-sync, `h` self-heal, `p` prune, Enter applies |
 | `R` | Hard refresh the marked or selected Applications, bypassing Argo CD's manifest cache. Asks first |
 | `D` | Delete the marked or selected Applications and their managed resources. Asks first |
 | `x` | In the dependency view, restart the marked or selected Deployments, StatefulSets and DaemonSets with a rolling restart, like `kubectl rollout restart`. Asks first; refused if a marked card cannot be restarted |

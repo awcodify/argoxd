@@ -2,6 +2,7 @@ package argocd
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -129,9 +130,10 @@ func TestKubernetesSourceTreeIncludesOwnedResources(t *testing.T) {
 func fakeKubernetesSource(objects ...runtime.Object) *KubernetesSource {
 	listKinds := map[schema.GroupVersionResource]string{
 		{Group: "apps", Version: "v1", Resource: "deployments"}: "DeploymentList",
-		applicationsResource: "ApplicationList",
-		projectsResource:     "AppProjectList",
-		secretsResource:      "SecretList",
+		applicationsResource:    "ApplicationList",
+		applicationSetsResource: "ApplicationSetList",
+		projectsResource:        "AppProjectList",
+		secretsResource:         "SecretList",
 	}
 	for _, resource := range ownedResources {
 		listKinds[resource] = "List"
@@ -267,5 +269,117 @@ func TestKubernetesSourceRollbackRefusesWhileAnotherOperationIsPending(t *testin
 	got, _ := source.getApplication(context.Background(), "checkout")
 	if revision, _, _ := unstructured.NestedString(got.Object, "operation", "sync", "revision"); revision != "ccc3333" {
 		t.Fatalf("the pending operation was overwritten: %v", got.Object["operation"])
+	}
+}
+
+func TestSnapshotReadsConditionsAndSyncPolicy(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"spec": map[string]any{
+			"syncPolicy": map[string]any{
+				"automated": map[string]any{"prune": true, "selfHeal": true},
+			},
+		},
+		"status": map[string]any{
+			"conditions": []any{
+				map[string]any{"type": "ComparisonError", "message": "repository not found"},
+				map[string]any{"type": "SyncError", "message": "one or more objects failed to apply"},
+			},
+		},
+	}}, {Object: map[string]any{
+		"metadata": map[string]any{"name": "manual"},
+		"spec":     map[string]any{},
+	}}}
+
+	snapshot := snapshotFromKubernetesResources(applications, nil, nil)
+
+	checkout := snapshot.Applications[0]
+	wantConditions := []explorer.Condition{
+		{Type: "ComparisonError", Message: "repository not found"},
+		{Type: "SyncError", Message: "one or more objects failed to apply"},
+	}
+	if !slices.Equal(checkout.Conditions, wantConditions) {
+		t.Fatalf("conditions = %+v, want %+v", checkout.Conditions, wantConditions)
+	}
+	if want := (explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true}); checkout.Policy != want {
+		t.Fatalf("policy = %+v, want %+v", checkout.Policy, want)
+	}
+	manual := snapshot.Applications[1]
+	if len(manual.Conditions) != 0 || manual.Policy != (explorer.SyncPolicy{}) {
+		t.Fatalf("manual application = %+v, want no conditions and no automation", manual)
+	}
+}
+
+func TestSnapshotTreatsAutomatedSyncWithoutOptionsAsAutomated(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"spec":     map[string]any{"syncPolicy": map[string]any{"automated": map[string]any{}}},
+	}}}
+
+	policy := snapshotFromKubernetesResources(applications, nil, nil).Applications[0].Policy
+
+	if want := (explorer.SyncPolicy{Automated: true}); policy != want {
+		t.Fatalf("policy = %+v, want %+v", policy, want)
+	}
+}
+
+func TestResourceTreeFromApplicationReadsRequiresPruning(t *testing.T) {
+	application := unstructured.Unstructured{Object: map[string]any{
+		"status": map[string]any{
+			"resources": []any{
+				map[string]any{"kind": "ConfigMap", "name": "old", "requiresPruning": true},
+				map[string]any{"kind": "ConfigMap", "name": "current"},
+			},
+		},
+	}}
+
+	nodes := resourceTreeFromApplication(application).Nodes
+
+	if !nodes[0].RequiresPruning || nodes[1].RequiresPruning {
+		t.Fatalf("requires pruning = %v, %v, want true, false", nodes[0].RequiresPruning, nodes[1].RequiresPruning)
+	}
+}
+
+func TestSnapshotReadsTheLastOperation(t *testing.T) {
+	applications := []unstructured.Unstructured{{Object: map[string]any{
+		"metadata": map[string]any{"name": "checkout"},
+		"status": map[string]any{
+			"operationState": map[string]any{
+				"phase":      "Failed",
+				"message":    "one or more objects failed to apply",
+				"startedAt":  "2026-10-07T10:00:00Z",
+				"finishedAt": "2026-10-07T10:00:30Z",
+				"syncResult": map[string]any{
+					"revision": "7d3f9a2",
+					"resources": []any{
+						map[string]any{"group": "apps", "kind": "Deployment", "namespace": "store", "name": "checkout", "status": "SyncFailed", "message": "image: Required value", "syncPhase": "Sync"},
+						map[string]any{"kind": "Job", "namespace": "store", "name": "migrate", "status": "Synced", "hookType": "PreSync", "hookPhase": "Succeeded", "syncPhase": "PreSync"},
+					},
+				},
+			},
+		},
+	}}, {Object: map[string]any{"metadata": map[string]any{"name": "never-synced"}}}}
+
+	snapshot := snapshotFromKubernetesResources(applications, nil, nil)
+
+	if snapshot.Applications[1].Operation != nil {
+		t.Fatalf("operation = %+v, want none for an application that never synced", snapshot.Applications[1].Operation)
+	}
+	operation := snapshot.Applications[0].Operation
+	if operation == nil {
+		t.Fatal("operation = nil, want the last operation")
+	}
+	if operation.Phase != "Failed" || operation.Message != "one or more objects failed to apply" || operation.Revision != "7d3f9a2" {
+		t.Fatalf("operation = %+v", operation)
+	}
+	if want := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC); !operation.StartedAt.Equal(want) {
+		t.Fatalf("started at = %v, want %v", operation.StartedAt, want)
+	}
+	want := []explorer.OperationResult{
+		{Group: "apps", Kind: "Deployment", Namespace: "store", Name: "checkout", Status: "SyncFailed", Message: "image: Required value", SyncPhase: "Sync"},
+		{Kind: "Job", Namespace: "store", Name: "migrate", Status: "Synced", HookType: "PreSync", HookPhase: "Succeeded", SyncPhase: "PreSync"},
+	}
+	if !slices.Equal(operation.Results, want) {
+		t.Fatalf("results = %+v, want %+v", operation.Results, want)
 	}
 }

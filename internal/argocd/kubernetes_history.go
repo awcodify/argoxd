@@ -64,6 +64,9 @@ func (s *KubernetesSource) RollbackApplication(ctx context.Context, application 
 			continue
 		}
 		sync := map[string]any{"prune": options.Prune, "dryRun": options.DryRun}
+		if syncOptions := syncOptionsOf(object); len(syncOptions) > 0 {
+			sync["syncOptions"] = syncOptions
+		}
 		for _, field := range []string{"revision", "revisions", "source", "sources"} {
 			if value, found := fields[field]; found {
 				sync[field] = value

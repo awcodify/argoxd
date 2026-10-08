@@ -33,7 +33,13 @@ type Model struct {
 	height          int
 	view            viewMode
 	tree            []treeItem
-	resourceTree    explorer.ResourceTree
+	// origin is the Projects or ApplicationSets list the Applications list was
+	// opened from, which Esc returns to.
+	origin       listOrigin
+	resourceTree explorer.ResourceTree
+	// parents are the Applications whose dependency views are left open while a
+	// child Application is shown, the first one opened first.
+	parents         []treeFrame
 	treeCursor      int
 	treeSearch      string
 	treeFilter      explorer.Filter
@@ -215,7 +221,15 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case explorer.ProjectsScreen:
 				m.openProjectApplications()
 				return m, nil
+			case explorer.ApplicationSetsScreen:
+				m.openApplicationSetApplications()
+				return m, nil
+			case explorer.PulseScreen:
+				return m.openDependencies()
 			}
+		}
+		if m.view == applicationTreeView {
+			return m.openChildApplication()
 		}
 		m.toggleTreeItem()
 	case " ":
@@ -231,6 +245,14 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.clearMarks()
 			break
 		}
+		if len(m.parents) > 0 {
+			m.leaveChild()
+			break
+		}
+		if m.view == listView && m.origin.set {
+			m.returnToOrigin()
+			break
+		}
 		m.closeTree()
 	case "y", "d", "l":
 		if m.view == applicationTreeView {
@@ -238,6 +260,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m.showEvents()
+	case "i":
+		return m.showSyncDetails()
 	case "s":
 		m = m.askApplicationAction(confirmSync)
 	case "x", "X":
@@ -248,6 +272,8 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if application := m.selectedApplication(); application != "" {
 			return m.openHistory(application)
 		}
+	case "P":
+		m = m.askSyncPolicy()
 	case "R":
 		m = m.askApplicationAction(confirmHardRefresh)
 	case "D":
@@ -262,14 +288,29 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openApplicationSetApplications lists the Applications the selected
+// ApplicationSet generated.
+func (m *Model) openApplicationSetApplications() {
+	applicationSet := m.explorer.SelectedName()
+	if applicationSet == "" {
+		return
+	}
+	origin := m.currentOrigin()
+	m.showScreen(explorer.ApplicationsScreen)
+	m.explorer.SetOwner(applicationSet)
+	m.origin = origin
+}
+
 // openProjectApplications filters Applications to the selected Project.
 func (m *Model) openProjectApplications() {
 	project := m.explorer.SelectedName()
 	if project == "" {
 		return
 	}
-	m.explorer.SetProject(project)
+	origin := m.currentOrigin()
 	m.showScreen(explorer.ApplicationsScreen)
+	m.explorer.SetProject(project)
+	m.origin = origin
 }
 
 // View renders the header, the optional prompt, the framed view, the
@@ -305,6 +346,7 @@ func (m Model) Explorer() explorer.Model {
 }
 
 func (m *Model) showScreen(screen explorer.Screen) {
+	m.origin = listOrigin{}
 	m.explorer.SetScreen(screen)
 	m.closeTree()
 }
@@ -313,6 +355,7 @@ func (m *Model) showScreen(screen explorer.Screen) {
 func (m *Model) closeTree() {
 	m.view = listView
 	m.tree = nil
+	m.parents = nil
 	m.resourceTree = explorer.ResourceTree{}
 	m.treeCursor = 0
 	m.treeSearch = ""
@@ -400,6 +443,11 @@ func (m *Model) applyTree(message loadedTree) {
 	}
 	m.err = message.err
 	if message.err == nil {
+		if message.child && m.view == applicationTreeView {
+			m.enterChild()
+		} else {
+			m.parents = nil
+		}
 		m.view = applicationTreeView
 		m.resourceTree = message.tree
 		m.treeCursor = 0
@@ -487,11 +535,18 @@ func (m Model) selectedApplication() string {
 			return visible[m.treeCursor].application
 		}
 	default:
-		if m.explorer.Screen() == explorer.ApplicationsScreen {
+		if m.onApplicationRows() {
 			return m.explorer.SelectedName()
 		}
 	}
 	return ""
+}
+
+// onApplicationRows reports whether the list shows Applications: the
+// Applications screen, or the overview of the ones needing attention.
+func (m Model) onApplicationRows() bool {
+	screen := m.explorer.Screen()
+	return screen == explorer.ApplicationsScreen || screen == explorer.PulseScreen
 }
 
 func (m Model) visibleTree() []treeItem {

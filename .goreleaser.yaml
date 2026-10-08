@@ -15,7 +15,7 @@ archives:
         formats: [zip]
     files: [LICENSE, README.md]
 
-brews:
+homebrew_casks:
   - name: argoxd
     repository:
       owner: awcodify
@@ -23,9 +23,14 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: https://github.com/awcodify/argoxd
     description: Interactive terminal UI for Argo CD
-    license: MIT
-    test: |
-      assert_match "Usage of argoxd", shell_output("#{bin}/argoxd -h 2>&1")
+    # The binary is not signed or notarized, so macOS would quarantine it and
+    # refuse to run it. See https://goreleaser.com/customization/publish/homebrew_casks/
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/argoxd"]
+          end
 
 checksum:
   name_template: checksums.txt

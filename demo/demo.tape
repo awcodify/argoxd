@@ -16,33 +16,57 @@ Type "argoxd --demo"
 Enter
 Sleep 2s
 
-# Filter the Applications by health.
+# The overview: what is healthy, what is not, and what needs attention.
+Type ":pulse"
+Enter
+Sleep 3.5s
+
+# Open the worst Application. Its conditions are listed above the cards.
+Enter
+Sleep 3s
+
+# Why did its last sync fail?
+Type "i"
+Sleep 3s
+Escape
+Sleep 500ms
+
+# Walk down to a failing Pod. Its events show why it keeps restarting.
+Down 5
+Sleep 1s
+Type "e"
+Sleep 3s
+Escape
+Sleep 500ms
+
+# Read its logs, then go back to the overview.
+Type "l"
+Sleep 3s
+Escape
+Sleep 500ms
+Escape
+Sleep 1s
+
+# Let this Application sync by itself, and heal drift.
+Type "P"
+Sleep 1.5s
+Type "a"
+Sleep 700ms
+Type "h"
+Sleep 1.5s
+Enter
+Sleep 2s
+
+# Back to the Applications list, filtered by health.
+Type ":app"
+Enter
+Sleep 1.5s
 Type "H"
 Sleep 600ms
 Type "Degraded"
 Sleep 600ms
 Enter
 Sleep 1.5s
-
-# Open the first match and walk down to a failing Pod.
-Enter
-Sleep 2s
-Down 5
-Sleep 1s
-
-# Its events show why it keeps restarting.
-Type "e"
-Sleep 3s
-Escape
-Sleep 500ms
-
-# Read its logs, then go back out (the last Esc clears the filter).
-Type "l"
-Sleep 3s
-Escape
-Sleep 500ms
-Escape
-Sleep 500ms
 Escape
 Sleep 1s
 

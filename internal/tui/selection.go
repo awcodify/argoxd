@@ -32,7 +32,7 @@ func (m *Model) toggleMark() {
 		m.explorer.MoveDown()
 	case applicationTreeView:
 		card := m.selectedCard()
-		if card.Kind == "Application" {
+		if m.onRootCard() {
 			m.status = "Select a resource card to mark it"
 			return
 		}
@@ -116,7 +116,7 @@ func (m Model) markedApplications() []string {
 // applicationTargets is what an Application action applies to: the marked
 // Applications on the list, or else the selected one.
 func (m Model) applicationTargets() []string {
-	if m.view == listView && len(m.marked) > 0 {
+	if m.view == listView && m.explorer.Screen() != explorer.PulseScreen && len(m.marked) > 0 {
 		return m.markedApplications()
 	}
 	if application := m.selectedApplication(); application != "" {

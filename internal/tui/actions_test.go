@@ -205,6 +205,13 @@ type fakeSource struct {
 	deletedApps     []string
 	// failures makes the action on the named Application or resource fail.
 	failures map[string]error
+
+	policies []policyCall
+
+	// trees gives the resources of the named Application instead of tree, and
+	// treeErrors makes loading them fail.
+	trees      map[string]explorer.ResourceTree
+	treeErrors map[string]error
 }
 
 func (f *fakeSource) Load(ctx context.Context) (explorer.Snapshot, error) {
@@ -220,8 +227,14 @@ func (f *fakeSource) loadCommand() tea.Cmd {
 	return func() tea.Msg { return loadedSnapshot{snapshot: f.snapshot} }
 }
 
-func (f *fakeSource) LoadResourceTree(context.Context, string) (explorer.ResourceTree, error) {
+func (f *fakeSource) LoadResourceTree(_ context.Context, application string) (explorer.ResourceTree, error) {
 	f.treeLoads++
+	if err := f.treeErrors[application]; err != nil {
+		return explorer.ResourceTree{}, err
+	}
+	if tree, found := f.trees[application]; found {
+		return tree, nil
+	}
 	return f.tree, nil
 }
 

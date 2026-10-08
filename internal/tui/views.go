@@ -39,11 +39,18 @@ func (m Model) renderContent(width, height int) (string, []string) {
 		if project == "" {
 			project = "all"
 		}
+		if m.explorer.Owner() != "" {
+			project = "appset/" + m.explorer.Owner()
+		}
 		return m.listTitle("applications", project), m.applicationsTable().render(m.explorer.Cursor(), width, height)
 	case explorer.ProjectsScreen:
 		return m.listTitle("projects", ""), m.projectsTable().render(m.explorer.Cursor(), width, height)
 	case explorer.ClustersScreen:
 		return m.listTitle("clusters", ""), m.clustersTable().render(m.explorer.Cursor(), width, height)
+	case explorer.ApplicationSetsScreen:
+		return m.listTitle("applicationsets", ""), m.applicationSetsTable().render(m.explorer.Cursor(), width, height)
+	case explorer.PulseScreen:
+		return m.renderPulse(width, height)
 	default:
 		return viewTitle("settings", "", -1), []string{
 			"",
@@ -94,8 +101,12 @@ func (m Model) applicationsTable() table {
 		status:  map[int]bool{2: true, 3: true},
 	}
 	for _, application := range m.explorer.Applications() {
+		name := application.Name
+		if len(application.Conditions) > 0 {
+			name += " " + conditionGlyph
+		}
 		result.rows = append(result.rows, []string{
-			application.Name, application.Project, application.Sync, application.Health,
+			name, application.Project, application.Sync, application.Health,
 			application.Revision, application.Destination, age(application.LastSync),
 		})
 		result.marked = append(result.marked, m.marked[application.Name])
@@ -120,6 +131,21 @@ func age(moment time.Time) string {
 	default:
 		return strconv.Itoa(int(elapsed.Hours()/24)) + "d"
 	}
+}
+
+func (m Model) applicationSetsTable() table {
+	result := table{columns: []string{"NAME", "GENERATORS", "APPS", "STATUS", "MESSAGE"}}
+	for _, applicationSet := range m.explorer.ApplicationSets() {
+		status, message := "OK", ""
+		if len(applicationSet.Problems) > 0 {
+			status, message = conditionGlyph+" "+applicationSet.Problems[0].Type, applicationSet.Problems[0].Message
+		}
+		result.rows = append(result.rows, []string{
+			applicationSet.Name, strings.Join(applicationSet.Generators, ", "),
+			strconv.Itoa(m.explorer.GeneratedApplications(applicationSet.Name)), status, message,
+		})
+	}
+	return result
 }
 
 func (m Model) projectsTable() table {
@@ -177,12 +203,12 @@ func (m Model) renderCrumbs() string {
 	case inventoryTreeView:
 		crumbs = []string{"inventory"}
 	case applicationTreeView:
-		crumbs = append(crumbs, m.resourceTree.Application)
+		crumbs = append(crumbs, m.treePath()...)
 	case textViewMode:
 		if m.viewerFromList {
 			crumbs = append(crumbs, m.viewer.subject, m.viewer.kind)
 		} else {
-			crumbs = append(crumbs, m.resourceTree.Application, m.viewer.kind)
+			crumbs = append(append(crumbs, m.treePath()...), m.viewer.kind)
 		}
 	case historyViewMode:
 		crumbs = append(crumbs, m.history.application, "history")
@@ -281,6 +307,10 @@ func screenName(screen explorer.Screen) string {
 		return "projects"
 	case explorer.ClustersScreen:
 		return "clusters"
+	case explorer.ApplicationSetsScreen:
+		return "applicationsets"
+	case explorer.PulseScreen:
+		return "pulse"
 	default:
 		return "settings"
 	}

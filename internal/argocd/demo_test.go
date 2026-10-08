@@ -111,3 +111,137 @@ func TestDemoSourceRollbackRedeploysAnEarlierRevision(t *testing.T) {
 		t.Fatal("rolling back to an unknown id succeeded")
 	}
 }
+
+func TestDemoSourceHasApplicationsWithConditions(t *testing.T) {
+	snapshot, err := NewDemoSource().Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	withConditions := map[string][]explorer.Condition{}
+	for _, application := range snapshot.Applications {
+		if len(application.Conditions) > 0 {
+			withConditions[application.Name] = application.Conditions
+		}
+	}
+	if len(withConditions) == 0 || len(withConditions) == len(snapshot.Applications) {
+		t.Fatalf("applications with conditions = %v, want some but not all", withConditions)
+	}
+	for name, conditions := range withConditions {
+		for _, condition := range conditions {
+			if condition.Type == "" || condition.Message == "" {
+				t.Fatalf("%s has an empty condition: %+v", name, condition)
+			}
+		}
+	}
+}
+
+func TestDemoSourceHasAFailedAndASucceededOperation(t *testing.T) {
+	snapshot, err := NewDemoSource().Load(context.Background())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	phases := map[string]bool{}
+	for _, application := range snapshot.Applications {
+		if application.Operation != nil {
+			phases[application.Operation.Phase] = true
+		}
+	}
+	if !phases["Failed"] || !phases["Succeeded"] {
+		t.Fatalf("operation phases = %v, want Failed and Succeeded", phases)
+	}
+}
+
+func TestDemoSourceSyncClearsASyncErrorAndSucceeds(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+
+	if err := source.SyncApplication(ctx, "billing-worker", SyncOptions{}); err != nil {
+		t.Fatalf("SyncApplication() error = %v", err)
+	}
+	snapshot, _ := source.Load(ctx)
+
+	for _, application := range snapshot.Applications {
+		if application.Name != "billing-worker" {
+			continue
+		}
+		if application.Operation == nil || application.Operation.Phase != "Succeeded" {
+			t.Fatalf("operation = %+v, want a succeeded sync", application.Operation)
+		}
+		for _, condition := range application.Conditions {
+			if condition.Type == "SyncError" {
+				t.Fatalf("conditions = %+v, want the SyncError cleared", application.Conditions)
+			}
+		}
+	}
+}
+
+func TestDemoTreesShowPendingPrunesAndOrphans(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+	flagged := func(name string) (pruning, orphaned []string) {
+		tree, err := source.LoadResourceTree(ctx, name)
+		if err != nil {
+			t.Fatalf("LoadResourceTree(%s) error = %v", name, err)
+		}
+		for _, node := range tree.Nodes {
+			if node.RequiresPruning {
+				pruning = append(pruning, node.Name)
+			}
+			if node.Orphaned {
+				orphaned = append(orphaned, node.Name)
+			}
+		}
+		return pruning, orphaned
+	}
+
+	if pruning, _ := flagged("cart"); len(pruning) != 1 {
+		t.Fatalf("cart resources to prune = %v, want one", pruning)
+	}
+	if _, orphaned := flagged("prometheus"); len(orphaned) != 1 {
+		t.Fatalf("prometheus orphaned resources = %v, want one", orphaned)
+	}
+	if pruning, orphaned := flagged("checkout"); len(pruning)+len(orphaned) != 0 {
+		t.Fatalf("checkout is in sync but has pruning %v and orphans %v", pruning, orphaned)
+	}
+	if err := source.SyncApplication(ctx, "cart", SyncOptions{Prune: true}); err != nil {
+		t.Fatalf("SyncApplication() error = %v", err)
+	}
+	if pruning, _ := flagged("cart"); len(pruning) != 0 {
+		t.Fatalf("cart resources to prune after a sync = %v, want none", pruning)
+	}
+}
+
+func TestDemoHasAnAppOfAppsWhoseChildrenAreApplications(t *testing.T) {
+	source := NewDemoSource()
+	ctx := context.Background()
+	snapshot, _ := source.Load(ctx)
+	byName := map[string]explorer.Application{}
+	for _, application := range snapshot.Applications {
+		byName[application.Name] = application
+	}
+
+	tree, err := source.LoadResourceTree(ctx, "platform-root")
+	if err != nil {
+		t.Fatalf("LoadResourceTree() error = %v", err)
+	}
+
+	children := 0
+	for _, node := range tree.Nodes {
+		if node.Kind != "Application" {
+			continue
+		}
+		children++
+		child, found := byName[node.Name]
+		if !found || node.Group != "argoproj.io" || node.Sync != child.Sync || node.Health != child.Health {
+			t.Fatalf("child card %+v does not match the application %+v", node, child)
+		}
+		if _, err := source.LoadResourceTree(ctx, node.Name); err != nil {
+			t.Fatalf("LoadResourceTree(%s) error = %v", node.Name, err)
+		}
+	}
+	if children < 2 {
+		t.Fatalf("platform-root deploys %d applications, want at least 2", children)
+	}
+}

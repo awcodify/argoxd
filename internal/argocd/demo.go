@@ -34,6 +34,7 @@ var (
 	_ ResourceActor       = (*DemoSource)(nil)
 	_ EventLister         = (*DemoSource)(nil)
 	_ ResourceSyncer      = (*DemoSource)(nil)
+	_ SyncPolicySetter    = (*DemoSource)(nil)
 )
 
 // NewDemoSource returns a source with a handful of sample Applications.
@@ -54,12 +55,58 @@ func NewDemoSource() *DemoSource {
 		app("ingress-nginx", "platform", "platform", "Synced", "Healthy", "1a6e44c", 72*time.Hour),
 		app("grafana", "observability", "observability", "Synced", "Healthy", "e05b8d3", 48*time.Hour),
 		app("prometheus", "observability", "observability", "OutOfSync", "Healthy", "e05b8d3", 48*time.Hour),
+		app("platform-root", "argocd", "platform", "Synced", "Healthy", "1a6e44c", 72*time.Hour),
 	}
+	applications[3].Conditions = []explorer.Condition{
+		{Type: "SyncError", Message: "one or more objects failed to apply, reason: Deployment.apps \"billing-worker\" is invalid: spec.template.spec.containers[0].image: Required value"},
+	}
+	applications[7].Conditions = []explorer.Condition{
+		{Type: "SharedResourceWarning", Message: "ConfigMap/prometheus-rules is part of applications argocd/prometheus and argocd/grafana"},
+		{Type: "OrphanedResourceWarning", Message: "Application has 2 orphaned resources"},
+	}
+	for index := range applications {
+		applications[index].Operation = sampleOperation(applications[index])
+	}
+	for _, index := range []int{0, 1, 2} { // cart, checkout, search
+		applications[index].Owner = "store-services"
+	}
+	for _, index := range []int{3, 4} { // billing-worker, payments
+		applications[index].Owner = "payments-envs"
+	}
+	for _, index := range []int{5, 6, 7} { // ingress-nginx, grafana, prometheus
+		applications[index].Owner = "cluster-addons"
+	}
+	applications[1].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true, Prune: true} // checkout
+	applications[2].Policy = explorer.SyncPolicy{Automated: true}                              // search
+	applications[5].Policy = explorer.SyncPolicy{Automated: true, SelfHeal: true}              // ingress-nginx
 	history := make(map[string][]explorer.HistoryEntry, len(applications))
 	for _, application := range applications {
 		history[application.Name] = sampleHistory(application)
 	}
 	return &DemoSource{applications: applications, history: history, logInterval: time.Second, podSets: map[string]*demoPodSet{}}
+}
+
+// sampleOperation gives an Application the outcome of its last sync: a failed
+// one if it has a SyncError condition, else a successful one.
+func sampleOperation(application explorer.Application) *explorer.Operation {
+	operation := &explorer.Operation{
+		Phase:      "Succeeded",
+		Message:    "successfully synced (all tasks run)",
+		Revision:   application.Revision,
+		StartedAt:  application.LastSync.Add(-12 * time.Second),
+		FinishedAt: application.LastSync,
+		Results: []explorer.OperationResult{
+			{Kind: "Service", Namespace: application.Destination[strings.LastIndex(application.Destination, "/")+1:], Name: application.Name, Status: "Synced", Message: "service/" + application.Name + " unchanged", SyncPhase: "Sync"},
+			{Group: "apps", Kind: "Deployment", Namespace: application.Destination[strings.LastIndex(application.Destination, "/")+1:], Name: application.Name, Status: "Synced", Message: "deployment.apps/" + application.Name + " configured", SyncPhase: "Sync"},
+		},
+	}
+	for _, condition := range application.Conditions {
+		if condition.Type == "SyncError" {
+			operation.Phase, operation.Message = "Failed", condition.Message
+			operation.Results[1].Status, operation.Results[1].Message = "SyncFailed", condition.Message
+		}
+	}
+	return operation
 }
 
 // sampleHistory gives an Application two earlier deployments, a day apart each,
@@ -90,6 +137,13 @@ func (s *DemoSource) Load(context.Context) (explorer.Snapshot, error) {
 	defer s.mu.Unlock()
 	return explorer.Snapshot{
 		Applications: append([]explorer.Application(nil), s.applications...),
+		ApplicationSets: []explorer.ApplicationSet{
+			{Name: "store-services", Namespace: "argocd", Generators: []string{"git"}},
+			{Name: "payments-envs", Namespace: "argocd", Generators: []string{"matrix(list, clusters)"}},
+			{Name: "cluster-addons", Namespace: "argocd", Generators: []string{"clusters"}, Problems: []explorer.Condition{
+				{Type: "ErrorOccurred", Message: "cluster staging: unable to reach https://staging.example.com"},
+			}},
+		},
 		Projects: []explorer.Project{
 			{Name: "store", Description: "Storefront services"},
 			{Name: "payments", Description: "Billing and payment processing"},
@@ -109,6 +163,9 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 	application, err := s.find(name)
 	if err != nil {
 		return explorer.ResourceTree{}, err
+	}
+	if name == "platform-root" {
+		return s.appOfAppsTree(name), nil
 	}
 	namespace := strings.TrimPrefix(application.Destination, "in-cluster/")
 	deploySync := "Synced"
@@ -135,6 +192,15 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 		{Group: "apps", Version: "v1", Kind: "ReplicaSet", Namespace: namespace, Name: replicaSet.Name, Health: "Healthy",
 			Parents: []explorer.ResourceReference{deployment}},
 	}
+	if application.Sync == "OutOfSync" {
+		// A ConfigMap that was removed from Git; the next sync clears it.
+		nodes = append(nodes, explorer.ResourceNode{
+			Version: "v1", Kind: "ConfigMap", Namespace: namespace, Name: name + "-legacy", Sync: "OutOfSync", RequiresPruning: true,
+		})
+	}
+	if name == "prometheus" {
+		nodes = append(nodes, explorer.ResourceNode{Version: "v1", Kind: "Secret", Namespace: namespace, Name: "prometheus-old-token", Orphaned: true})
+	}
 	for index := range 3 {
 		nodes = append(nodes, explorer.ResourceNode{
 			Version: "v1", Kind: "Pod", Namespace: namespace, Name: fmt.Sprintf("%s-%s-%s", name, hash, suffixes[index]),
@@ -142,6 +208,26 @@ func (s *DemoSource) LoadResourceTree(_ context.Context, name string) (explorer.
 		})
 	}
 	return explorer.ResourceTree{Application: name, Nodes: nodes}, nil
+}
+
+// appOfAppsChildren are the Applications the sample app of apps deploys.
+var appOfAppsChildren = []string{"ingress-nginx", "grafana", "prometheus"}
+
+// appOfAppsTree is the resources of an Application that deploys other
+// Applications: one card for each of them, with the status they have now.
+func (s *DemoSource) appOfAppsTree(name string) explorer.ResourceTree {
+	tree := explorer.ResourceTree{Application: name}
+	for _, childName := range appOfAppsChildren {
+		child, err := s.find(childName)
+		if err != nil {
+			continue
+		}
+		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
+			Group: "argoproj.io", Version: "v1alpha1", Kind: "Application", Namespace: "argocd", Name: child.Name,
+			Sync: child.Sync, Health: child.Health,
+		})
+	}
+	return tree
 }
 
 var podSuffixes = [...]string{"x7k2p", "m9q4w", "t5v8z"}
@@ -154,7 +240,16 @@ func (s *DemoSource) SyncApplication(_ context.Context, name string, options Syn
 	}
 	return s.update(name, func(application *explorer.Application) {
 		application.Sync, application.Health, application.LastSync = "Synced", "Healthy", time.Now()
+		application.Conditions = slices.DeleteFunc(slices.Clone(application.Conditions), func(condition explorer.Condition) bool {
+			return condition.Type == "SyncError"
+		})
+		application.Operation = sampleOperation(*application)
 	})
+}
+
+// SetSyncPolicy changes the sample Application's sync policy.
+func (s *DemoSource) SetSyncPolicy(_ context.Context, name string, policy explorer.SyncPolicy) error {
+	return s.update(name, func(application *explorer.Application) { application.Policy = policy })
 }
 
 // SyncResources syncs the Application: the sample data does not track which

@@ -66,8 +66,15 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 			Health:      application.Status.Health.Status,
 			Revision:    application.Spec.targetRevision(),
 			Destination: destination(application.Spec.Destination.Name, application.Spec.Destination.Server, application.Spec.Destination.Namespace),
-			LastSync:    application.Status.OperationState.FinishedAt,
+			LastSync:    application.Status.OperationState.finishedAt(),
+			Policy:      application.Spec.policy(),
+			Operation:   application.Status.OperationState.operation(),
+			Owner:       application.Metadata.applicationSetOwner(),
 		})
+		for _, condition := range application.Status.Conditions {
+			last := &snapshot.Applications[len(snapshot.Applications)-1]
+			last.Conditions = append(last.Conditions, explorer.Condition{Type: condition.Type, Message: condition.Message})
+		}
 	}
 	for _, project := range projects.Items {
 		snapshot.Projects = append(snapshot.Projects, explorer.Project{
@@ -77,6 +84,19 @@ func (s *APISource) Load(ctx context.Context) (explorer.Snapshot, error) {
 	}
 	for _, cluster := range clusters.Items {
 		snapshot.Clusters = append(snapshot.Clusters, explorer.Cluster{Name: cluster.Name, Server: cluster.Server})
+	}
+
+	// Argo CD may not have ApplicationSets, or the token may not list them.
+	var applicationSets applicationSetList
+	if err := s.get(ctx, "/api/v1/applicationsets", &applicationSets); err != nil && !unavailable(err) {
+		return explorer.Snapshot{}, fmt.Errorf("load application sets: %w", err)
+	}
+	for _, applicationSet := range applicationSets.Items {
+		snapshot.ApplicationSets = append(snapshot.ApplicationSets, explorer.ApplicationSet{
+			Name: applicationSet.Metadata.Name, Namespace: applicationSet.Metadata.Namespace,
+			Generators: generatorSummary(applicationSet.Spec.Generators),
+			Problems:   applicationSetProblems(applicationSet.Status.Conditions),
+		})
 	}
 	return snapshot, nil
 }
@@ -95,28 +115,37 @@ func (s *APISource) LoadResourceTree(ctx context.Context, application string) (e
 
 	tree := explorer.ResourceTree{
 		Application: application,
-		Nodes:       make([]explorer.ResourceNode, 0, len(response.Nodes)),
+		Nodes:       make([]explorer.ResourceNode, 0, len(response.Nodes)+len(response.OrphanedNodes)),
 	}
+	pruning := s.resourcesToPrune(ctx, application)
 	for _, node := range response.Nodes {
-		parents := make([]explorer.ResourceReference, 0, len(node.ParentRefs))
-		for _, parent := range node.ParentRefs {
-			parents = append(parents, explorer.ResourceReference{
-				Group: parent.Group, Kind: parent.Kind, Namespace: parent.Namespace, Name: parent.Name,
-			})
-		}
-		tree.Nodes = append(tree.Nodes, explorer.ResourceNode{
-			Group:     node.Group,
-			Version:   node.Version,
-			Kind:      node.Kind,
-			Namespace: node.Namespace,
-			Name:      node.Name,
-			UID:       node.UID,
-			Sync:      node.Status,
-			Health:    node.Health.Status,
-			Parents:   parents,
-		})
+		resource := node.resourceNode()
+		resource.RequiresPruning = pruning[resource.Reference()]
+		tree.Nodes = append(tree.Nodes, resource)
+	}
+	for _, node := range response.OrphanedNodes {
+		resource := node.resourceNode()
+		resource.Orphaned = true
+		tree.Nodes = append(tree.Nodes, resource)
 	}
 	return tree, nil
+}
+
+// resourcesToPrune lists the resources a sync with prune would delete. The
+// resource tree does not say, so it comes from the Application. It is extra
+// information: when the Application cannot be read, nothing is marked.
+func (s *APISource) resourcesToPrune(ctx context.Context, application string) map[explorer.ResourceReference]bool {
+	var response applicationResources
+	if err := s.get(ctx, "/api/v1/applications/"+url.PathEscape(application), &response); err != nil {
+		return nil
+	}
+	pruning := make(map[explorer.ResourceReference]bool)
+	for _, resource := range response.Status.Resources {
+		if resource.RequiresPruning {
+			pruning[explorer.ResourceReference{Group: resource.Group, Kind: resource.Kind, Namespace: resource.Namespace, Name: resource.Name}] = true
+		}
+	}
+	return pruning
 }
 
 // SyncApplication starts a sync operation for an Application.
@@ -158,6 +187,30 @@ func (s *APISource) RefreshApplication(ctx context.Context, application string) 
 		return fmt.Errorf("refresh application: %w", err)
 	}
 	return nil
+}
+
+var _ SyncPolicySetter = (*APISource)(nil)
+
+// SetSyncPolicy turns auto-sync on or off and sets its self-heal and prune
+// options, with the same merge patch the Kubernetes source applies.
+func (s *APISource) SetSyncPolicy(ctx context.Context, application string, policy explorer.SyncPolicy) error {
+	patch, err := json.Marshal(syncPolicyPatch(policy))
+	if err != nil {
+		return fmt.Errorf("encode sync policy: %w", err)
+	}
+	body, err := json.Marshal(patchRequest{Patch: string(patch), PatchType: "merge"})
+	if err != nil {
+		return fmt.Errorf("encode sync policy request: %w", err)
+	}
+	if err := s.request(ctx, http.MethodPatch, "/api/v1/applications/"+url.PathEscape(application), bytes.NewBuffer(body), nil); err != nil {
+		return fmt.Errorf("set sync policy: %w", err)
+	}
+	return nil
+}
+
+type patchRequest struct {
+	Patch     string `json:"patch"`
+	PatchType string `json:"patchType"`
 }
 
 // DeleteApplication deletes an Application and its managed resources.
@@ -219,7 +272,10 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
-		return nil, fmt.Errorf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))
+		return nil, &httpStatusError{
+			message: fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body)),
+			code:    response.StatusCode,
+		}
 	}
 	return response, nil
 }
@@ -249,8 +305,34 @@ type syncResource struct {
 }
 
 type metadata struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace"`
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace"`
+	OwnerReferences []struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	} `json:"ownerReferences"`
+}
+
+// applicationSetOwner names the ApplicationSet that generated the resource.
+func (m metadata) applicationSetOwner() string {
+	for _, owner := range m.OwnerReferences {
+		if owner.Kind == "ApplicationSet" {
+			return owner.Name
+		}
+	}
+	return ""
+}
+
+type applicationSetList struct {
+	Items []struct {
+		Metadata metadata `json:"metadata"`
+		Spec     struct {
+			Generators []any `json:"generators"`
+		} `json:"spec"`
+		Status struct {
+			Conditions []appSetCondition `json:"conditions"`
+		} `json:"status"`
+	} `json:"items"`
 }
 
 type applicationList struct {
@@ -264,11 +346,61 @@ type applicationList struct {
 			Health struct {
 				Status string `json:"status"`
 			} `json:"health"`
-			OperationState struct {
-				FinishedAt time.Time `json:"finishedAt"`
-			} `json:"operationState"`
+			OperationState *operationState `json:"operationState"`
+			Conditions     []struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"conditions"`
 		} `json:"status"`
 	} `json:"items"`
+}
+
+type operationState struct {
+	Phase      string    `json:"phase"`
+	Message    string    `json:"message"`
+	StartedAt  time.Time `json:"startedAt"`
+	FinishedAt time.Time `json:"finishedAt"`
+	SyncResult struct {
+		Revision  string `json:"revision"`
+		Resources []struct {
+			Group     string `json:"group"`
+			Kind      string `json:"kind"`
+			Namespace string `json:"namespace"`
+			Name      string `json:"name"`
+			Status    string `json:"status"`
+			Message   string `json:"message"`
+			HookType  string `json:"hookType"`
+			HookPhase string `json:"hookPhase"`
+			SyncPhase string `json:"syncPhase"`
+		} `json:"resources"`
+	} `json:"syncResult"`
+}
+
+// finishedAt is when the last sync ended; zero if there was none.
+func (s *operationState) finishedAt() time.Time {
+	if s == nil {
+		return time.Time{}
+	}
+	return s.FinishedAt
+}
+
+// operation converts the state of an Application's last sync, or nil if it has none.
+func (s *operationState) operation() *explorer.Operation {
+	if s == nil {
+		return nil
+	}
+	operation := &explorer.Operation{
+		Phase: s.Phase, Message: s.Message, Revision: s.SyncResult.Revision,
+		StartedAt: s.StartedAt, FinishedAt: s.FinishedAt,
+	}
+	for _, result := range s.SyncResult.Resources {
+		operation.Results = append(operation.Results, explorer.OperationResult{
+			Group: result.Group, Kind: result.Kind, Namespace: result.Namespace, Name: result.Name,
+			Status: result.Status, Message: result.Message,
+			HookType: result.HookType, HookPhase: result.HookPhase, SyncPhase: result.SyncPhase,
+		})
+	}
+	return operation
 }
 
 type applicationSource struct {
@@ -285,6 +417,21 @@ type applicationSpec struct {
 		Server    string `json:"server"`
 		Namespace string `json:"namespace"`
 	} `json:"destination"`
+	SyncPolicy struct {
+		Automated *struct {
+			Prune    bool `json:"prune"`
+			SelfHeal bool `json:"selfHeal"`
+		} `json:"automated"`
+	} `json:"syncPolicy"`
+}
+
+// policy reads how an Application syncs on its own.
+func (s applicationSpec) policy() explorer.SyncPolicy {
+	automated := s.SyncPolicy.Automated
+	if automated == nil {
+		return explorer.SyncPolicy{}
+	}
+	return explorer.SyncPolicy{Automated: true, SelfHeal: automated.SelfHeal, Prune: automated.Prune}
 }
 
 // targetRevision reads the revision of a single-source Application, or of the
@@ -318,22 +465,53 @@ type clusterList struct {
 }
 
 type resourceTreeResponse struct {
-	Nodes []struct {
+	Nodes         []resourceTreeNode `json:"nodes"`
+	OrphanedNodes []resourceTreeNode `json:"orphanedNodes"`
+}
+
+type resourceTreeNode struct {
+	Group     string `json:"group"`
+	Version   string `json:"version"`
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	UID       string `json:"uid"`
+	Status    string `json:"status"`
+	Health    struct {
+		Status string `json:"status"`
+	} `json:"health"`
+	ParentRefs []struct {
 		Group     string `json:"group"`
-		Version   string `json:"version"`
 		Kind      string `json:"kind"`
 		Namespace string `json:"namespace"`
 		Name      string `json:"name"`
-		UID       string `json:"uid"`
-		Status    string `json:"status"`
-		Health    struct {
-			Status string `json:"status"`
-		} `json:"health"`
-		ParentRefs []struct {
-			Group     string `json:"group"`
-			Kind      string `json:"kind"`
-			Namespace string `json:"namespace"`
-			Name      string `json:"name"`
-		} `json:"parentRefs"`
-	} `json:"nodes"`
+	} `json:"parentRefs"`
+}
+
+// resourceNode converts a node of the resource tree.
+func (n resourceTreeNode) resourceNode() explorer.ResourceNode {
+	parents := make([]explorer.ResourceReference, 0, len(n.ParentRefs))
+	for _, parent := range n.ParentRefs {
+		parents = append(parents, explorer.ResourceReference{
+			Group: parent.Group, Kind: parent.Kind, Namespace: parent.Namespace, Name: parent.Name,
+		})
+	}
+	return explorer.ResourceNode{
+		Group: n.Group, Version: n.Version, Kind: n.Kind, Namespace: n.Namespace, Name: n.Name,
+		UID: n.UID, Sync: n.Status, Health: n.Health.Status, Parents: parents,
+	}
+}
+
+// applicationResources are the resources in an Application's status, which
+// know whether a sync with prune would delete them.
+type applicationResources struct {
+	Status struct {
+		Resources []struct {
+			Group           string `json:"group"`
+			Kind            string `json:"kind"`
+			Namespace       string `json:"namespace"`
+			Name            string `json:"name"`
+			RequiresPruning bool   `json:"requiresPruning"`
+		} `json:"resources"`
+	} `json:"status"`
 }

@@ -25,7 +25,9 @@ type loadedSnapshot struct {
 type loadedTree struct {
 	tree       explorer.ResourceTree
 	background bool
-	err        error
+	// child means the tree is of an Application the open one deploys.
+	child bool
+	err   error
 }
 
 type loadedText struct {
@@ -148,7 +150,7 @@ func (m Model) operate(action, application string, call func(context.Context, ar
 func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 	selected := m.selectedCard()
 	switch {
-	case selected.Kind == "Application":
+	case m.onRootCard():
 		m.status = "Select a resource card to inspect it"
 		return m, nil
 	case key == "l" && !hasLogs(selected.Kind):
