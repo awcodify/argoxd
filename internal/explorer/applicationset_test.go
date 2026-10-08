@@ -85,3 +85,15 @@ func TestOwnerAndProjectFiltersReplaceEachOther(t *testing.T) {
 		t.Fatalf("clearing the project left owner = %q and %d applications, want all 4", model.Owner(), len(model.Applications()))
 	}
 }
+
+func TestSelectNameSelectsTheRowWithThatName(t *testing.T) {
+	model := NewModel(applicationSetSnapshot())
+	model.SetScreen(ApplicationSetsScreen)
+
+	if !model.SelectName("addons") || model.SelectedName() != "addons" {
+		t.Fatalf("SelectName(addons) left %q selected", model.SelectedName())
+	}
+	if model.SelectName("missing") || model.SelectedName() != "addons" {
+		t.Fatalf("selecting a missing name should fail and keep addons selected, got %q", model.SelectedName())
+	}
+}

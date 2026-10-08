@@ -215,6 +215,17 @@ func (m *Model) SelectRow(index int) bool {
 	return true
 }
 
+// SelectName selects the row with the name on the current screen when it exists.
+func (m *Model) SelectName(name string) bool {
+	for index, row := range m.rowNames() {
+		if row == name {
+			m.cursor = index
+			return true
+		}
+	}
+	return false
+}
+
 // Project returns the project Applications are filtered by; empty means all projects.
 func (m Model) Project() string {
 	return m.project

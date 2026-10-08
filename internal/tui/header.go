@@ -107,6 +107,9 @@ func (m Model) keyHints() []keyHint {
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}
 	if m.view == listView {
 		hints = append(hints, keyHint{"/", "Search"})
+		if m.origin.set {
+			hints = append(hints, keyHint{"esc", "Back"})
+		}
 		if m.explorer.Screen() == explorer.ApplicationsScreen {
 			hints = append(hints, keyHint{"H", "Health"}, keyHint{"S", "Sync status"}, keyHint{"space", "Mark"})
 		}

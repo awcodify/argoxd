@@ -14,6 +14,10 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 - **ApplicationSets.** `:appset` lists them with their generators, how many Applications each generated and any problem it reports. Enter shows the Applications it generated.
 - **Pulse.** `:pulse` (or `:overview`) shows Applications by health and sync status as bars, how many use auto-sync, self-heal and prune, and the Applications that need attention with the reasons. Narrow or short terminals get a text summary.
 
+### Changed
+
+- Esc on the Applications that Enter opened from a project or an ApplicationSet now returns to that list, with the same row selected. It first clears a search, as before. Esc did nothing there before.
+
 ### Fixed
 
 - With `--source kubeconfig`, syncing, syncing selected resources and rolling back now apply the Application's sync options, such as `CreateNamespace=true` or `ServerSideApply=true`, as Argo CD's own sync does. They were ignored before, so a sync of an Application that relies on `CreateNamespace=true` failed with "namespace not found".

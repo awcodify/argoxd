@@ -33,7 +33,10 @@ type Model struct {
 	height          int
 	view            viewMode
 	tree            []treeItem
-	resourceTree    explorer.ResourceTree
+	// origin is the Projects or ApplicationSets list the Applications list was
+	// opened from, which Esc returns to.
+	origin       listOrigin
+	resourceTree explorer.ResourceTree
 	// parents are the Applications whose dependency views are left open while a
 	// child Application is shown, the first one opened first.
 	parents         []treeFrame
@@ -246,6 +249,10 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.leaveChild()
 			break
 		}
+		if m.view == listView && m.origin.set {
+			m.returnToOrigin()
+			break
+		}
 		m.closeTree()
 	case "y", "d", "l":
 		if m.view == applicationTreeView {
@@ -288,8 +295,10 @@ func (m *Model) openApplicationSetApplications() {
 	if applicationSet == "" {
 		return
 	}
+	origin := m.currentOrigin()
 	m.showScreen(explorer.ApplicationsScreen)
 	m.explorer.SetOwner(applicationSet)
+	m.origin = origin
 }
 
 // openProjectApplications filters Applications to the selected Project.
@@ -298,8 +307,10 @@ func (m *Model) openProjectApplications() {
 	if project == "" {
 		return
 	}
-	m.explorer.SetProject(project)
+	origin := m.currentOrigin()
 	m.showScreen(explorer.ApplicationsScreen)
+	m.explorer.SetProject(project)
+	m.origin = origin
 }
 
 // View renders the header, the optional prompt, the framed view, the
@@ -335,6 +346,7 @@ func (m Model) Explorer() explorer.Model {
 }
 
 func (m *Model) showScreen(screen explorer.Screen) {
+	m.origin = listOrigin{}
 	m.explorer.SetScreen(screen)
 	m.closeTree()
 }

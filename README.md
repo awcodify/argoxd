@@ -114,7 +114,7 @@ A card that is itself an Application, as an app of apps deploys, opens with Ente
 
 ### ApplicationSets
 
-`:appset` lists each ApplicationSet with its generators (such as `git` or `matrix(list, clusters)`), how many Applications it generated, and its status: `OK`, or the problem it reports. Enter shows the Applications it generated (`applications · appset/<name>`); `0` or choosing a project shows them all again.
+`:appset` lists each ApplicationSet with its generators (such as `git` or `matrix(list, clusters)`), how many Applications it generated, and its status: `OK`, or the problem it reports. Enter shows the Applications it generated (`applications · appset/<name>`), and Esc returns to the ApplicationSets list with the same one selected. `0` or choosing a project shows every Application again.
 
 ### Pulse
 
@@ -158,7 +158,7 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
 | `p` | In the log of a workload, or of a Pod it runs, open a bar to choose one of the workload's Pods, or `all`; it works like the container bar and matches any part of a Pod's name |
 | Left / Right | Expand or collapse the selected inventory node |
-| Esc | Go back, or clear the search and filters |
+| Esc | Go back, or clear the search and filters. From the Applications of a project or an ApplicationSet it returns to that list |
 | `e` | Show the events of the selected Application, or of the selected card and its Pods. In the events view, `/` keeps only the lines that contain the text |
 | `s` | Sync the marked Applications, or the marked resources in the dependency view, else the selected Application. Confirm with Enter; toggle `p` prune and `r` dry run first if needed |
 | `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
