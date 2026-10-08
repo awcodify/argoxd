@@ -2,7 +2,7 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.3.0] - 2026-10-07
+## [0.3.0] - 2026-10-08
 
 ### Added
 
