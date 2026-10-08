@@ -16,6 +16,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Changed
 
+- The Homebrew package is now published as a cask, because GoReleaser deprecated formulas. A hook removes the macOS quarantine flag after installing, since the binary is not signed or notarized.
 - Esc on the Applications that Enter opened from a project or an ApplicationSet now returns to that list, with the same row selected. It first clears a search, as before. Esc did nothing there before.
 
 ### Fixed
