@@ -16,6 +16,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Fixed
 
+- With `--source kubeconfig`, syncing, syncing selected resources and rolling back now apply the Application's sync options, such as `CreateNamespace=true` or `ServerSideApply=true`, as Argo CD's own sync does. They were ignored before, so a sync of an Application that relies on `CreateNamespace=true` failed with "namespace not found".
 - On the card of a child Application (an app of apps), Space now marks it so it can be synced selectively, `y` and `d` show its manifest and diff, and `e` shows its own events instead of the parent's.
 
 ### Permissions

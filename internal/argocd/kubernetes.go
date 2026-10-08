@@ -175,7 +175,14 @@ func (s *KubernetesSource) SyncResources(ctx context.Context, application string
 
 // sync writes the operation; no resources means the whole Application.
 func (s *KubernetesSource) sync(ctx context.Context, application string, resources []explorer.ResourceReference, options SyncOptions) error {
+	object, err := s.getApplication(ctx, application)
+	if err != nil {
+		return fmt.Errorf("sync application %q: %w", application, err)
+	}
 	operation := map[string]any{"prune": options.Prune, "dryRun": options.DryRun}
+	if syncOptions := syncOptionsOf(object); len(syncOptions) > 0 {
+		operation["syncOptions"] = syncOptions
+	}
 	if len(resources) > 0 {
 		chosen := make([]any, 0, len(resources))
 		for _, resource := range resources {
@@ -190,6 +197,15 @@ func (s *KubernetesSource) sync(ctx context.Context, application string, resourc
 		return fmt.Errorf("sync application %q: %w", application, err)
 	}
 	return nil
+}
+
+// syncOptionsOf returns the sync options in an Application's sync policy, such
+// as CreateNamespace=true. Argo CD's own API adds them to every manual sync;
+// an operation written straight to the Application has to carry them, or the
+// sync ignores them.
+func syncOptionsOf(application *unstructured.Unstructured) []any {
+	options, _, _ := unstructured.NestedSlice(application.Object, "spec", "syncPolicy", "syncOptions")
+	return options
 }
 
 // RefreshApplication asks Argo CD to compare the Application with Git again,
