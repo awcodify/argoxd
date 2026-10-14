@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>argoxd — a k9s-style TUI for Argo CD</title>
+<meta name="description" content="argoxd is an interactive terminal user interface for Argo CD, inspired by k9s. Browse Applications, ApplicationSets, Projects and Clusters; inspect YAML, diffs, logs and events; sync, restart and roll back — all from your terminal.">
+<style>
+  :root {
+    /* the palette borrows the TUI's skin (internal/tui/skin.go) */
+    --bg: #0d1117;
+    --bg-pane: #010409;
+    --bg-panel: #161b22;
+    --border: #475569;
+    --fg: #cbd5e1;
+    --fg-bright: #f8fafc;
+    --fg-dim: #64748b;
+    --accent: #ef7b4d;        /* argo orange */
+    --teal: #18be94;          /* healthy / synced */
+    --amber: #f4c030;         /* progressing / outofsync */
+    --rose: #e96d76;          /* degraded */
+    --sky: #0dadea;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --pane: 400px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+
+  /* ── the fixed pane: the page's "TUI header" ─────────────────── */
+  .pane {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--pane);
+    height: 100vh;
+    overflow-y: auto;
+    background: var(--bg-pane);
+    border-right: 1px solid var(--border);
+    padding: 44px 40px 32px;
+    display: flex;
+    flex-direction: column;
+  }
+  /* the same block wordmark the TUI draws in its header (internal/tui/header.go) */
+  .wordmark {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 19px;
+    line-height: 1;
+    white-space: pre;
+  }
+  .wm-argo { color: var(--accent); }
+  .wm-xd { color: var(--teal); }
+  .wordmark-tag {
+    color: var(--fg-dim);
+    font-family: var(--mono);
+    font-size: 13px;
+    margin: 14px 0 28px;
+  }
+
+  /* TUI-header-style info rows: muted label, bright value */
+  .infoline { display: flex; font-family: var(--mono); font-size: 13px; line-height: 2; }
+  .infoline .k { color: var(--fg-dim); width: 96px; flex: none; }
+  .infoline .v { color: var(--fg-bright); font-weight: 600; }
+  .infoline .v a { color: var(--sky); text-decoration: none; }
+  .infoline .v a:hover { text-decoration: underline; }
+
+  /* github-style two-segment star button: ★ Star stars, count lists stargazers */
+  .star-btn {
+    display: inline-flex;
+    align-self: flex-start;
+    margin-top: 20px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .star-btn:hover { border-color: var(--accent); }
+  .star-btn a { display: inline-flex; align-items: center; gap: 7px; padding: 5px 12px; text-decoration: none; }
+  .star-btn .label { background: var(--bg-panel); color: var(--fg-bright); }
+  .star-btn .label .star-glyph { color: var(--amber); }
+  .star-btn .count { border-left: 1px solid var(--border); color: var(--fg-dim); min-width: 16px; justify-content: center; }
+  .star-btn .count:hover { color: var(--accent); }
+
+  /* nav rows, selected with the TUI's ▌ bar */
+  .sidenav { margin: 30px 0; border-top: 1px solid var(--border); padding-top: 26px; }
+  .sidenav a {
+    display: block;
+    font-family: var(--mono);
+    font-size: 15px;
+    color: var(--fg-dim);
+    text-decoration: none;
+    padding: 7px 14px;
+    margin: 2px -14px;
+    border-left: 2px solid transparent;
+  }
+  .sidenav a:hover {
+    color: var(--fg-bright);
+    border-left-color: var(--accent);
+    background: rgba(239, 123, 77, 0.07);
+  }
+  .sidenav a .ext { color: var(--fg-dim); }
+
+  .pane-bottom { margin-top: auto; }
+
+  .install-snippet {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.9;
+  }
+  .install-snippet .p { color: var(--teal); user-select: none; }
+  .install-snippet .cmd { color: var(--fg); word-break: break-all; }
+  .install-snippet .out { color: var(--fg-dim); }
+
+  .status-line {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg-dim);
+    margin-top: 22px;
+    line-height: 2;
+  }
+  .s-healthy, .s-synced { color: var(--teal); }
+  .s-progressing, .s-outofsync { color: var(--amber); }
+  .s-degraded { color: var(--rose); }
+
+  /* ── the scrolling view ──────────────────────────────────────── */
+  .view { margin-left: var(--pane); }
+  .view-inner { max-width: 880px; padding: 56px 56px 0; }
+
+  section { margin-bottom: 104px; }
+  section:last-of-type { margin-bottom: 0; }
+
+  /* section titles as TUI frame titles */
+  .frame-title {
+    font-family: var(--mono);
+    font-size: 26px;
+    color: var(--fg-bright);
+    margin-bottom: 12px;
+  }
+  .frame-title .diamond { color: var(--accent); }
+  .section-sub { color: var(--fg-dim); margin-bottom: 36px; }
+  .section-sub a { color: var(--sky); }
+
+  /* terminal window */
+  .term {
+    background: var(--bg-pane);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(1, 4, 9, 0.6);
+  }
+  .term-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dot.r { background: #ff5f57; } .dot.y { background: #febc2e; } .dot.g { background: #28c840; }
+  .term-title { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); margin-left: 8px; }
+  .term-title .diamond { color: var(--accent); }
+  .term-body { padding: 20px; font-family: var(--mono); font-size: 14px; line-height: 1.9; overflow-x: auto; }
+  .term-body .p { color: var(--teal); user-select: none; }
+  .term-body .cmd { color: var(--fg); }
+  .term-body .out { color: var(--fg-dim); }
+  .term-body a { color: var(--sky); }
+  .term-body img { display: block; width: 100%; }
+
+  .demo { padding-top: 8px; }
+
+  /* features */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px;
+    transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card h3 { font-family: var(--mono); font-size: 15px; margin-bottom: 10px; color: var(--fg-bright); }
+  .card h3 .icon { color: var(--accent); margin-right: 10px; }
+  .card p { color: var(--fg-dim); font-size: 14px; }
+  .card code {
+    font-family: var(--mono);
+    background: var(--bg-pane);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 13px;
+    color: var(--sky);
+    white-space: nowrap;
+  }
+
+  /* keys table with TUI keycaps */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  th { font-family: var(--mono); background: var(--bg-panel); color: var(--fg-dim); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  td.keys { white-space: nowrap; }
+  .keycap {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  td .muted { color: var(--fg-dim); }
+
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 120px;
+    padding: 36px 56px 44px;
+    color: var(--fg-dim);
+    font-size: 14px;
+  }
+  footer a { color: var(--fg-dim); margin-right: 18px; }
+  footer a:hover { color: var(--accent); }
+  footer .license { margin-top: 10px; font-family: var(--mono); font-size: 12px; }
+
+  /* ── small screens: the pane stacks on top ───────────────────── */
+  @media (max-width: 980px) {
+    .pane {
+      position: static;
+      width: auto;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+      padding: 40px 28px 28px;
+    }
+    .sidenav { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+    .view { margin-left: 0; }
+    .view-inner { padding: 40px 28px 0; }
+    footer { padding: 32px 28px 40px; }
+  }
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<aside class="pane">
+  <h1 class="wordmark" aria-label="argoxd"><span class="wm-argo">▄▀█ █▀█ █▀▀ █▀█ </span><span class="wm-xd">▀▄▀ █▀▄</span>
+<span class="wm-argo">█▀█ █▀▄ █▄█ █▄█ </span><span class="wm-xd">█ █ █▄▀</span></h1>
+  <p class="wordmark-tag">Argo CD, from the terminal</p>
+
+  <div class="infoline"><span class="k">Kind</span><span class="v">k9s-style TUI for Argo CD</span></div>
+  <div class="infoline"><span class="k">Version</span><span class="v"><a href="https://github.com/awcodify/argoxd/releases">0.3.0</a></span></div>
+  <div class="infoline"><span class="k">License</span><span class="v"><a href="https://github.com/awcodify/argoxd/blob/main/LICENSE">MIT</a></span></div>
+
+  <span class="star-btn"><a class="label" href="https://github.com/awcodify/argoxd" title="Star argoxd on GitHub"><svg class="gh" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg><span class="star-glyph">★</span> Star</a><a class="count" id="star-count" href="https://github.com/awcodify/argoxd/stargazers" style="display:none"></a></span>
+
+  <nav class="sidenav">
+    <a href="#demo">demo</a>
+    <a href="#features">features</a>
+    <a href="#install">install</a>
+    <a href="#keys">keys</a>
+    <a href="https://github.com/awcodify/argoxd">github <span class="ext">↗</span></a>
+  </nav>
+
+  <div class="pane-bottom">
+    <div class="install-snippet">
+      <span class="out"># try it — no cluster needed</span><br>
+      <span class="p">$</span> <span class="cmd">brew install awcodify/tap/argoxd</span><br>
+      <span class="p">$</span> <span class="cmd">argoxd --demo</span>
+    </div>
+    <p class="status-line">
+      <span class="s-healthy">♥ Healthy</span> · <span class="s-synced">✓ Synced</span> · <span class="s-progressing">◐ Progressing</span><br>
+      <span class="s-outofsync">⟳ OutOfSync</span> · <span class="s-degraded">✗ Degraded</span>
+    </p>
+  </div>
+</aside>
+
+<main class="view">
+  <div class="view-inner">
+
+    <section class="demo" id="demo">
+      <div class="term">
+        <div class="term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="term-title"><span class="diamond">◆</span> applications · store · 3</span>
+        </div>
+        <div class="term-body">
+          <img src="demo.gif" alt="argoxd demo: browsing Argo CD Applications, inspecting resources, viewing logs and diffs">
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <h2 class="frame-title"><span class="diamond">◆</span> features</h2>
+      <p class="section-sub">Everything Argo CD does, at k9s speed.</p>
+      <div class="grid">
+        <div class="card">
+          <h3><span class="icon">◆</span>k9s-style navigation</h3>
+          <p>List Applications, ApplicationSets, AppProjects and Clusters. Press <code>Enter</code> to drill into an Application's resources, <code>Esc</code> to go back. Command bar with <code>:</code>, search with <code>/</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">⎈</span>kubeconfig or API</h3>
+          <p>Connect through the Kubernetes API with your active kubeconfig context, or talk to the Argo CD API directly with <code>--source api</code> and a token.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">▣</span>Resource cards</h3>
+          <p>Deployments → ReplicaSets → Pods nested under their owners. Open live YAML (<code>y</code>), diff against desired state (<code>d</code>), Pod logs (<code>l</code>) and events (<code>e</code>).</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">●</span>Safe bulk actions</h3>
+          <p>Mark rows with <code>Space</code>, then sync, refresh, restart or delete them together. Every action shows exactly what it will touch and waits for confirmation first.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">◐</span>Pulse overview</h3>
+          <p><code>:pulse</code> draws health and sync as bars, counts auto-sync policies, and lists the Applications that need attention — worst first, with the reasons.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">✂</span>Prune &amp; orphan insight</h3>
+          <p>See which resources a sync with prune would delete and which ones no Application manages. Check conditions, sync details (<code>i</code>) and history, then roll back with <code>h</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <h2 class="frame-title"><span class="diamond">◆</span> install</h2>
+      <p class="section-sub">Linux, macOS and Windows.</p>
+      <div class="term">
+        <div class="term-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="term-title">sh</span>
+        </div>
+        <div class="term-body">
+          <span class="out"># homebrew (macOS and Linux, via awcodify/tap)</span><br>
+          <span class="p">$</span> <span class="cmd">brew install awcodify/tap/argoxd</span><br>
+          <br>
+          <span class="out"># go</span><br>
+          <span class="p">$</span> <span class="cmd">go install github.com/awcodify/argoxd/cmd/argoxd@latest</span><br>
+          <br>
+          <span class="out"># or grab a prebuilt binary from the</span>
+          <a href="https://github.com/awcodify/argoxd/releases">github releases</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="keys">
+      <h2 class="frame-title"><span class="diamond">◆</span> keys</h2>
+      <p class="section-sub">A taste of the keymap — the full list is in the <a href="https://github.com/awcodify/argoxd#keys">README</a>.</p>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Key</th><th>Action</th></tr>
+          <tr><td class="keys"><span class="keycap">Enter</span></td><td>Open an Application's dependencies, an ApplicationSet's Applications, or a child app</td></tr>
+          <tr><td class="keys"><span class="keycap">Space</span></td><td>Mark Applications or resource cards; bulk actions apply to everything marked</td></tr>
+          <tr><td class="keys"><span class="keycap">y</span> <span class="keycap">d</span> <span class="keycap">l</span> <span class="keycap">e</span></td><td>YAML · diff · logs · events of the selected card</td></tr>
+          <tr><td class="keys"><span class="keycap">s</span> <span class="keycap">R</span> <span class="keycap">D</span></td><td>Sync · hard refresh · delete <span class="muted">(always asks first)</span></td></tr>
+          <tr><td class="keys"><span class="keycap">x</span> <span class="keycap">X</span></td><td>Rolling-restart a workload · delete a Pod</td></tr>
+          <tr><td class="keys"><span class="keycap">h</span> <span class="keycap">i</span> <span class="keycap">P</span></td><td>Deployment history &amp; rollback · sync details · sync policy</td></tr>
+          <tr><td class="keys"><span class="keycap">H</span> <span class="keycap">S</span> <span class="keycap">K</span></td><td>Filter by health · sync status · resource kind, with suggestions</td></tr>
+          <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar · search as you type</td></tr>
+          <tr><td class="keys"><span class="keycap">Esc</span></td><td>Back, or clear search and filters</td></tr>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    <div>
+      <a href="https://github.com/awcodify/argoxd">GitHub</a>
+      <a href="https://github.com/awcodify/argoxd/releases">Releases</a>
+      <a href="https://github.com/awcodify/argoxd/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/awcodify/argoxd/blob/main/LICENSE">License</a>
+    </div>
+    <p class="license">argoxd is open source under the MIT license.</p>
+  </footer>
+</main>
+
+<script>
+  fetch('https://api.github.com/repos/awcodify/argoxd')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (repo) {
+      var n = repo.stargazers_count;
+      var el = document.getElementById('star-count');
+      el.textContent = n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : n;
+      el.style.display = '';
+    })
+    .catch(function () { /* the ★ Star segment keeps working on its own */ });
+</script>
+
+</body>
+</html>
