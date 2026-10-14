@@ -3,8 +3,84 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>argoxd — a k9s-style TUI for Argo CD</title>
+<title>argoxd: Terminal UI for Argo CD | Kubernetes GitOps Operations</title>
 <meta name="description" content="argoxd is an interactive terminal user interface for Argo CD, inspired by k9s. Browse Applications, ApplicationSets, Projects and Clusters; inspect YAML, diffs, logs and events; sync, restart and roll back — all from your terminal.">
+<meta name="author" content="awcodify">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#0d1117">
+<link rel="canonical" href="https://argoxd.dev/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="argoxd">
+<meta property="og:title" content="argoxd: Terminal UI for Argo CD">
+<meta property="og:description" content="A k9s-style terminal UI for operating Argo CD applications, resources, syncs, logs, diffs, and rollbacks.">
+<meta property="og:url" content="https://argoxd.dev/">
+<meta property="og:image" content="https://argoxd.dev/demo.gif">
+<meta property="og:image:alt" content="argoxd terminal user interface showing Argo CD applications">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="argoxd: Terminal UI for Argo CD">
+<meta name="twitter:description" content="A k9s-style terminal UI for operating Argo CD applications, resources, syncs, logs, diffs, and rollbacks.">
+<meta name="twitter:image" content="https://argoxd.dev/demo.gif">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "argoxd",
+  "description": "An open-source, k9s-style terminal user interface for operating Argo CD applications and Kubernetes resources.",
+  "applicationCategory": "DeveloperApplication",
+  "applicationSubCategory": "Kubernetes and GitOps operations tool",
+  "operatingSystem": "macOS, Linux, Windows",
+  "url": "https://argoxd.dev/",
+  "downloadUrl": "https://github.com/awcodify/argoxd/releases",
+  "codeRepository": "https://github.com/awcodify/argoxd",
+  "license": "https://github.com/awcodify/argoxd/blob/main/LICENSE",
+  "isAccessibleForFree": true,
+  "author": {
+    "@type": "Organization",
+    "name": "awcodify",
+    "url": "https://github.com/awcodify"
+  }
+}
+</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is argoxd?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "argoxd is an open-source terminal user interface for Argo CD. It gives Kubernetes and platform engineers a k9s-style workflow for viewing applications and resources, inspecting YAML, diffs, logs, and events, and running Argo CD operations from a terminal."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How does argoxd connect to Argo CD?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "By default, argoxd uses the active kubeconfig context and looks for Argo CD in the argocd namespace. It can also connect directly to the Argo CD API with --source api, an API server URL, and a token."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can I try argoxd without a Kubernetes cluster or Argo CD?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Run argoxd --demo to explore built-in sample applications, resources, YAML, diffs, and logs. Demo actions only change in-memory sample data and do not require a cluster or credentials."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Which operating systems support argoxd?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "argoxd supports macOS, Linux, and Windows. Install it with Homebrew on macOS or Linux, with go install, or by downloading a prebuilt binary from GitHub Releases."
+      }
+    }
+  ]
+}
+</script>
 <style>
   :root {
     /* the palette borrows the TUI's skin (internal/tui/skin.go) */
@@ -149,6 +225,21 @@
   .frame-title .diamond { color: var(--accent); }
   .section-sub { color: var(--fg-dim); margin-bottom: 36px; }
   .section-sub a { color: var(--sky); }
+  .overview { padding-top: 8px; }
+  .overview h1 {
+    max-width: 760px;
+    font-family: var(--mono);
+    font-size: clamp(32px, 5vw, 48px);
+    line-height: 1.15;
+    color: var(--fg-bright);
+    margin-bottom: 20px;
+  }
+  .overview p {
+    max-width: 720px;
+    color: var(--fg);
+    font-size: 18px;
+  }
+  .overview p + p { margin-top: 14px; color: var(--fg-dim); font-size: 16px; }
 
   /* terminal window */
   .term {
@@ -221,6 +312,17 @@
   }
   td .muted { color: var(--fg-dim); }
 
+  .faq-list { display: grid; gap: 16px; }
+  .faq-item {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 22px;
+  }
+  .faq-item h3 { font-family: var(--mono); font-size: 16px; color: var(--fg-bright); margin-bottom: 8px; }
+  .faq-item p { color: var(--fg-dim); font-size: 14px; }
+  .faq-item code { font-family: var(--mono); color: var(--sky); }
+
   footer {
     border-top: 1px solid var(--border);
     margin-top: 120px;
@@ -255,8 +357,8 @@
 <body>
 
 <aside class="pane">
-  <h1 class="wordmark" aria-label="argoxd"><span class="wm-argo">▄▀█ █▀█ █▀▀ █▀█ </span><span class="wm-xd">▀▄▀ █▀▄</span>
-<span class="wm-argo">█▀█ █▀▄ █▄█ █▄█ </span><span class="wm-xd">█ █ █▄▀</span></h1>
+  <div class="wordmark" role="img" aria-label="argoxd"><span class="wm-argo">▄▀█ █▀█ █▀▀ █▀█ </span><span class="wm-xd">▀▄▀ █▀▄</span>
+<span class="wm-argo">█▀█ █▀▄ █▄█ █▄█ </span><span class="wm-xd">█ █ █▄▀</span></div>
   <p class="wordmark-tag">Argo CD, from the terminal</p>
 
   <div class="infoline"><span class="k">Kind</span><span class="v">k9s-style TUI for Argo CD</span></div>
@@ -270,6 +372,7 @@
     <a href="#features">features</a>
     <a href="#install">install</a>
     <a href="#keys">keys</a>
+    <a href="#faq">FAQ</a>
     <a href="https://github.com/awcodify/argoxd">github <span class="ext">↗</span></a>
   </nav>
 
@@ -288,6 +391,12 @@
 
 <main class="view">
   <div class="view-inner">
+
+    <section class="overview" aria-labelledby="page-title">
+      <h1 id="page-title">A k9s-style terminal UI for Argo CD</h1>
+      <p>argoxd helps Kubernetes and platform engineers operate Argo CD from the terminal: browse applications and resources, inspect YAML, diffs, logs, and events, then sync, refresh, restart, delete, or roll back with confirmation.</p>
+      <p>It is open-source software for GitOps operations, available for macOS, Linux, and Windows. Connect with kubeconfig or directly to the Argo CD API.</p>
+    </section>
 
     <section class="demo" id="demo">
       <div class="term">
@@ -369,6 +478,28 @@
           <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar · search as you type</td></tr>
           <tr><td class="keys"><span class="keycap">Esc</span></td><td>Back, or clear search and filters</td></tr>
         </table>
+      </div>
+    </section>
+
+    <section id="faq" aria-labelledby="faq-title">
+      <h2 class="frame-title" id="faq-title"><span class="diamond">◆</span> frequently asked questions</h2>
+      <div class="faq-list">
+        <article class="faq-item">
+          <h3>What is argoxd?</h3>
+          <p>argoxd is an open-source terminal user interface for Argo CD. It brings a resource-focused, k9s-style workflow to GitOps operations, so you can inspect and act on Argo CD Applications and their Kubernetes resources without leaving the terminal.</p>
+        </article>
+        <article class="faq-item">
+          <h3>How does argoxd connect to Argo CD?</h3>
+          <p>By default, it uses your active kubeconfig context and looks for Argo CD in the <code>argocd</code> namespace. You can instead use the Argo CD API with <code>--source api</code>, a server URL, and a token.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Can I try argoxd without a Kubernetes cluster or Argo CD?</h3>
+          <p>Yes. Run <code>argoxd --demo</code> to explore sample applications, resources, YAML, diffs, and logs. It needs no cluster or credentials, and its actions change only in-memory sample data.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Which operating systems support argoxd?</h3>
+          <p>argoxd supports macOS, Linux, and Windows. Install with Homebrew on macOS or Linux, with <code>go install</code>, or by downloading a prebuilt binary from GitHub Releases.</p>
+        </article>
       </div>
     </section>
 
