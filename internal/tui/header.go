@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -91,12 +92,16 @@ func (m Model) keyHints() []keyHint {
 		} else if m.viewer.kind == "logs" {
 			hints = append(hints, keyHint{"f", "Follow"})
 		}
+		hints = append(hints, keyHint{"Y", "Yank"})
+		if m.canOpenApplicationInBrowser() {
+			hints = append(hints, keyHint{"o", "Browser"})
+		}
 		return append(hints, keyHint{"esc", "Back"}, keyHint{"q", "Quit"})
 	case historyViewMode:
 		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
 		hints := []keyHint{
-			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
+			{"y", "Yank"}, {"Y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
 			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
@@ -127,12 +132,20 @@ func (m Model) keyHints() []keyHint {
 		if m.view == listView {
 			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"}, keyHint{"i", "Sync details"})
 		}
-		hints = append(hints, keyHint{"y", "YAML"}, keyHint{"d", "Diff"}, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"P", "Sync policy"}, keyHint{"R", "Refresh"}, keyHint{"D", "Delete"})
+		hints = append(hints, keyHint{"y", "Yank"}, keyHint{"Y", "YAML"}, keyHint{"d", "Diff"}, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"P", "Sync policy"}, keyHint{"R", "Refresh"}, keyHint{"D", "Delete"})
+		if m.canOpenApplicationInBrowser() {
+			hints = append(hints, keyHint{"o", "Browser"})
+		}
 		if m.hasActiveOperation() {
 			hints = append(hints, keyHint{"T", "Terminate"})
 		}
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
+}
+
+func (m Model) canOpenApplicationInBrowser() bool {
+	_, ok := m.source.(argocd.ApplicationURLer)
+	return ok && m.selectedApplication() != ""
 }
 
 // renderHints right-aligns the keycaps so their actions line up.

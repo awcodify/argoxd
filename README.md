@@ -66,6 +66,8 @@ argoxd --source api --server https://argocd.example.com --auth-token "$TOKEN"
 
 Use `--insecure` only when connecting to a development instance with an untrusted TLS certificate.
 
+With `--source api`, press `o` on an Application to open it in the Argo CD web UI. Browser opening is intentionally unavailable with `--source kubeconfig`, where argoxd does not infer a server URL from cluster resources.
+
 ## Configuration
 
 Defaults can be kept in `~/.config/argoxd/config.yaml` (or `$XDG_CONFIG_HOME/argoxd/config.yaml`; set `ARGOXD_CONFIG` to use another path). Every key is optional:
@@ -87,7 +89,7 @@ Settings are resolved in this order, later ones winning: built-in defaults, the 
 
 The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
 
-Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. Press `y` on an Application row or its root card to view its Application custom resource. Press `d` there for the concatenated diff of its drifted resources (needs `--source api`). From a resource card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
+Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. Press `Y` on an Application row or its root card to view its Application custom resource. Press `d` there for the concatenated diff of its drifted resources (needs `--source api`). From a resource card you can open its live YAML (`Y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
 
 Press Space to mark Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. Marked rows and cards show a `●`; Esc clears the marks.
 
@@ -131,6 +133,8 @@ Press `/` on a list to search it by name as you type: Enter keeps the search, Es
 
 Press `:` to open the command bar. Matching commands are suggested as you type: Tab or Right accepts the highlighted suggestion, Up/Down picks another, Enter runs what you typed, Esc closes it.
 
+With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kubeconfig: type to narrow it, use Tab or arrows to choose one, then Enter reconnects. `:ctx <name>` also reconnects directly. It is unavailable with `--source api`.
+
 | Command | Opens |
 | --- | --- |
 | `:app`, `:apps`, `:applications` | Applications, optionally filtered: `:app store`, `:app all` |
@@ -139,6 +143,7 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `:appset`, `:appsets`, `:applicationset`, `:applicationsets` | ApplicationSets |
 | `:pulse`, `:overview` | Overview of the Applications that need attention |
 | `:settings` | Connection settings |
+| `:ctx`, `:context` | Pick a kubeconfig context and reconnect; `<name>` switches directly |
 | `:q`, `:quit` | Quit |
 
 ## Keys
@@ -156,7 +161,8 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
 | Space | Mark or unmark the selected Application, or the selected resource card, and move to the next; `s`, `R`, `D`, `x` and `X` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
-| `y` / `d` / `l` | Show the selected Application's YAML or concatenated drift diff, or the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
+| `y` / `Y` / `d` / `l` | Yank the selected item or viewer text; show the selected Application's YAML or concatenated drift diff; or show the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
+| `o` | Open the selected Application in the Argo CD web UI (`--source api` only) |
 | `f` | In a log view, follow new lines as they arrive (the last 10,000 are kept); press again, or Esc, to stop |
 | `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
 | `p` | In the log of a workload, or of a Pod it runs, open a bar to choose one of the workload's Pods, or `all`; it works like the container bar and matches any part of a Pod's name |

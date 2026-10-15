@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +38,10 @@ var (
 
 // KubernetesSource loads Argo CD custom resources from a kubeconfig context.
 type KubernetesSource struct {
-	namespace string
-	clients   func() (kubernetesClients, error)
+	namespace  string
+	kubeconfig string
+	context    string
+	clients    func() (kubernetesClients, error)
 }
 
 // kubernetesClients are created once and shared by every request.
@@ -50,11 +53,36 @@ type kubernetesClients struct {
 // NewKubernetesSource creates a source backed by an Argo CD installation in Kubernetes.
 func NewKubernetesSource(kubeconfig, context, namespace string) *KubernetesSource {
 	return &KubernetesSource{
-		namespace: namespace,
+		namespace:  namespace,
+		kubeconfig: kubeconfig,
+		context:    context,
 		clients: sync.OnceValues(func() (kubernetesClients, error) {
 			return connect(kubeconfig, context)
 		}),
 	}
+}
+
+var _ ContextSwitcher = (*KubernetesSource)(nil)
+
+// Contexts returns the kubeconfig contexts available to switch to.
+func (s *KubernetesSource) Contexts() ([]string, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRules.ExplicitPath = s.kubeconfig
+	config, err := loadingRules.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig contexts: %w", err)
+	}
+	contexts := make([]string, 0, len(config.Contexts))
+	for name := range config.Contexts {
+		contexts = append(contexts, name)
+	}
+	slices.Sort(contexts)
+	return contexts, nil
+}
+
+// WithContext creates a new source that uses context from the same kubeconfig.
+func (s *KubernetesSource) WithContext(context string) Source {
+	return NewKubernetesSource(s.kubeconfig, context, s.namespace)
 }
 
 // Load lists Applications, AppProjects, and cluster secrets.

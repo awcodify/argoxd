@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -26,6 +27,10 @@ var commands = []viewCommand{
 }
 
 var quitCommands = []string{"q", "quit"}
+
+var contextCommands = []string{"ctx", "context"}
+
+const contextField = "context"
 
 // filterCommand is a ':' command that sets one filter, e.g. "health degraded".
 // Its shortcut opens the same filter from the keyboard.
@@ -100,6 +105,11 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 		if strings.HasPrefix("quit", input) {
 			matches = append(matches, "quit")
 		}
+		for _, command := range contextCommands {
+			if strings.HasPrefix(command, input) {
+				matches = append(matches, command)
+			}
+		}
 		for _, command := range filterCommands {
 			if _, available := filters[command.name]; available && strings.HasPrefix(command.name, input) {
 				matches = append(matches, command.name)
@@ -148,8 +158,28 @@ func (m Model) suggestions() []string {
 	if m.prompt.field == podField {
 		return matchOptions(m.prompt.input, podOptions(m.logPods))
 	}
+	if m.prompt.field == contextField {
+		return matchOptions(m.prompt.input, m.contextOptions)
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
+	}
+	if name, context, hasContext := strings.Cut(m.prompt.input, " "); hasContext && slices.Contains(contextCommands, name) {
+		switcher, ok := m.source.(argocd.ContextSwitcher)
+		if !ok {
+			return nil
+		}
+		contexts, err := switcher.Contexts()
+		if err != nil {
+			return nil
+		}
+		var matches []string
+		for _, candidate := range contexts {
+			if strings.HasPrefix(candidate, context) {
+				matches = append(matches, name+" "+candidate)
+			}
+		}
+		return matches
 	}
 	projects := make([]string, 0, len(m.explorer.Snapshot().Projects))
 	for _, project := range m.explorer.Snapshot().Projects {
@@ -209,6 +239,8 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.showContainer(input)
 			case podField:
 				return m.showPod(input)
+			case contextField:
+				return m, m.switchContext(input)
 			}
 			m.runFilter(field, input)
 			return m, nil
@@ -306,10 +338,18 @@ func (m *Model) runCommand(input string) tea.Cmd {
 	if slices.Contains(quitCommands, name) {
 		return tea.Quit
 	}
+	if slices.Contains(contextCommands, name) {
+		if strings.TrimSpace(project) == "" {
+			m.openContextPicker()
+			return nil
+		}
+		return m.switchContext(strings.TrimSpace(project))
+	}
 	if filter, found := findFilterCommand(name); found {
 		m.runFilterCommand(filter, strings.TrimSpace(project))
 		return nil
 	}
+
 	command, found := findCommand(name)
 	if !found {
 		m.err = fmt.Errorf("command %q not found", name)
@@ -334,6 +374,51 @@ func (m *Model) runCommand(input string) tea.Cmd {
 		m.explorer.SetProject(project)
 	}
 	return nil
+}
+
+func (m *Model) openContextPicker() {
+	switcher, ok := m.source.(argocd.ContextSwitcher)
+	if !ok {
+		m.err = fmt.Errorf(":ctx is available only with --source kubeconfig")
+		return
+	}
+	contexts, err := switcher.Contexts()
+	if err != nil {
+		m.err = err
+		return
+	}
+	m.contextOptions = contexts
+	m.prompt = prompt{active: true, field: contextField}
+}
+
+func (m *Model) switchContext(context string) tea.Cmd {
+	switcher, ok := m.source.(argocd.ContextSwitcher)
+	if !ok {
+		m.err = fmt.Errorf(":ctx is available only with --source kubeconfig")
+		return nil
+	}
+	if context == "" {
+		m.err = fmt.Errorf(":ctx requires a kubeconfig context")
+		return nil
+	}
+	contexts, err := switcher.Contexts()
+	if err != nil {
+		m.err = err
+		return nil
+	}
+	if !slices.Contains(contexts, context) {
+		m.err = fmt.Errorf("kubeconfig context %q not found", context)
+		return nil
+	}
+	m.source = switcher.WithContext(context)
+	m.connection = "Kubeconfig context: " + context
+	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.closeTree()
+	m.contextOptions = nil
+	m.loading = true
+	m.err = nil
+	m.status = "Switching to kubeconfig context " + context
+	return m.load()
 }
 
 func (m Model) hasProject(name string) bool {

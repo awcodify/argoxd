@@ -61,6 +61,7 @@ type Model struct {
 	logWorkload     explorer.ResourceNode
 	logPod          string
 	logPods         []string
+	contextOptions  []string
 	status          string
 }
 
@@ -261,10 +262,14 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.closeTree()
-	case "y", "d":
+	case "Y", "d":
 		if m.view == listView || m.view == applicationTreeView {
 			return m.inspect(key)
 		}
+	case "y":
+		m.yank()
+	case "o":
+		m.openApplicationInBrowser()
 	case "l":
 		if m.view == applicationTreeView {
 			return m.inspect(key)
@@ -320,6 +325,48 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) yank() {
+	text := m.selectionText()
+	if text == "" {
+		m.status = "Nothing to copy"
+		return
+	}
+	if err := copyToClipboard(text); err != nil {
+		m.err = err
+		return
+	}
+	m.status = "Copied to clipboard"
+}
+
+func (m Model) selectionText() string {
+	if m.view == textViewMode {
+		return strings.Join(m.viewer.lines, "\n")
+	}
+	if m.view == applicationTreeView && !m.onRootCard() {
+		resource := m.selectedCard()
+		name := resource.Kind + "/" + resource.Name
+		if resource.Namespace != "" {
+			name = resource.Namespace + "/" + name
+		}
+		return name
+	}
+	return m.selectedApplication()
+}
+
+func (m *Model) openApplicationInBrowser() {
+	application := m.selectedApplication()
+	urler, ok := m.source.(argocd.ApplicationURLer)
+	if !ok || application == "" {
+		m.status = "Opening Applications in a browser needs --source api"
+		return
+	}
+	if err := openInBrowser(urler.ApplicationURL(application)); err != nil {
+		m.err = err
+		return
+	}
+	m.status = "Opened " + application + " in browser"
 }
 
 func (m *Model) blockReadOnly() bool {

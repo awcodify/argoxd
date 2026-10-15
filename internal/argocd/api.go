@@ -105,6 +105,13 @@ func (s *APISource) get(ctx context.Context, path string, target any) error {
 	return s.request(ctx, http.MethodGet, path, nil, target)
 }
 
+var _ ApplicationURLer = (*APISource)(nil)
+
+// ApplicationURL returns the Argo CD web UI URL for an Application.
+func (s *APISource) ApplicationURL(application string) string {
+	return s.baseURL + "/applications/" + url.PathEscape(application)
+}
+
 // LoadResourceTree returns the resources managed by an Application.
 func (s *APISource) LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error) {
 	var response resourceTreeResponse

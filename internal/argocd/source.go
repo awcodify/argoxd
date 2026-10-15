@@ -15,6 +15,17 @@ type Source interface {
 	Load(ctx context.Context) (explorer.Snapshot, error)
 }
 
+// ApplicationURLer provides browser URLs for Applications.
+type ApplicationURLer interface {
+	ApplicationURL(application string) string
+}
+
+// ContextSwitcher lists kubeconfig contexts and creates a source for one.
+type ContextSwitcher interface {
+	Contexts() ([]string, error)
+	WithContext(context string) Source
+}
+
 // ApplicationOperator supports interactive application operations.
 type ApplicationOperator interface {
 	LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error)

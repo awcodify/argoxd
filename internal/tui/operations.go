@@ -156,7 +156,7 @@ func (m Model) operate(action, application string, call func(context.Context, ar
 	})
 }
 
-// inspect opens the YAML (y), diff (d) or logs (l) of the selected item.
+// inspect opens the YAML (Y), diff (d) or logs (l) of the selected item.
 func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 	if m.view == listView || m.onRootCard() {
 		return m.inspectApplication(key)
@@ -189,7 +189,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 		var err error
 		kind := "yaml"
 		switch key {
-		case "y":
+		case "Y":
 			text, err = inspector.ResourceManifest(ctx, application, selected)
 		case "d":
 			kind = "diff"
@@ -217,7 +217,7 @@ func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
 		var text string
 		var err error
 		kind := "yaml"
-		if key == "y" {
+		if key == "Y" {
 			text, err = inspector.ApplicationManifest(ctx, application)
 		} else {
 			kind = "diff"

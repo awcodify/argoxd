@@ -2,6 +2,25 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - Unreleased
+
+### Added
+
+- **Clipboard and browser.** `y` copies the selected item or open viewer text; `o` opens the selected Application in the Argo CD web UI when using `--source api`.
+- **Runtime contexts.** `:ctx` opens a filterable context picker for the active kubeconfig; `:ctx <name>` switches directly and reconnects.
+- **Application inspection.** `Y` shows an Application custom resource from the Applications list or its root dependency card. `d` there shows the concatenated diff of drifted resources.
+- **Refresh modes.** `R` requests a normal Argo CD refresh by default; toggle `h` in its confirmation for a hard refresh that bypasses the manifest cache.
+- **Operation termination.** `T` terminates a selected Application's active operation after confirmation.
+- **Read-only mode.** `--read-only` and `readOnly: true` disable mutating actions and show a `[READ-ONLY]` header badge.
+
+### Changed
+
+- **Keymap: `y` now yanks; `Y` now shows YAML.** This intentionally changes the former lowercase `y` YAML shortcut. Use uppercase `Y` for Application and resource manifests; lowercase `y` copies the selected item or the open viewer text to the clipboard.
+
+### Permissions
+
+- Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications/status`.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added

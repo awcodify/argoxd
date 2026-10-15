@@ -125,7 +125,7 @@ func TestCardActionsOpenTheViewer(t *testing.T) {
 	}
 	deployment := press(openCheckout(t, source), "j")
 
-	yaml := run(deployment, "y")
+	yaml := run(deployment, "Y")
 	if view := yaml.View(); !strings.Contains(view, "replicas: 2") || !strings.Contains(view, "checkout › yaml") {
 		t.Fatalf("y did not show the manifest:\n%s", view)
 	}
@@ -151,7 +151,7 @@ func TestApplicationActionsOpenTheViewerFromTheListAndRootCard(t *testing.T) {
 	}
 	list := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
 
-	if view := run(list, "y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
+	if view := run(list, "Y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
 		t.Fatalf("y on the Application list did not show the Application manifest:\n%s", view)
 	}
 	if view := run(list, "d").View(); !strings.Contains(view, "Deployment/web (store)") {
@@ -159,7 +159,7 @@ func TestApplicationActionsOpenTheViewerFromTheListAndRootCard(t *testing.T) {
 	}
 
 	root := openCheckout(t, source)
-	if view := run(root, "y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
+	if view := run(root, "Y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
 		t.Fatalf("y on the root card did not show the Application manifest:\n%s", view)
 	}
 	if view := run(root, "d").View(); !strings.Contains(view, "Deployment/web (store)") {
@@ -221,7 +221,7 @@ func TestViewerScrollsToTheEnd(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("line-%03d", index))
 	}
 	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), manifest: strings.Join(lines, "\n")}
-	model := run(press(resize(openCheckout(t, source), 100, 30), "j"), "y")
+	model := run(press(resize(openCheckout(t, source), 100, 30), "j"), "Y")
 
 	view := press(model, "G").View()
 
@@ -425,14 +425,14 @@ func TestHeaderHintsFollowTheActiveView(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), manifest: "kind: Deployment"}
 	list := settle(resize(New(source, "test", "argocd", explorer.Snapshot{}), 160, 40), source.loadCommand())
 	dependencies := openCheckout(t, source)
-	viewer := run(press(dependencies, "j"), "y")
+	viewer := run(press(dependencies, "j"), "Y")
 
 	for name, test := range map[string]struct {
 		view string
 		want []string
 	}{
-		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "y  YAML", "d  Diff", "R  Refresh", "D  Delete"}},
-		"dependencies": {dependencies.View(), []string{"y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Search", "K  Kind"}},
+		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "y  Yank", "Y  YAML", "d  Diff", "R  Refresh", "D  Delete"}},
+		"dependencies": {dependencies.View(), []string{"y  Yank", "Y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Search", "K  Kind"}},
 		"viewer":       {viewer.View(), []string{"G  Bottom", "esc  Back"}},
 	} {
 		for _, want := range test.want {

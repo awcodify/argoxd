@@ -194,7 +194,7 @@ func TestLinesFromAStoppedStreamAreIgnored(t *testing.T) {
 
 func TestFOnlyFollowsLogs(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), manifest: "kind: Pod", stream: lines("x")}
-	model := run(press(press(openCheckout(t, source), "j"), "j"), "y")
+	model := run(press(press(openCheckout(t, source), "j"), "j"), "Y")
 
 	_, command := model.Update(key("f"))
 
@@ -228,7 +228,7 @@ func TestLogsHeaderListsFollow(t *testing.T) {
 	if view := run(model, "l").View(); !strings.Contains(view, "f  Follow") {
 		t.Fatalf("the logs header does not list f:\n%s", view)
 	}
-	if view := run(model, "y").View(); strings.Contains(view, "f  Follow") {
+	if view := run(model, "Y").View(); strings.Contains(view, "f  Follow") {
 		t.Fatalf("the YAML header lists f:\n%s", view)
 	}
 }

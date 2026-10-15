@@ -74,7 +74,7 @@ func TestSearchAppliesToLinesThatArriveWhileFollowing(t *testing.T) {
 
 func TestSearchOnlyOpensInLogs(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: barePodTree(), manifest: "kind: Pod"}
-	model := run(press(press(openCheckout(t, source), "j"), "j"), "y")
+	model := run(press(press(openCheckout(t, source), "j"), "j"), "Y")
 
 	if updated := press(model, "/"); updated.prompt.active {
 		t.Fatal("/ opened a search in a YAML view")
@@ -89,7 +89,7 @@ func TestLogsHeaderListsSearch(t *testing.T) {
 	if view := run(model, "l").View(); !strings.Contains(view, "/  Search") {
 		t.Fatalf("the logs header does not list /:\n%s", view)
 	}
-	if view := run(model, "y").View(); strings.Contains(view, "/  Search") {
+	if view := run(model, "Y").View(); strings.Contains(view, "/  Search") {
 		t.Fatalf("the YAML header lists /:\n%s", view)
 	}
 }

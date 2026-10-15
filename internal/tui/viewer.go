@@ -71,6 +71,10 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.viewer.kind == "logs" {
 			return m.chooseContainer()
 		}
+	case "y":
+		m.yank()
+	case "o":
+		m.openApplicationInBrowser()
 	case "down", "j":
 		m.viewer.offset++
 	case "up", "k":
