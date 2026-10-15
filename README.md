@@ -1,6 +1,6 @@
 # argoxd
 
-`argoxd` is an interactive terminal user interface for Argo CD, inspired by the resource-focused workflow of k9s. It lists Applications, ApplicationSets, AppProjects, destination clusters, and connection settings from either the Kubernetes API or the Argo CD API.
+`argoxd` is an interactive terminal user interface for Argo CD. It focuses on the GitOps lifecycle: Applications, drift, sync operations, and Argo CD workflows from either the Kubernetes API or the Argo CD API. It intentionally does not provide Kubernetes-generic pod exec, port-forwarding, or live-manifest editing.
 
 ![argoxd demo](demo/demo.gif)
 
@@ -44,7 +44,7 @@ argoxd --context production --namespace argocd
 argoxd --kubeconfig ~/.kube/config --context production
 ```
 
-The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`, and viewing events needs `list` on `events` in the namespaces involved (and in the Argo CD namespace for an Application's own events). Restarting a workload needs `patch` on it and deleting a Pod needs `delete` on `pods`. With `--source api`, the token needs Argo CD's `action/…/restart` and resource delete permissions.
+The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`, and viewing events needs `list` on `events` in the namespaces involved (and in the Argo CD namespace for an Application's own events). Restarting a workload needs `patch` on it and deleting a Pod needs `delete` on `pods`. Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications/status`. With `--source api`, the token needs Argo CD's `action/…/restart` and resource delete permissions.
 
 ApplicationSets are optional. With `list` on `applicationsets.argoproj.io` (or access to `/api/v1/applicationsets` with `--source api`) they appear under `:appset`; without it, or on an Argo CD that has none, they are left out and everything else still loads. Changing an Application's sync policy (`P`) needs `patch` on `applications.argoproj.io`, or permission to update Applications with `--source api`.
 
@@ -78,6 +78,7 @@ kubeconfig: ~/.kube/config
 server: https://argocd.example.com   # for source: api
 insecure: false
 refresh: 5s          # 0s turns auto-refresh off
+readOnly: false      # disable sync, refresh, termination, and resource actions
 ```
 
 Settings are resolved in this order, later ones winning: built-in defaults, the config file, the `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` environment variables, then command-line flags. The API token is not read from the config file; keep it in `ARGOCD_AUTH_TOKEN`. Unknown keys and invalid durations are reported as errors at startup.
@@ -86,11 +87,13 @@ Settings are resolved in this order, later ones winning: built-in defaults, the 
 
 The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
 
-Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. From a card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
+Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. Press `y` on an Application row or its root card to view its Application custom resource. Press `d` there for the concatenated diff of its drifted resources (needs `--source api`). From a resource card you can open its live YAML (`y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
 
 Press Space to mark Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. Marked rows and cards show a `●`; Esc clears the marks.
 
-Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run.
+Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there; refresh defaults to normal, and `h` toggles a cache-bypassing hard refresh. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run. `T` terminates the selected Application's running operation after confirmation.
+
+Use `--read-only` or `readOnly: true` to disable mutating actions. The header shows `[READ-ONLY]` whenever this safety mode is active.
 
 Rollback follows `argocd app rollback`: Argo CD refuses it while the Application has auto-sync enabled, so disable auto-sync first (`P`). With `--source kubeconfig` the identity also needs to `get` and `patch` `applications.argoproj.io`.
 
@@ -153,7 +156,7 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
 | Space | Mark or unmark the selected Application, or the selected resource card, and move to the next; `s`, `R`, `D`, `x` and `X` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
-| `y` / `d` / `l` | Show the selected card's YAML, diff, or logs. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
+| `y` / `d` / `l` | Show the selected Application's YAML or concatenated drift diff, or the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
 | `f` | In a log view, follow new lines as they arrive (the last 10,000 are kept); press again, or Esc, to stop |
 | `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
 | `p` | In the log of a workload, or of a Pod it runs, open a bar to choose one of the workload's Pods, or `all`; it works like the container bar and matches any part of a Pod's name |
@@ -164,7 +167,8 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 | `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
 | `i` | Show how the selected Application's last sync went, resource by resource |
 | `P` | Set the sync policy of the marked or selected Applications: `a` auto-sync, `h` self-heal, `p` prune, Enter applies |
-| `R` | Hard refresh the marked or selected Applications, bypassing Argo CD's manifest cache. Asks first |
+| `R` | Refresh the marked or selected Applications. It defaults to Argo CD's normal refresh; toggle `h` in the confirmation to bypass the manifest cache with a hard refresh |
+| `T` | Terminate the selected Application's running operation. Asks first and is unavailable when no operation is active |
 | `D` | Delete the marked or selected Applications and their managed resources. Asks first |
 | `x` | In the dependency view, restart the marked or selected Deployments, StatefulSets and DaemonSets with a rolling restart, like `kubectl rollout restart`. Asks first; refused if a marked card cannot be restarted |
 | `X` | In the dependency view, delete the marked or selected Pods; the workload that owns each starts a replacement. Asks first; refused if a marked card is not a Pod |

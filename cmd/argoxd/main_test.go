@@ -73,6 +73,7 @@ func TestConfigFileAllowsRefreshZero(t *testing.T) {
 	if options.refresh != 0 {
 		t.Fatalf("refresh = %v, want 0", options.refresh)
 	}
+
 }
 
 func TestFlagsOverrideEnvironmentOverridesConfigFile(t *testing.T) {

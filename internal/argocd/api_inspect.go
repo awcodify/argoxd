@@ -3,6 +3,7 @@ package argocd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -31,6 +32,72 @@ func (s *APISource) ResourceManifest(ctx context.Context, application string, re
 	return toYAML(response.Manifest)
 }
 
+var _ ApplicationInspector = (*APISource)(nil)
+
+// ApplicationManifest returns the Application custom resource as YAML.
+func (s *APISource) ApplicationManifest(ctx context.Context, application string) (string, error) {
+	var manifest json.RawMessage
+	if err := s.get(ctx, "/api/v1/applications/"+url.PathEscape(application), &manifest); err != nil {
+		return "", fmt.Errorf("load application manifest: %w", err)
+	}
+	return toYAML(string(manifest))
+}
+
+// ApplicationDiff returns a concatenated diff for the Application's drifted resources.
+func (s *APISource) ApplicationDiff(ctx context.Context, application string) (string, error) {
+	var response struct {
+		Items []managedResource `json:"items"`
+	}
+	if err := s.get(ctx, applicationPath(application, "managed-resources", nil), &response); err != nil {
+		return "", fmt.Errorf("load application diff: %w", err)
+	}
+	var diffs []string
+	for _, item := range response.Items {
+		live, err := toYAML(firstNonEmpty(item.NormalizedLiveState, item.LiveState))
+		if err != nil {
+			return "", err
+		}
+		desired, err := toYAML(firstNonEmpty(item.PredictedLiveState, item.TargetState))
+		if err != nil {
+			return "", err
+		}
+		lines := lineDiff(live, desired)
+		if !hasChanges(lines) {
+			continue
+		}
+		diffs = append(diffs, "## "+item.label()+"\n"+strings.Join(lines, "\n"))
+	}
+	return strings.Join(diffs, "\n\n"), nil
+}
+
+func hasChanges(lines []string) bool {
+	for _, line := range lines {
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "+ ") {
+			return true
+		}
+	}
+	return false
+}
+
+type managedResource struct {
+	Group               string `json:"group"`
+	Kind                string `json:"kind"`
+	Namespace           string `json:"namespace"`
+	Name                string `json:"name"`
+	LiveState           string `json:"liveState"`
+	TargetState         string `json:"targetState"`
+	NormalizedLiveState string `json:"normalizedLiveState"`
+	PredictedLiveState  string `json:"predictedLiveState"`
+}
+
+func (r managedResource) label() string {
+	name := r.Kind + "/" + r.Name
+	if r.Namespace != "" {
+		name += " (" + r.Namespace + ")"
+	}
+	return name
+}
+
 // ResourceDiff compares the live state of a managed resource with the state
 // Argo CD would apply, the same comparison the Argo CD UI shows.
 func (s *APISource) ResourceDiff(ctx context.Context, application string, resource explorer.ResourceNode) (string, error) {
@@ -42,12 +109,7 @@ func (s *APISource) ResourceDiff(ctx context.Context, application string, resour
 		"kind":      {resource.Kind},
 	}
 	var response struct {
-		Items []struct {
-			LiveState           string `json:"liveState"`
-			TargetState         string `json:"targetState"`
-			NormalizedLiveState string `json:"normalizedLiveState"`
-			PredictedLiveState  string `json:"predictedLiveState"`
-		} `json:"items"`
+		Items []managedResource `json:"items"`
 	}
 	if err := s.get(ctx, applicationPath(application, "managed-resources", query), &response); err != nil {
 		return "", fmt.Errorf("load diff: %w", err)

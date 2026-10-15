@@ -19,6 +19,27 @@ import (
 // rendered by the Argo CD repo server, which only the API exposes.
 var errDiffNeedsAPI = errors.New("diffs need the Argo CD API; run argoxd with --source api")
 
+var _ ApplicationInspector = (*KubernetesSource)(nil)
+
+// ApplicationManifest returns the Application custom resource as YAML.
+func (s *KubernetesSource) ApplicationManifest(ctx context.Context, application string) (string, error) {
+	object, err := s.getApplication(ctx, application)
+	if err != nil {
+		return "", fmt.Errorf("get application %q: %w", application, err)
+	}
+	unstructured.RemoveNestedField(object.Object, "metadata", "managedFields")
+	manifest, err := yaml.Marshal(object.Object)
+	if err != nil {
+		return "", fmt.Errorf("encode application %q: %w", application, err)
+	}
+	return string(manifest), nil
+}
+
+// ApplicationDiff is not available from Kubernetes alone.
+func (s *KubernetesSource) ApplicationDiff(context.Context, string) (string, error) {
+	return "", errDiffNeedsAPI
+}
+
 // ResourceManifest returns the live manifest of a resource as YAML.
 func (s *KubernetesSource) ResourceManifest(ctx context.Context, _ string, resource explorer.ResourceNode) (string, error) {
 	client, err := s.client()

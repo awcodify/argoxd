@@ -24,6 +24,7 @@ type options struct {
 	context    string
 	namespace  string
 	refresh    time.Duration
+	readOnly   bool
 	demo       bool
 }
 
@@ -38,7 +39,8 @@ func main() {
 	}
 
 	model := tui.New(source, connectionDescription(options), options.namespace, explorer.Snapshot{}).
-		WithRefresh(options.refresh)
+		WithRefresh(options.refresh).
+		WithReadOnly(options.readOnly)
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -75,6 +77,7 @@ func parseOptions(arguments []string) (options, error) {
 	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")
 	flags.StringVar(&options.namespace, "namespace", options.namespace, "Namespace where Argo CD is installed")
 	flags.DurationVar(&options.refresh, "refresh", options.refresh, "How often to reload resources; 0 disables auto-refresh")
+	flags.BoolVar(&options.readOnly, "read-only", options.readOnly, "Disable actions that change Argo CD or live resources")
 	flags.BoolVar(&options.demo, "demo", false, "Show built-in sample data instead of connecting to Argo CD")
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
 	return options, nil

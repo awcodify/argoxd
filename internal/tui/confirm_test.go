@@ -84,12 +84,12 @@ func TestEveryActionListsItsTargetBeforeRunning(t *testing.T) {
 		key   string
 		want  []string
 	}{
-		"sync":         {list, "s", []string{"Sync grafana?", "• grafana"}},
-		"hard refresh": {list, "R", []string{"Hard refresh grafana?", "• grafana"}},
-		"delete":       {list, "D", []string{"Delete grafana and its managed resources?", "• grafana"}},
-		"rollback":     {history, "enter", []string{"Roll back grafana to aaa1111?", "• aaa1111"}},
-		"restart":      {press(workloads, "j"), "x", []string{"Restart Deployment/web?", "• Deployment/web"}},
-		"delete pod":   {press(press(workloads, "j"), "j"), "X", []string{"Delete Pod/web-abc?", "• Pod/web-abc"}},
+		"sync":       {list, "s", []string{"Sync grafana?", "• grafana"}},
+		"refresh":    {list, "R", []string{"Refresh grafana?", "• grafana", "h  hard ○ off"}},
+		"delete":     {list, "D", []string{"Delete grafana and its managed resources?", "• grafana"}},
+		"rollback":   {history, "enter", []string{"Roll back grafana to aaa1111?", "• aaa1111"}},
+		"restart":    {press(workloads, "j"), "x", []string{"Restart Deployment/web?", "• Deployment/web"}},
+		"delete pod": {press(press(workloads, "j"), "j"), "X", []string{"Delete Pod/web-abc?", "• Pod/web-abc"}},
 	} {
 		view := press(test.model, test.key).View()
 		for _, want := range test.want {
@@ -100,11 +100,11 @@ func TestEveryActionListsItsTargetBeforeRunning(t *testing.T) {
 	}
 }
 
-func TestHardRefreshAsksFirstAndEscCancels(t *testing.T) {
+func TestRefreshAsksFirstAndEscCancels(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
 	model := press(openApplications(t, source), "R")
 
-	if view := model.View(); !strings.Contains(view, "Hard refresh grafana?") {
+	if view := model.View(); !strings.Contains(view, "Refresh grafana?") {
 		t.Fatalf("R did not ask first:\n%s", view)
 	}
 	run(model, "esc")
@@ -114,12 +114,12 @@ func TestHardRefreshAsksFirstAndEscCancels(t *testing.T) {
 	}
 }
 
-func TestMarkedApplicationsAreHardRefreshedAndDeletedTogether(t *testing.T) {
+func TestMarkedApplicationsAreRefreshedAndDeletedTogether(t *testing.T) {
 	for _, test := range []struct {
 		key, question string
 		done          func(*fakeSource) []string
 	}{
-		{"R", "Hard refresh 2 applications?", func(s *fakeSource) []string { return s.refreshed }},
+		{"R", "Refresh 2 applications?", func(s *fakeSource) []string { return s.refreshed }},
 		{"D", "Delete 2 applications and their managed resources?", func(s *fakeSource) []string { return s.deletedApps }},
 	} {
 		source := &fakeSource{snapshot: storeSnapshot()}

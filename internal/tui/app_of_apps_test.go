@@ -193,14 +193,16 @@ func TestEOnAChildApplicationCardShowsItsOwnEvents(t *testing.T) {
 	}
 }
 
-func TestTheOpenApplicationsOwnCardStillCannotBeMarkedOrInspected(t *testing.T) {
-	model := openRoot(t, appOfAppsSource())
+func TestTheOpenApplicationsOwnCardShowsItsApplicationManifest(t *testing.T) {
+	source := appOfAppsSource()
+	source.applicationManifest = "kind: Application\nmetadata:\n  name: platform-root\n"
+	model := openRoot(t, source)
 
 	marked := press(model, " ")
 	if marked.markCount() != 0 || !strings.Contains(marked.View(), "Select a resource card to mark it") {
 		t.Fatalf("the Application's own card should refuse to be marked:\n%s", marked.View())
 	}
-	if view := run(model, "y").View(); !strings.Contains(view, "Select a resource card to inspect it") {
-		t.Fatalf("the Application's own card should refuse to be inspected:\n%s", view)
+	if view := run(model, "y").View(); !strings.Contains(view, "name: platform-root") {
+		t.Fatalf("the Application's own card should show its manifest:\n%s", view)
 	}
 }

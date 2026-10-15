@@ -96,7 +96,7 @@ func TestSyncDialogAppliesTheChosenOptions(t *testing.T) {
 	}
 }
 
-func TestShiftRHardRefreshesTheApplication(t *testing.T) {
+func TestShiftRRefreshesTheApplicationAndCanBeMadeHard(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
 	model := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
 
@@ -106,8 +106,12 @@ func TestShiftRHardRefreshesTheApplication(t *testing.T) {
 	}
 	run(asking, "enter")
 
-	if len(source.refreshed) != 1 || source.refreshed[0] != "grafana" {
-		t.Fatalf("refreshed = %v, want grafana", source.refreshed)
+	if len(source.refreshed) != 1 || source.refreshed[0] != "grafana" || source.hardRefresh[0] {
+		t.Fatalf("refreshes = %v (hard %v), want a normal refresh of grafana", source.refreshed, source.hardRefresh)
+	}
+	run(typeKeys(model, "R", "h"), "enter")
+	if len(source.refreshed) != 2 || !source.hardRefresh[1] {
+		t.Fatalf("refreshes = %v (hard %v), want a hard refresh after toggling h", source.refreshed, source.hardRefresh)
 	}
 }
 
@@ -135,6 +139,79 @@ func TestCardActionsOpenTheViewer(t *testing.T) {
 
 	if view := run(press(deployment, "j"), "l").View(); !strings.Contains(view, "ready") {
 		t.Fatalf("l on a Pod did not show logs:\n%s", view)
+	}
+}
+
+func TestApplicationActionsOpenTheViewerFromTheListAndRootCard(t *testing.T) {
+	source := &fakeSource{
+		snapshot:            storeSnapshot(),
+		tree:                checkoutTree(),
+		applicationManifest: "kind: Application\nspec:\n  source:\n    repoURL: https://example.com/store.git\n",
+		applicationDiff:     "## Deployment/web (store)\n- replicas: 1\n+ replicas: 2",
+	}
+	list := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
+
+	if view := run(list, "y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
+		t.Fatalf("y on the Application list did not show the Application manifest:\n%s", view)
+	}
+	if view := run(list, "d").View(); !strings.Contains(view, "Deployment/web (store)") {
+		t.Fatalf("d on the Application list did not show the Application diff:\n%s", view)
+	}
+
+	root := openCheckout(t, source)
+	if view := run(root, "y").View(); !strings.Contains(view, "repoURL: https://example.com/store.git") {
+		t.Fatalf("y on the root card did not show the Application manifest:\n%s", view)
+	}
+	if view := run(root, "d").View(); !strings.Contains(view, "Deployment/web (store)") {
+		t.Fatalf("d on the root card did not show the Application diff:\n%s", view)
+	}
+}
+
+func TestTerminateOperationOnlyOffersActiveOperations(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot()}
+	model := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
+
+	if view := press(model, "T").View(); !strings.Contains(view, "No operation is in progress") {
+		t.Fatalf("T should refuse an inactive operation:\n%s", view)
+	}
+
+	snapshot := storeSnapshot()
+	snapshot.Applications[0].Operation = &explorer.Operation{Phase: "Running"}
+	source.snapshot = snapshot
+	model = settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
+	asking := press(model, "T")
+	if view := asking.View(); !strings.Contains(view, "Terminate the operation of grafana?") {
+		t.Fatalf("T did not ask to terminate the active operation:\n%s", view)
+	}
+	if view := model.View(); !strings.Contains(view, "T  Terminate") {
+		t.Fatalf("the active operation did not advertise termination:\n%s", view)
+	}
+	run(asking, "enter")
+	if source.terminated == nil || source.terminated[0] != "grafana" {
+		t.Fatalf("terminated = %v, want grafana", source.terminated)
+	}
+}
+
+func TestReadOnlyModeBlocksMutatingActions(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree()}
+	model := settle(New(source, "test", "argocd", explorer.Snapshot{}).WithReadOnly(true), source.loadCommand())
+
+	for _, action := range []string{"s", "D", "P", "R", "T", "h"} {
+		model = press(model, action)
+		if model.confirm.active() || !strings.Contains(model.View(), "Read-only mode") {
+			t.Fatalf("%s was not blocked in read-only mode:\n%s", action, model.View())
+		}
+	}
+	if view := model.View(); !strings.Contains(view, "[READ-ONLY]") {
+		t.Fatalf("read-only header badge is missing:\n%s", view)
+	}
+
+	tree := openCheckout(t, source).WithReadOnly(true)
+	for _, action := range []string{"x", "X"} {
+		tree = press(tree, action)
+		if tree.confirm.active() || !strings.Contains(tree.View(), "Read-only mode") {
+			t.Fatalf("%s was not blocked in read-only mode:\n%s", action, tree.View())
+		}
 	}
 }
 
@@ -169,16 +246,20 @@ func TestApplicationsTableShowsRevisionDestinationAndLastSync(t *testing.T) {
 
 // fakeSource records operations and serves canned resources.
 type fakeSource struct {
-	snapshot    explorer.Snapshot
-	tree        explorer.ResourceTree
-	hang        bool
-	loads       int
-	synced      []argocd.SyncOptions
-	refreshed   []string
-	manifest    string
-	manifestErr error
-	diff        string
-	logs        string
+	snapshot            explorer.Snapshot
+	tree                explorer.ResourceTree
+	hang                bool
+	loads               int
+	synced              []argocd.SyncOptions
+	refreshed           []string
+	hardRefresh         []bool
+	terminated          []string
+	manifest            string
+	manifestErr         error
+	diff                string
+	applicationManifest string
+	applicationDiff     string
+	logs                string
 
 	history    []explorer.HistoryEntry
 	rolledBack []rollbackCall
@@ -244,8 +325,14 @@ func (f *fakeSource) SyncApplication(_ context.Context, application string, opti
 	return f.syncErrors[application]
 }
 
-func (f *fakeSource) RefreshApplication(_ context.Context, application string) error {
+func (f *fakeSource) RefreshApplication(_ context.Context, application string, hard bool) error {
 	f.refreshed = append(f.refreshed, application)
+	f.hardRefresh = append(f.hardRefresh, hard)
+	return f.failures[application]
+}
+
+func (f *fakeSource) TerminateOperation(_ context.Context, application string) error {
+	f.terminated = append(f.terminated, application)
 	return f.failures[application]
 }
 
@@ -256,6 +343,14 @@ func (f *fakeSource) DeleteApplication(_ context.Context, application string) er
 
 func (f *fakeSource) ResourceManifest(context.Context, string, explorer.ResourceNode) (string, error) {
 	return f.manifest, f.manifestErr
+}
+
+func (f *fakeSource) ApplicationManifest(context.Context, string) (string, error) {
+	return f.applicationManifest, f.manifestErr
+}
+
+func (f *fakeSource) ApplicationDiff(context.Context, string) (string, error) {
+	return f.applicationDiff, nil
 }
 
 func (f *fakeSource) ResourceDiff(context.Context, string, explorer.ResourceNode) (string, error) {
@@ -336,7 +431,7 @@ func TestHeaderHintsFollowTheActiveView(t *testing.T) {
 		view string
 		want []string
 	}{
-		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "R  Hard refresh", "D  Delete"}},
+		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "y  YAML", "d  Diff", "R  Refresh", "D  Delete"}},
 		"dependencies": {dependencies.View(), []string{"y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Search", "K  Kind"}},
 		"viewer":       {viewer.View(), []string{"G  Bottom", "esc  Back"}},
 	} {

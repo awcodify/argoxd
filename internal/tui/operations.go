@@ -122,9 +122,19 @@ func (m Model) sync(application string, options argocd.SyncOptions) tea.Cmd {
 	})
 }
 
-func (m Model) hardRefresh(application string) tea.Cmd {
-	return m.operate("hard refresh", application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
-		return operator.RefreshApplication(ctx, application)
+func (m Model) refresh(application string, hard bool) tea.Cmd {
+	action := "refresh"
+	if hard {
+		action = "hard refresh"
+	}
+	return m.operate(action, application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
+		return operator.RefreshApplication(ctx, application, hard)
+	})
+}
+
+func (m Model) terminateOperation(application string) tea.Cmd {
+	return m.operate("terminate operation", application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
+		return operator.TerminateOperation(ctx, application)
 	})
 }
 
@@ -146,13 +156,13 @@ func (m Model) operate(action, application string, call func(context.Context, ar
 	})
 }
 
-// inspect opens the YAML (y), diff (d) or logs (l) of the selected card.
+// inspect opens the YAML (y), diff (d) or logs (l) of the selected item.
 func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
+	if m.view == listView || m.onRootCard() {
+		return m.inspectApplication(key)
+	}
 	selected := m.selectedCard()
 	switch {
-	case m.onRootCard():
-		m.status = "Select a resource card to inspect it"
-		return m, nil
 	case key == "l" && !hasLogs(selected.Kind):
 		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
 		return m, nil
@@ -189,5 +199,30 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 			text, err = inspector.ResourceLogs(ctx, application, selected, "")
 		}
 		return loadedText{kind: kind, subject: subject, text: text, err: err}
+	})
+}
+
+func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
+	application := m.selectedApplication()
+	if application == "" {
+		return m, nil
+	}
+	inspector, ok := m.source.(argocd.ApplicationInspector)
+	if !ok {
+		m.err = errNoInspection
+		return m, nil
+	}
+	m.loading = true
+	return m, m.request(func(ctx context.Context) tea.Msg {
+		var text string
+		var err error
+		kind := "yaml"
+		if key == "y" {
+			text, err = inspector.ApplicationManifest(ctx, application)
+		} else {
+			kind = "diff"
+			text, err = inspector.ApplicationDiff(ctx, application)
+		}
+		return loadedText{kind: kind, subject: application, text: text, fromList: m.view == listView, err: err}
 	})
 }

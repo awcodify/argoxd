@@ -208,14 +208,39 @@ func syncOptionsOf(application *unstructured.Unstructured) []any {
 	return options
 }
 
-// RefreshApplication asks Argo CD to compare the Application with Git again,
-// bypassing its manifest cache.
-func (s *KubernetesSource) RefreshApplication(ctx context.Context, application string) error {
+// RefreshApplication asks Argo CD to compare the Application with Git again.
+func (s *KubernetesSource) RefreshApplication(ctx context.Context, application string, hard bool) error {
+	refresh := "normal"
+	if hard {
+		refresh = "hard"
+	}
 	patch := map[string]any{"metadata": map[string]any{"annotations": map[string]any{
-		"argocd.argoproj.io/refresh": "hard",
+		"argocd.argoproj.io/refresh": refresh,
 	}}}
 	if err := s.patchApplication(ctx, application, patch); err != nil {
 		return fmt.Errorf("refresh application %q: %w", application, err)
+	}
+	return nil
+}
+
+// TerminateOperation marks the active operation as failed through the status
+// subresource, where Argo CD stores operations after accepting them.
+func (s *KubernetesSource) TerminateOperation(ctx context.Context, application string) error {
+	client, err := s.client()
+	if err != nil {
+		return err
+	}
+	patch := map[string]any{"status": map[string]any{"operationState": map[string]any{
+		"phase":      "Failed",
+		"message":    "Operation terminated by user",
+		"finishedAt": time.Now().UTC().Format(time.RFC3339),
+	}}}
+	body, err := json.Marshal(patch)
+	if err != nil {
+		return fmt.Errorf("encode termination patch: %w", err)
+	}
+	if _, err := client.Resource(applicationsResource).Namespace(s.namespace).Patch(ctx, application, types.MergePatchType, body, metav1.PatchOptions{}, "status"); err != nil {
+		return fmt.Errorf("terminate operation for application %q: %w", application, err)
 	}
 	return nil
 }

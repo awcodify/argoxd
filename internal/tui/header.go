@@ -44,8 +44,12 @@ func (m Model) renderConnection() string {
 	if project == "" {
 		project = "all"
 	}
+	connection := m.connection
+	if m.readOnly {
+		connection += " " + errorStyle.Render("[READ-ONLY]")
+	}
 	rows := [][2]string{
-		{"Context", m.connection},
+		{"Context", connection},
 		{"Namespace", m.namespace},
 		{"Project", project},
 		{"Apps", strconv.Itoa(len(m.explorer.Applications()))},
@@ -93,13 +97,16 @@ func (m Model) keyHints() []keyHint {
 	case applicationTreeView:
 		hints := []keyHint{
 			{"y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
-			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Hard refresh"}, {"D", "Delete"},
+			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Refresh"}, {"D", "Delete"},
 			{"x", "Restart"}, {"X", "Delete pod"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}
 		if m.onChildApplication() {
 			hints = append([]keyHint{{"enter", "Open app"}}, hints...)
+		}
+		if m.hasActiveOperation() {
+			hints = append(hints, keyHint{"T", "Terminate"})
 		}
 		return hints
 	}
@@ -120,7 +127,10 @@ func (m Model) keyHints() []keyHint {
 		if m.view == listView {
 			hints = append(hints, keyHint{"enter", "Dependencies"}, keyHint{"e", "Events"}, keyHint{"i", "Sync details"})
 		}
-		hints = append(hints, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"P", "Sync policy"}, keyHint{"R", "Hard refresh"}, keyHint{"D", "Delete"})
+		hints = append(hints, keyHint{"y", "YAML"}, keyHint{"d", "Diff"}, keyHint{"s", "Sync"}, keyHint{"h", "History"}, keyHint{"P", "Sync policy"}, keyHint{"R", "Refresh"}, keyHint{"D", "Delete"})
+		if m.hasActiveOperation() {
+			hints = append(hints, keyHint{"T", "Terminate"})
+		}
 	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }

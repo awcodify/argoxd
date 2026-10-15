@@ -179,12 +179,25 @@ func (s *APISource) sync(ctx context.Context, application string, resources []ex
 	return nil
 }
 
-// RefreshApplication makes Argo CD compare the Application with Git again,
-// bypassing its manifest cache.
-func (s *APISource) RefreshApplication(ctx context.Context, application string) error {
-	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=hard"
+// RefreshApplication makes Argo CD compare the Application with Git again.
+// A hard refresh also bypasses its manifest cache.
+func (s *APISource) RefreshApplication(ctx context.Context, application string, hard bool) error {
+	refresh := "normal"
+	if hard {
+		refresh = "hard"
+	}
+	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=" + refresh
 	if err := s.get(ctx, path, nil); err != nil {
 		return fmt.Errorf("refresh application: %w", err)
+	}
+	return nil
+}
+
+// TerminateOperation aborts the Application operation Argo CD is running.
+func (s *APISource) TerminateOperation(ctx context.Context, application string) error {
+	path := "/api/v1/applications/" + url.PathEscape(application) + "/operation"
+	if err := s.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
+		return fmt.Errorf("terminate operation: %w", err)
 	}
 	return nil
 }

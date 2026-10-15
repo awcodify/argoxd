@@ -20,12 +20,13 @@ type confirmKind int
 const (
 	noConfirmation confirmKind = iota
 	confirmSync
-	confirmHardRefresh
+	confirmRefresh
 	confirmDeleteApplications
 	confirmRestart
 	confirmDeleteResources
 	confirmRollback
 	confirmSyncPolicy
+	confirmTerminateOperation
 )
 
 // confirmation asks before an action runs, listing everything it will touch.
@@ -40,6 +41,7 @@ type confirmation struct {
 	resources    []explorer.ResourceNode
 	entry        explorer.HistoryEntry
 	options      argocd.SyncOptions
+	hard         bool
 	// policy is the sync policy to set, which the dialog lets the user change.
 	policy explorer.SyncPolicy
 }
@@ -88,8 +90,11 @@ func (c confirmation) question() string {
 			return "Sync " + count(len(c.resources), "resource") + " of " + c.application + "?"
 		}
 		return "Sync " + c.subject() + "?"
-	case confirmHardRefresh:
-		return "Hard refresh " + c.subject() + "?"
+	case confirmRefresh:
+		if c.hard {
+			return "Hard refresh " + c.subject() + "?"
+		}
+		return "Refresh " + c.subject() + "?"
 	case confirmDeleteApplications:
 		if len(c.applications) > 0 {
 			return "Delete " + c.subject() + " and their managed resources?"
@@ -109,6 +114,8 @@ func (c confirmation) question() string {
 		return "Roll back " + c.application + " to " + revisionLabel(c.entry) + "?"
 	case confirmSyncPolicy:
 		return "Set the sync policy of " + c.subject() + "?"
+	case confirmTerminateOperation:
+		return "Terminate the operation of " + c.application + "?"
 	}
 	return ""
 }
@@ -177,6 +184,9 @@ func (c confirmation) keys() string {
 	if c.usesOptions() {
 		line += "  " + keycap("p", "prune "+toggle(c.options.Prune)) + "  " + keycap("r", "dry run "+toggle(c.options.DryRun))
 	}
+	if c.kind == confirmRefresh {
+		line += "  " + keycap("h", "hard "+toggle(c.hard))
+	}
 	return line + "  " + keycap("esc", "cancel")
 }
 
@@ -228,6 +238,9 @@ func (m Model) updateConfirm(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.confirm.kind == confirmSyncPolicy && m.confirm.policy.Automated {
 			m.confirm.policy.SelfHeal = !m.confirm.policy.SelfHeal
 		}
+		if m.confirm.kind == confirmRefresh {
+			m.confirm.hard = !m.confirm.hard
+		}
 	case "p":
 		if m.confirm.usesOptions() {
 			m.confirm.options.Prune = !m.confirm.options.Prune
@@ -274,13 +287,17 @@ func (m Model) perform(c confirmation) tea.Cmd {
 			})
 		}
 		return m.sync(c.application, c.options)
-	case confirmHardRefresh:
+	case confirmRefresh:
+		action := "refresh"
+		if c.hard {
+			action = "hard refresh"
+		}
 		if len(c.applications) > 0 {
-			return m.eachApplication("hard refresh", c.applications, func(ctx context.Context, operator argocd.ApplicationOperator, name string) error {
-				return operator.RefreshApplication(ctx, name)
+			return m.eachApplication(action, c.applications, func(ctx context.Context, operator argocd.ApplicationOperator, name string) error {
+				return operator.RefreshApplication(ctx, name, c.hard)
 			})
 		}
-		return m.hardRefresh(c.application)
+		return m.refresh(c.application, c.hard)
 	case confirmDeleteApplications:
 		if len(c.applications) > 0 {
 			return m.eachApplication("delete", c.applications, func(ctx context.Context, operator argocd.ApplicationOperator, name string) error {
@@ -294,6 +311,8 @@ func (m Model) perform(c confirmation) tea.Cmd {
 		return m.rollback(c)
 	case confirmSyncPolicy:
 		return m.setSyncPolicy(c)
+	case confirmTerminateOperation:
+		return m.terminateOperation(c.application)
 	}
 	return nil
 }

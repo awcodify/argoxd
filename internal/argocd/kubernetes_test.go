@@ -158,7 +158,7 @@ func TestKubernetesSourceSyncsWithOptionsAndRefreshes(t *testing.T) {
 	if err := source.SyncApplication(context.Background(), "checkout", SyncOptions{Prune: true}); err != nil {
 		t.Fatalf("SyncApplication() error = %v", err)
 	}
-	if err := source.RefreshApplication(context.Background(), "checkout"); err != nil {
+	if err := source.RefreshApplication(context.Background(), "checkout", true); err != nil {
 		t.Fatalf("RefreshApplication() error = %v", err)
 	}
 
@@ -172,6 +172,13 @@ func TestKubernetesSourceSyncsWithOptionsAndRefreshes(t *testing.T) {
 	}
 	if got.GetAnnotations()["argocd.argoproj.io/refresh"] != "hard" {
 		t.Fatalf("annotations = %v, want a hard refresh", got.GetAnnotations())
+	}
+	if err := source.RefreshApplication(context.Background(), "checkout", false); err != nil {
+		t.Fatalf("RefreshApplication() error = %v", err)
+	}
+	got, _ = client.Resource(applicationsResource).Namespace("argocd").Get(context.Background(), "checkout", metav1.GetOptions{})
+	if got.GetAnnotations()["argocd.argoproj.io/refresh"] != "normal" {
+		t.Fatalf("annotations = %v, want a normal refresh", got.GetAnnotations())
 	}
 }
 

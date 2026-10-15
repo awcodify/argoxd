@@ -26,6 +26,7 @@ type Model struct {
 	namespace       string
 	requestTimeout  time.Duration
 	refreshInterval time.Duration
+	readOnly        bool
 	loading         bool
 	refreshing      bool
 	err             error
@@ -100,6 +101,12 @@ func New(source argocd.Source, connection, namespace string, snapshot explorer.S
 // WithRefresh reloads resources every interval; zero disables auto-refresh.
 func (m Model) WithRefresh(interval time.Duration) Model {
 	m.refreshInterval = interval
+	return m
+}
+
+// WithReadOnly prevents actions that change Argo CD or live resources.
+func (m Model) WithReadOnly(readOnly bool) Model {
+	m.readOnly = readOnly
 	return m
 }
 
@@ -254,7 +261,11 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.closeTree()
-	case "y", "d", "l":
+	case "y", "d":
+		if m.view == listView || m.view == applicationTreeView {
+			return m.inspect(key)
+		}
+	case "l":
 		if m.view == applicationTreeView {
 			return m.inspect(key)
 		}
@@ -263,20 +274,43 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		return m.showSyncDetails()
 	case "s":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askApplicationAction(confirmSync)
 	case "x", "X":
+		if m.blockReadOnly() {
+			break
+		}
 		if m.view == applicationTreeView {
 			return m.askResourceAction(key)
 		}
 	case "h":
+		if m.blockReadOnly() {
+			break
+		}
 		if application := m.selectedApplication(); application != "" {
 			return m.openHistory(application)
 		}
 	case "P":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askSyncPolicy()
 	case "R":
-		m = m.askApplicationAction(confirmHardRefresh)
+		if m.blockReadOnly() {
+			break
+		}
+		m = m.askApplicationAction(confirmRefresh)
+	case "T":
+		if m.blockReadOnly() {
+			break
+		}
+		m = m.askTerminateOperation()
 	case "D":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askApplicationAction(confirmDeleteApplications)
 	case "r":
 		if m.source != nil && !m.loading {
@@ -286,6 +320,14 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) blockReadOnly() bool {
+	if !m.readOnly {
+		return false
+	}
+	m.status = "Read-only mode"
+	return true
 }
 
 // openApplicationSetApplications lists the Applications the selected

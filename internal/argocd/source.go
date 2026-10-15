@@ -19,7 +19,8 @@ type Source interface {
 type ApplicationOperator interface {
 	LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error)
 	SyncApplication(ctx context.Context, application string, options SyncOptions) error
-	RefreshApplication(ctx context.Context, application string) error
+	RefreshApplication(ctx context.Context, application string, hard bool) error
+	TerminateOperation(ctx context.Context, application string) error
 	DeleteApplication(ctx context.Context, application string) error
 }
 
@@ -38,6 +39,12 @@ type ResourceInspector interface {
 	// means its default container; AllContainers returns every container's
 	// lines, grouped by container and prefixed with its name.
 	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode, container string) (string, error)
+}
+
+// ApplicationInspector shows an Application's manifest and its drifted resources.
+type ApplicationInspector interface {
+	ApplicationManifest(ctx context.Context, application string) (string, error)
+	ApplicationDiff(ctx context.Context, application string) (string, error)
 }
 
 // LogEntry is one line of a followed log, or the error that ended the stream.

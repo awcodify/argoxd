@@ -294,9 +294,16 @@ func (s *DemoSource) RollbackApplication(_ context.Context, name string, id int6
 }
 
 // RefreshApplication does nothing: the sample data has no manifest cache.
-func (s *DemoSource) RefreshApplication(_ context.Context, name string) error {
+func (s *DemoSource) RefreshApplication(_ context.Context, name string, _ bool) error {
 	_, err := s.find(name)
 	return err
+}
+
+// TerminateOperation marks a running sample operation as failed.
+func (s *DemoSource) TerminateOperation(_ context.Context, name string) error {
+	return s.update(name, func(application *explorer.Application) {
+		application.Operation = &explorer.Operation{Phase: "Failed", Message: "Operation terminated by user", FinishedAt: time.Now()}
+	})
 }
 
 // DeleteApplication removes the Application from the sample data.
@@ -332,6 +339,35 @@ func (s *DemoSource) ResourceManifest(_ context.Context, _ string, resource expl
 			"    - name: metrics\n      image: registry.example.com/metrics-exporter:0.9.0\n"
 	}
 	return manifest, nil
+}
+
+// ApplicationManifest returns a representative Application custom resource.
+func (s *DemoSource) ApplicationManifest(_ context.Context, name string) (string, error) {
+	application, err := s.find(name)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: %s\n  namespace: argocd\nspec:\n  project: %s\n  source:\n    targetRevision: %s\n  destination:\n    server: https://kubernetes.default.svc\n", application.Name, application.Project, application.Revision), nil
+}
+
+// ApplicationDiff concatenates the sample diffs of drifted resources.
+func (s *DemoSource) ApplicationDiff(ctx context.Context, application string) (string, error) {
+	tree, err := s.LoadResourceTree(ctx, application)
+	if err != nil {
+		return "", err
+	}
+	var diffs []string
+	for _, resource := range tree.Nodes {
+		if resource.Sync != "OutOfSync" {
+			continue
+		}
+		diff, err := s.ResourceDiff(ctx, application, resource)
+		if err != nil {
+			return "", err
+		}
+		diffs = append(diffs, "## "+resource.Kind+"/"+resource.Name+"\n"+diff)
+	}
+	return strings.Join(diffs, "\n\n"), nil
 }
 
 // ResourceDiff shows a sample drift for OutOfSync Applications.
