@@ -207,6 +207,7 @@ func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
 	if application == "" {
 		return m, nil
 	}
+
 	inspector, ok := m.source.(argocd.ApplicationInspector)
 	if !ok {
 		m.err = errNoInspection
@@ -224,5 +225,19 @@ func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
 			text, err = inspector.ApplicationDiff(ctx, application)
 		}
 		return loadedText{kind: kind, subject: application, text: text, fromList: m.view == listView, err: err}
+	})
+}
+
+func (m Model) inspectProject() (tea.Model, tea.Cmd) {
+	project := m.explorer.SelectedName()
+	inspector, ok := m.source.(argocd.ProjectInspector)
+	if !ok || project == "" {
+		m.err = errNoInspection
+		return m, nil
+	}
+	m.loading = true
+	return m, m.request(func(ctx context.Context) tea.Msg {
+		text, err := inspector.ProjectManifest(ctx, project)
+		return loadedText{kind: "yaml", subject: project, text: text, fromList: true, err: err}
 	})
 }

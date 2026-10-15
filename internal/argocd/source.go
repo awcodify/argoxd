@@ -58,6 +58,11 @@ type ApplicationInspector interface {
 	ApplicationDiff(ctx context.Context, application string) (string, error)
 }
 
+// ProjectInspector shows an AppProject manifest.
+type ProjectInspector interface {
+	ProjectManifest(ctx context.Context, project string) (string, error)
+}
+
 // LogEntry is one line of a followed log, or the error that ended the stream.
 type LogEntry struct {
 	// Pod and Container are where the line came from, when the source knows.

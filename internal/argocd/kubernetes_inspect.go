@@ -20,6 +20,7 @@ import (
 var errDiffNeedsAPI = errors.New("diffs need the Argo CD API; run argoxd with --source api")
 
 var _ ApplicationInspector = (*KubernetesSource)(nil)
+var _ ProjectInspector = (*KubernetesSource)(nil)
 
 // ApplicationManifest returns the Application custom resource as YAML.
 func (s *KubernetesSource) ApplicationManifest(ctx context.Context, application string) (string, error) {
@@ -31,6 +32,24 @@ func (s *KubernetesSource) ApplicationManifest(ctx context.Context, application 
 	manifest, err := yaml.Marshal(object.Object)
 	if err != nil {
 		return "", fmt.Errorf("encode application %q: %w", application, err)
+	}
+	return string(manifest), nil
+}
+
+// ProjectManifest returns the AppProject custom resource as YAML.
+func (s *KubernetesSource) ProjectManifest(ctx context.Context, project string) (string, error) {
+	client, err := s.client()
+	if err != nil {
+		return "", err
+	}
+	object, err := client.Resource(projectsResource).Namespace(s.namespace).Get(ctx, project, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get project %q: %w", project, err)
+	}
+	unstructured.RemoveNestedField(object.Object, "metadata", "managedFields")
+	manifest, err := yaml.Marshal(object.Object)
+	if err != nil {
+		return "", fmt.Errorf("encode project %q: %w", project, err)
 	}
 	return string(manifest), nil
 }

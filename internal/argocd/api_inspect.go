@@ -33,12 +33,22 @@ func (s *APISource) ResourceManifest(ctx context.Context, application string, re
 }
 
 var _ ApplicationInspector = (*APISource)(nil)
+var _ ProjectInspector = (*APISource)(nil)
 
 // ApplicationManifest returns the Application custom resource as YAML.
 func (s *APISource) ApplicationManifest(ctx context.Context, application string) (string, error) {
 	var manifest json.RawMessage
 	if err := s.get(ctx, "/api/v1/applications/"+url.PathEscape(application), &manifest); err != nil {
 		return "", fmt.Errorf("load application manifest: %w", err)
+	}
+	return toYAML(string(manifest))
+}
+
+// ProjectManifest returns the AppProject custom resource as YAML.
+func (s *APISource) ProjectManifest(ctx context.Context, project string) (string, error) {
+	var manifest json.RawMessage
+	if err := s.get(ctx, "/api/v1/projects/"+url.PathEscape(project), &manifest); err != nil {
+		return "", fmt.Errorf("load project manifest: %w", err)
 	}
 	return toYAML(string(manifest))
 }

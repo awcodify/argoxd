@@ -140,6 +140,9 @@ func (m Model) keyHints() []keyHint {
 			hints = append(hints, keyHint{"T", "Terminate"})
 		}
 	}
+	if m.view == listView && m.explorer.Screen() == explorer.ProjectsScreen && m.explorer.SelectedName() != "" {
+		hints = append(hints, keyHint{"Y", "Project YAML"})
+	}
 	return append(hints, keyHint{"r", "Refresh"}, keyHint{"q", "Quit"})
 }
 

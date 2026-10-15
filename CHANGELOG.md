@@ -8,6 +8,8 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 - **Clipboard and browser.** `y` copies the selected item or open viewer text; `o` opens the selected Application in the Argo CD web UI when using `--source api`.
 - **Runtime contexts.** `:ctx` opens a filterable context picker for the active kubeconfig; `:ctx <name>` switches directly and reconnects.
+- **Sync-window blocks.** Applications that Argo CD reports as blocked by a sync window show `⊘` beside their existing condition marker.
+- **AppProject inspection.** On `:proj`, `Y` opens the selected AppProject manifest without changing Enter's existing Application-filter workflow.
 - **Application inspection.** `Y` shows an Application custom resource from the Applications list or its root dependency card. `d` there shows the concatenated diff of drifted resources.
 - **Refresh modes.** `R` requests a normal Argo CD refresh by default; toggle `h` in its confirmation for a hard refresh that bypasses the manifest cache.
 - **Operation termination.** `T` terminates a selected Application's active operation after confirmation.

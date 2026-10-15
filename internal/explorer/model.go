@@ -46,6 +46,18 @@ type Application struct {
 	Owner string
 }
 
+// SyncWindowBlocked reports whether Argo CD says a sync window currently
+// prevents this Application from syncing.
+func (a Application) SyncWindowBlocked() bool {
+	for _, condition := range a.Conditions {
+		if strings.Contains(strings.ToLower(condition.Message), "sync window") &&
+			(strings.Contains(strings.ToLower(condition.Message), "block") || strings.Contains(strings.ToLower(condition.Message), "deny")) {
+			return true
+		}
+	}
+	return false
+}
+
 // ApplicationSet generates Applications from templates, one for each set of
 // parameters its generators produce.
 type ApplicationSet struct {

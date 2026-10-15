@@ -264,6 +264,13 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeTree()
 	case "Y", "d":
 		if m.view == listView || m.view == applicationTreeView {
+			if m.view == listView && m.explorer.Screen() == explorer.ProjectsScreen {
+				if key == "Y" {
+					return m.inspectProject()
+				}
+				m.status = "Diffs are available for Applications and resource cards"
+				break
+			}
 			return m.inspect(key)
 		}
 	case "y":

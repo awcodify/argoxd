@@ -147,6 +147,7 @@ func TestDemoSourceHasAFailedAndASucceededOperation(t *testing.T) {
 		if application.Operation != nil {
 			phases[application.Operation.Phase] = true
 		}
+
 	}
 	if !phases["Failed"] || !phases["Succeeded"] {
 		t.Fatalf("operation phases = %v, want Failed and Succeeded", phases)

@@ -32,7 +32,7 @@ go run ./cmd/argoxd
 argoxd --demo
 ```
 
-`--demo` shows built-in sample Applications, resources, YAML, diffs and logs, and needs no cluster or credentials. Sync and delete change the sample data in memory only.
+`--demo` shows built-in sample Applications, resources, YAML, diffs and logs, and needs no cluster or credentials. Its `cart` Application shows a denied sync window and drift for inspecting, while `search` has a running operation for trying termination. Use `:proj` and `Y` on `store` to inspect an AppProject with repositories, destinations, roles, and its named sync-window policy. Sync, refresh, terminate, and delete change the sample data in memory only.
 
 ## Connect with kubeconfig
 
@@ -90,6 +90,8 @@ Settings are resolved in this order, later ones winning: built-in defaults, the 
 The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
 
 Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. Press `Y` on an Application row or its root card to view its Application custom resource. Press `d` there for the concatenated diff of its drifted resources (needs `--source api`). From a resource card you can open its live YAML (`Y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
+
+An Application with `⊘` after its name is currently blocked by an Argo CD sync window. The existing `⚠` remains for its reported condition; open its sync details with `i` for Argo CD's full explanation. On `:proj`, press `Y` to inspect the selected AppProject manifest, including its repositories, destinations, roles, and sync-window policy.
 
 Press Space to mark Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. Marked rows and cards show a `●`; Esc clears the marks.
 

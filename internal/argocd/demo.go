@@ -60,12 +60,19 @@ func NewDemoSource() *DemoSource {
 	applications[3].Conditions = []explorer.Condition{
 		{Type: "SyncError", Message: "one or more objects failed to apply, reason: Deployment.apps \"billing-worker\" is invalid: spec.template.spec.containers[0].image: Required value"},
 	}
+	applications[0].Conditions = []explorer.Condition{
+		{Type: "SyncError", Message: "Sync is blocked by sync window \"store-freeze\""},
+	}
 	applications[7].Conditions = []explorer.Condition{
 		{Type: "SharedResourceWarning", Message: "ConfigMap/prometheus-rules is part of applications argocd/prometheus and argocd/grafana"},
 		{Type: "OrphanedResourceWarning", Message: "Application has 2 orphaned resources"},
 	}
 	for index := range applications {
 		applications[index].Operation = sampleOperation(applications[index])
+	}
+	applications[2].Operation = &explorer.Operation{
+		Phase: "Running", Message: "Waiting for the search Deployment to become healthy", Revision: applications[2].Revision,
+		StartedAt: now.Add(-2 * time.Minute),
 	}
 	for _, index := range []int{0, 1, 2} { // cart, checkout, search
 		applications[index].Owner = "store-services"
@@ -348,6 +355,49 @@ func (s *DemoSource) ApplicationManifest(_ context.Context, name string) (string
 		return "", err
 	}
 	return fmt.Sprintf("apiVersion: argoproj.io/v1alpha1\nkind: Application\nmetadata:\n  name: %s\n  namespace: argocd\nspec:\n  project: %s\n  source:\n    targetRevision: %s\n  destination:\n    server: https://kubernetes.default.svc\n", application.Name, application.Project, application.Revision), nil
+}
+
+// ProjectManifest returns a representative AppProject custom resource.
+func (s *DemoSource) ProjectManifest(_ context.Context, name string) (string, error) {
+	descriptions := map[string]string{
+		"store":         "Storefront services",
+		"payments":      "Billing and payment processing",
+		"platform":      "Cluster add-ons",
+		"observability": "Metrics and dashboards",
+	}
+	description, found := descriptions[name]
+	if found {
+		manifest := fmt.Sprintf(`apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: %s
+  namespace: argocd
+spec:
+  description: %q
+  sourceRepos:
+    - https://github.com/example/%s.git
+  destinations:
+    - namespace: %s
+      server: https://kubernetes.default.svc
+  roles:
+    - name: deployer
+      policies:
+        - p, proj:%s:deployer, applications, sync, %s/*, allow
+`, name, description, name, name, name, name)
+		if name == "store" {
+			manifest += `  syncWindows:
+    - kind: deny
+      name: store-freeze
+      schedule: "0 22 * * *"
+      duration: 2h
+      applications:
+        - cart
+      manualSync: false
+`
+		}
+		return manifest, nil
+	}
+	return "", fmt.Errorf("project %q not found", name)
 }
 
 // ApplicationDiff concatenates the sample diffs of drifted resources.
