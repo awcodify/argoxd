@@ -101,4 +101,3 @@ func TestSyncWindowBlockIsMarkedOnApplications(t *testing.T) {
 		t.Fatalf("sync-window block is not marked:\n%s", view)
 	}
 }
-

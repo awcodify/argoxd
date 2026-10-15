@@ -189,10 +189,7 @@ func (s *APISource) sync(ctx context.Context, application string, resources []ex
 // RefreshApplication makes Argo CD compare the Application with Git again.
 // A hard refresh also bypasses its manifest cache.
 func (s *APISource) RefreshApplication(ctx context.Context, application string, hard bool) error {
-	refresh := "normal"
-	if hard {
-		refresh = "hard"
-	}
+	refresh := refreshMode(hard)
 	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=" + refresh
 	if err := s.get(ctx, path, nil); err != nil {
 		return fmt.Errorf("refresh application: %w", err)

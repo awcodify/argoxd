@@ -143,3 +143,11 @@ type SyncOptions struct {
 	// DryRun previews the sync without changing the cluster.
 	DryRun bool
 }
+
+// refreshMode is the value Argo CD expects for a normal or hard refresh.
+func refreshMode(hard bool) string {
+	if hard {
+		return "hard"
+	}
+	return "normal"
+}

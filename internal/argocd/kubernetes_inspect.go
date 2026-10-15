@@ -28,12 +28,7 @@ func (s *KubernetesSource) ApplicationManifest(ctx context.Context, application 
 	if err != nil {
 		return "", fmt.Errorf("get application %q: %w", application, err)
 	}
-	unstructured.RemoveNestedField(object.Object, "metadata", "managedFields")
-	manifest, err := yaml.Marshal(object.Object)
-	if err != nil {
-		return "", fmt.Errorf("encode application %q: %w", application, err)
-	}
-	return string(manifest), nil
+	return manifestYAML("application", application, object)
 }
 
 // ProjectManifest returns the AppProject custom resource as YAML.
@@ -46,10 +41,15 @@ func (s *KubernetesSource) ProjectManifest(ctx context.Context, project string) 
 	if err != nil {
 		return "", fmt.Errorf("get project %q: %w", project, err)
 	}
+	return manifestYAML("project", project, object)
+}
+
+// manifestYAML renders a custom resource as YAML without its managedFields noise.
+func manifestYAML(kind, name string, object *unstructured.Unstructured) (string, error) {
 	unstructured.RemoveNestedField(object.Object, "metadata", "managedFields")
 	manifest, err := yaml.Marshal(object.Object)
 	if err != nil {
-		return "", fmt.Errorf("encode project %q: %w", project, err)
+		return "", fmt.Errorf("encode %s %q: %w", kind, name, err)
 	}
 	return string(manifest), nil
 }

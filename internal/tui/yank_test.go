@@ -134,3 +134,24 @@ func TestYankReportsClipboardFailures(t *testing.T) {
 		t.Fatalf("clipboard error was not shown:\n%s", view)
 	}
 }
+
+func TestYankInViewerCopiesOnlyTheLinesMatchingTheSearch(t *testing.T) {
+	var copied []string
+	copyToClipboard = func(text string) error {
+		copied = append(copied, text)
+		return nil
+	}
+	t.Cleanup(func() { copyToClipboard = systemCopyToClipboard })
+
+	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), manifest: "error: one\nok\nerror: two\nok\n"}
+	viewer := run(press(openCheckout(t, source), "j"), "Y")
+	viewer.viewer.search = "error"
+
+	viewer = press(viewer, "y")
+	if want := "error: one\nerror: two"; len(copied) != 1 || copied[0] != want {
+		t.Fatalf("copied = %q, want only the matching lines %q", copied, want)
+	}
+	if !strings.Contains(viewer.View(), "Copied 2 lines to clipboard") {
+		t.Fatalf("expected status 'Copied 2 lines to clipboard':\n%s", viewer.View())
+	}
+}

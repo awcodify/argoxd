@@ -61,6 +61,23 @@ func TestContextCommandOpensAPicker(t *testing.T) {
 	}
 }
 
+func TestContextSwitchIgnoresLoadsFromThePreviousContext(t *testing.T) {
+	source := &contextSource{
+		fakeSource: &fakeSource{snapshot: storeSnapshot()},
+		contexts:   []string{"development", "production"},
+	}
+	model := New(source, "Kubeconfig context: development", "argocd", explorer.Snapshot{})
+	inFlight := model.load()
+
+	model = command(model, ":ctx production")
+	updated, _ := model.Update(inFlight())
+	model = updated.(Model)
+
+	if apps := model.explorer.Snapshot().Applications; len(apps) != 0 {
+		t.Fatalf("a load from the previous context replaced the new context's data: %v", apps)
+	}
+}
+
 func TestContextCommandRejectsUnsupportedSources(t *testing.T) {
 	model := command(New(&fakeSource{snapshot: storeSnapshot()}, "test", "argocd", storeSnapshot()), ":ctx production")
 

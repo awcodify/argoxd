@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 	typedfake "k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 func TestSnapshotFromKubernetesResources(t *testing.T) {
@@ -388,5 +390,35 @@ func TestSnapshotReadsTheLastOperation(t *testing.T) {
 	}
 	if !slices.Equal(operation.Results, want) {
 		t.Fatalf("results = %+v, want %+v", operation.Results, want)
+	}
+}
+
+func TestKubernetesSourceTerminatesTheRunningOperation(t *testing.T) {
+	application := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "argoproj.io/v1alpha1",
+		"kind":       "Application",
+		"metadata":   map[string]any{"namespace": "argocd", "name": "checkout"},
+		"status":     map[string]any{"operationState": map[string]any{"phase": "Running"}},
+	}}
+	source := fakeKubernetesSource(application)
+	client, _ := source.client()
+	// The Application CRD has no status subresource, so the API server refuses it.
+	client.(*fake.FakeDynamicClient).PrependReactor("patch", "applications", func(action clienttesting.Action) (bool, runtime.Object, error) {
+		if action.GetSubresource() != "" {
+			return true, nil, apierrors.NewNotFound(applicationsResource.GroupResource(), "checkout")
+		}
+		return false, nil, nil
+	})
+
+	if err := source.TerminateOperation(context.Background(), "checkout"); err != nil {
+		t.Fatalf("TerminateOperation() error = %v", err)
+	}
+
+	got, err := client.Resource(applicationsResource).Namespace("argocd").Get(context.Background(), "checkout", metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("get application: %v", err)
+	}
+	if phase, _, _ := unstructured.NestedString(got.Object, "status", "operationState", "phase"); phase != "Terminating" {
+		t.Fatalf("phase = %q, want Terminating so the controller can stop the sync", phase)
 	}
 }

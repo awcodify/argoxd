@@ -196,7 +196,7 @@ func TestReadOnlyModeBlocksMutatingActions(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree()}
 	model := settle(New(source, "test", "argocd", explorer.Snapshot{}).WithReadOnly(true), source.loadCommand())
 
-	for _, action := range []string{"s", "D", "P", "R", "T", "h"} {
+	for _, action := range []string{"s", "D", "P", "R", "T"} {
 		model = press(model, action)
 		if model.confirm.active() || !strings.Contains(model.View(), "Read-only mode") {
 			t.Fatalf("%s was not blocked in read-only mode:\n%s", action, model.View())
@@ -620,5 +620,37 @@ func TestTabMovesThroughTheValuesOfTheFilter(t *testing.T) {
 	// Health works the same way: all, Healthy, Progressing, Degraded.
 	if view := typeKeys(model, "H", "tab", "tab", "tab", "enter").View(); !strings.Contains(view, "health:Degraded") || strings.Contains(view, "frontend") {
 		t.Fatalf("H and tab did not move through the health values:\n%s", view)
+	}
+}
+
+func TestLogsKeyOnTheRootCardDoesNotOpenADiff(t *testing.T) {
+	model := openCheckout(t, &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree()})
+
+	updated, command := model.Update(key("l"))
+	model = settle(updated.(Model), command)
+
+	if model.view == textViewMode {
+		t.Fatalf("l on the root card opened a text view:\n%s", model.View())
+	}
+	if !strings.Contains(model.status, "Logs are available") {
+		t.Fatalf("status = %q, want a hint about where logs are available", model.status)
+	}
+}
+
+func TestReadOnlyModeAllowsHistoryButBlocksRollback(t *testing.T) {
+	source := &fakeSource{snapshot: storeSnapshot(), history: sampleHistory()}
+	model := settle(New(source, "test", "argocd", explorer.Snapshot{}).WithReadOnly(true), source.loadCommand())
+
+	history := run(model, "h")
+	if view := history.View(); !strings.Contains(view, "DEPLOYED") {
+		t.Fatalf("h did not open the history in read-only mode:\n%s", view)
+	}
+
+	asking := press(history, "enter")
+	if asking.confirm.active() || !strings.Contains(asking.View(), "Read-only mode") {
+		t.Fatalf("rollback was not blocked in read-only mode:\n%s", asking.View())
+	}
+	if len(source.rolledBack) != 0 {
+		t.Fatalf("read-only mode still rolled back: %+v", source.rolledBack)
 	}
 }

@@ -165,16 +165,8 @@ func (m Model) suggestions() []string {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
 	if name, context, hasContext := strings.Cut(m.prompt.input, " "); hasContext && slices.Contains(contextCommands, name) {
-		switcher, ok := m.source.(argocd.ContextSwitcher)
-		if !ok {
-			return nil
-		}
-		contexts, err := switcher.Contexts()
-		if err != nil {
-			return nil
-		}
 		var matches []string
-		for _, candidate := range contexts {
+		for _, candidate := range m.contextOptions {
 			if strings.HasPrefix(candidate, context) {
 				matches = append(matches, name+" "+candidate)
 			}
@@ -376,6 +368,20 @@ func (m *Model) runCommand(input string) tea.Cmd {
 	return nil
 }
 
+// kubeconfigContexts lists the contexts the source can switch to, or none when
+// it cannot switch. Reading them parses the kubeconfig, so callers keep the result.
+func (m Model) kubeconfigContexts() []string {
+	switcher, ok := m.source.(argocd.ContextSwitcher)
+	if !ok {
+		return nil
+	}
+	contexts, err := switcher.Contexts()
+	if err != nil {
+		return nil
+	}
+	return contexts
+}
+
 func (m *Model) openContextPicker() {
 	switcher, ok := m.source.(argocd.ContextSwitcher)
 	if !ok {
@@ -411,6 +417,7 @@ func (m *Model) switchContext(context string) tea.Cmd {
 		return nil
 	}
 	m.source = switcher.WithContext(context)
+	m.sourceGeneration++
 	m.connection = "Kubeconfig context: " + context
 	m.explorer = explorer.NewModel(explorer.Snapshot{})
 	m.closeTree()

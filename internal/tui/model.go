@@ -29,12 +29,15 @@ type Model struct {
 	refreshInterval time.Duration
 	readOnly        bool
 	loading         bool
-	refreshing      bool
-	err             error
-	width           int
-	height          int
-	view            viewMode
-	tree            []treeItem
+	// sourceGeneration changes whenever the source is swapped, so loads that
+	// started against the old source can be told apart and dropped.
+	sourceGeneration int
+	refreshing       bool
+	err              error
+	width            int
+	height           int
+	view             viewMode
+	tree             []treeItem
 	// origin is the Projects or ApplicationSets list the Applications list was
 	// opened from, which Esc returns to.
 	origin       listOrigin
@@ -131,6 +134,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshTick:
 		return m.autoRefresh()
 	case loadedSnapshot:
+		if message.generation != m.sourceGeneration {
+			return m, nil
+		}
 		m.loading = false
 		m.refreshing = false
 		m.err = message.err
@@ -209,6 +215,7 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveDown()
 	case ":":
 		m.prompt = prompt{active: true}
+		m.contextOptions = m.kubeconfigContexts()
 	case "/":
 		switch m.view {
 		case listView:
@@ -299,9 +306,6 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.askResourceAction(key)
 		}
 	case "h":
-		if m.blockReadOnly() {
-			break
-		}
 		if application := m.selectedApplication(); application != "" {
 			return m.openHistory(application)
 		}
@@ -345,7 +349,7 @@ func (m *Model) yank() {
 		m.err = err
 		return
 	}
-	if m.view == textViewMode && m.viewer.visual {
+	if m.view == textViewMode {
 		lines := strings.Count(text, "\n") + 1
 		m.viewer.visual = false
 		if lines == 1 {
@@ -362,6 +366,15 @@ func (m *Model) yank() {
 	m.status = "Copied to clipboard"
 }
 
+// resourceLabel names a resource as namespace/Kind/Name, or Kind/Name when cluster scoped.
+func resourceLabel(node explorer.ResourceNode) string {
+	name := node.Kind + "/" + node.Name
+	if node.Namespace != "" {
+		name = node.Namespace + "/" + name
+	}
+	return name
+}
+
 func (m Model) selectionText() string {
 	if m.view == textViewMode {
 		if m.viewer.visual {
@@ -374,26 +387,17 @@ func (m Model) selectionText() string {
 				}
 			}
 		}
-		return strings.Join(m.viewer.lines, "\n")
+		return strings.Join(m.viewer.shown(), "\n")
 	}
 	if m.view == applicationTreeView && !m.onRootCard() {
 		if marked := m.markedNodes(); len(marked) > 0 {
 			names := make([]string, 0, len(marked))
 			for _, node := range marked {
-				name := node.Kind + "/" + node.Name
-				if node.Namespace != "" {
-					name = node.Namespace + "/" + name
-				}
-				names = append(names, name)
+				names = append(names, resourceLabel(node))
 			}
 			return strings.Join(names, "\n")
 		}
-		resource := m.selectedCard()
-		name := resource.Kind + "/" + resource.Name
-		if resource.Namespace != "" {
-			name = resource.Namespace + "/" + name
-		}
-		return name
+		return resourceLabel(m.selectedCard())
 	}
 	if targets := m.applicationTargets(); len(targets) > 0 {
 		return strings.Join(targets, "\n")
@@ -663,7 +667,16 @@ func (m *Model) toggleTreeItem() {
 
 func (m Model) selectedApplication() string {
 	switch m.view {
-	case applicationTreeView, textViewMode:
+	case textViewMode:
+		// A viewer opened on the list has no tree, but its subject is the Application.
+		if m.viewerFromList {
+			if m.onApplicationRows() {
+				return m.viewer.subject
+			}
+			return ""
+		}
+		return m.resourceTree.Application
+	case applicationTreeView:
 		return m.resourceTree.Application
 	case inventoryTreeView:
 		if visible := m.visibleTree(); len(visible) > 0 {

@@ -15,11 +15,16 @@ var (
 	errNoInspection = errors.New("the active source cannot inspect resources")
 )
 
+// logsHint explains which cards have logs when l is pressed on one without.
+const logsHint = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
+
 type refreshTick struct{}
 
 type loadedSnapshot struct {
 	snapshot explorer.Snapshot
-	err      error
+	// generation is the source generation the load started under.
+	generation int
+	err        error
 }
 
 type loadedTree struct {
@@ -60,9 +65,10 @@ func (m Model) request(call func(ctx context.Context) tea.Msg) tea.Cmd {
 }
 
 func (m Model) load() tea.Cmd {
+	generation := m.sourceGeneration
 	return m.request(func(ctx context.Context) tea.Msg {
 		snapshot, err := m.source.Load(ctx)
-		return loadedSnapshot{snapshot: snapshot, err: err}
+		return loadedSnapshot{snapshot: snapshot, generation: generation, err: err}
 	})
 }
 
@@ -164,7 +170,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 	selected := m.selectedCard()
 	switch {
 	case key == "l" && !hasLogs(selected.Kind):
-		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
+		m.status = logsHint
 		return m, nil
 	case key == "l" && selected.Kind != "Pod":
 		return m.followLog(selected, nil)
@@ -203,6 +209,10 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
+	if key == "l" {
+		m.status = logsHint
+		return m, nil
+	}
 	application := m.selectedApplication()
 	if application == "" {
 		return m, nil
