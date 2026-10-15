@@ -2,7 +2,7 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-10-15
 
 ### Added
 
@@ -13,7 +13,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 - **Application inspection.** `Y` shows an Application custom resource from the Applications list or its root dependency card. `d` there shows the concatenated diff of drifted resources.
 - **Refresh modes.** `R` requests a normal Argo CD refresh by default; toggle `h` in its confirmation for a hard refresh that bypasses the manifest cache.
 - **Operation termination.** `T` terminates a selected Application's active operation after confirmation.
-- **Read-only mode.** `--read-only` and `readOnly: true` disable mutating actions and show a `[READ-ONLY]` header badge.
+- **Read-only mode.** `--read-only` and `readOnly: true` disable mutating actions and show a `[READ-ONLY]` header badge. `h` still opens an Application's history; rolling back from it is blocked.
 
 ### Changed
 
