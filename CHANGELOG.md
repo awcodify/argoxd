@@ -21,7 +21,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Permissions
 
-- Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications/status`.
+- Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications.argoproj.io`.
 
 ## [0.3.0] - 2026-10-08
 
