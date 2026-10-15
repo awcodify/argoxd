@@ -433,7 +433,7 @@ func TestHeaderHintsFollowTheActiveView(t *testing.T) {
 	}{
 		"list":         {list.View(), []string{"/  Search", "H  Health", "S  Sync status", "y  Yank", "Y  YAML", "d  Diff", "R  Refresh", "D  Delete"}},
 		"dependencies": {dependencies.View(), []string{"y  Yank", "Y  YAML", "d  Diff", "l  Logs", "D  Delete", "/  Search", "K  Kind"}},
-		"viewer":       {viewer.View(), []string{"G  Bottom", "esc  Back"}},
+		"viewer":       {viewer.View(), []string{"G  Bottom", "v  Select", "y  Yank", "esc  Back"}},
 	} {
 		for _, want := range test.want {
 			if !strings.Contains(test.view, want) {

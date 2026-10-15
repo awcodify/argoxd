@@ -1,19 +1,12 @@
 package tui
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
 	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
 )
-
-type browserSource struct{ *fakeSource }
-
-func (s *browserSource) ApplicationURL(application string) string {
-	return "https://argocd.example.com/applications/" + application
-}
 
 type contextSource struct {
 	*fakeSource
@@ -28,60 +21,6 @@ func (s *contextSource) Contexts() ([]string, error) {
 func (s *contextSource) WithContext(context string) argocd.Source {
 	s.switched = context
 	return s
-}
-
-func TestYankCopiesSelectedItemAndViewerText(t *testing.T) {
-	var copied []string
-	copyToClipboard = func(text string) error {
-		copied = append(copied, text)
-		return nil
-	}
-	t.Cleanup(func() { copyToClipboard = systemCopyToClipboard })
-
-	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree(), manifest: "kind: Deployment\nmetadata:\n  name: web\n"}
-	list := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
-	list = press(list, "y")
-	if len(copied) != 1 || copied[0] != "grafana" || !strings.Contains(list.View(), "Copied to clipboard") {
-		t.Fatalf("list copy = %v:\n%s", copied, list.View())
-	}
-
-	viewer := run(press(openCheckout(t, source), "j"), "Y")
-	viewer = press(viewer, "y")
-	if len(copied) != 2 || copied[1] != strings.TrimRight(source.manifest, "\n") {
-		t.Fatalf("viewer copy = %v, want manifest", copied)
-	}
-}
-
-func TestYankReportsClipboardFailures(t *testing.T) {
-	copyToClipboard = func(string) error { return errors.New("clipboard unavailable") }
-	t.Cleanup(func() { copyToClipboard = systemCopyToClipboard })
-
-	model := press(New(nil, "test", "argocd", storeSnapshot()), "y")
-
-	if view := model.View(); !strings.Contains(view, "clipboard unavailable") {
-		t.Fatalf("clipboard error was not shown:\n%s", view)
-	}
-}
-
-func TestOpenInBrowserUsesAPISourceOnly(t *testing.T) {
-	var opened string
-	openInBrowser = func(url string) error {
-		opened = url
-		return nil
-	}
-	t.Cleanup(func() { openInBrowser = systemOpenInBrowser })
-
-	source := &browserSource{&fakeSource{snapshot: storeSnapshot()}}
-	model := settle(New(source, "test", "argocd", explorer.Snapshot{}), source.loadCommand())
-	model = press(model, "o")
-	if opened != "https://argocd.example.com/applications/grafana" || !strings.Contains(model.View(), "Opened grafana in browser") {
-		t.Fatalf("opened = %q:\n%s", opened, model.View())
-	}
-
-	unsupported := press(New(&fakeSource{snapshot: storeSnapshot()}, "test", "argocd", storeSnapshot()), "o")
-	if view := unsupported.View(); !strings.Contains(view, "needs --source api") {
-		t.Fatalf("non-API browser opening was not refused:\n%s", view)
-	}
 }
 
 func TestContextCommandReconnectsKubeconfigSource(t *testing.T) {

@@ -17,7 +17,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Changed
 
-- **Keymap: `y` now yanks; `Y` now shows YAML.** This intentionally changes the former lowercase `y` YAML shortcut. Use uppercase `Y` for Application and resource manifests; lowercase `y` copies the selected item or the open viewer text to the clipboard.
+- **Keymap: `y` now yanks; `Y` now shows YAML.** This intentionally changes the former lowercase `y` YAML shortcut. Use uppercase `Y` for Application and resource manifests; lowercase `y` copies the selected item or the open viewer text to the clipboard. In viewers, both `y` and `Y` yank, and `v` starts visual line selection to copy a chosen range of lines. Marking applications or dependency cards with Space also allows `y` to yank all marked items.
 
 ### Permissions
 

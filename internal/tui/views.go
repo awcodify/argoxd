@@ -213,6 +213,9 @@ func (m Model) renderCrumbs() string {
 		} else {
 			crumbs = append(append(crumbs, m.treePath()...), m.viewer.kind)
 		}
+		if m.viewer.visual {
+			crumbs = append(crumbs, "select")
+		}
 	case historyViewMode:
 		crumbs = append(crumbs, m.history.application, "history")
 	}

@@ -77,6 +77,13 @@ func (m Model) projectHints() []keyHint {
 func (m Model) keyHints() []keyHint {
 	switch m.view {
 	case textViewMode:
+		if m.viewer.visual {
+			return []keyHint{
+				{"j/k", "Select"},
+				{"y", "Yank"},
+				{"esc", "Cancel"},
+			}
+		}
 		hints := []keyHint{{"j/k", "Scroll"}, {"g", "Top"}, {"G", "Bottom"}}
 		if m.viewer.kind == "events" {
 			hints = append(hints, keyHint{"/", "Search"})
@@ -92,7 +99,7 @@ func (m Model) keyHints() []keyHint {
 		} else if m.viewer.kind == "logs" {
 			hints = append(hints, keyHint{"f", "Follow"})
 		}
-		hints = append(hints, keyHint{"Y", "Yank"})
+		hints = append(hints, keyHint{"v", "Select"}, keyHint{"y", "Yank"})
 		if m.canOpenApplicationInBrowser() {
 			hints = append(hints, keyHint{"o", "Browser"})
 		}

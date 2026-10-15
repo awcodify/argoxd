@@ -3,6 +3,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -344,20 +345,58 @@ func (m *Model) yank() {
 		m.err = err
 		return
 	}
+	if m.view == textViewMode && m.viewer.visual {
+		lines := strings.Count(text, "\n") + 1
+		m.viewer.visual = false
+		if lines == 1 {
+			m.status = "Copied 1 line to clipboard"
+		} else {
+			m.status = "Copied " + strconv.Itoa(lines) + " lines to clipboard"
+		}
+		return
+	}
+	if count := strings.Count(text, "\n"); count > 0 {
+		m.status = "Copied " + strconv.Itoa(count+1) + " items to clipboard"
+		return
+	}
 	m.status = "Copied to clipboard"
 }
 
 func (m Model) selectionText() string {
 	if m.view == textViewMode {
+		if m.viewer.visual {
+			shown := m.viewer.shown()
+			if len(shown) > 0 {
+				from := min(m.viewer.anchor, m.viewer.cursor)
+				to := min(len(shown), max(m.viewer.anchor, m.viewer.cursor)+1)
+				if from >= 0 && from < to {
+					return strings.Join(shown[from:to], "\n")
+				}
+			}
+		}
 		return strings.Join(m.viewer.lines, "\n")
 	}
 	if m.view == applicationTreeView && !m.onRootCard() {
+		if marked := m.markedNodes(); len(marked) > 0 {
+			names := make([]string, 0, len(marked))
+			for _, node := range marked {
+				name := node.Kind + "/" + node.Name
+				if node.Namespace != "" {
+					name = node.Namespace + "/" + name
+				}
+				names = append(names, name)
+			}
+			return strings.Join(names, "\n")
+		}
 		resource := m.selectedCard()
 		name := resource.Kind + "/" + resource.Name
 		if resource.Namespace != "" {
 			name = resource.Namespace + "/" + name
 		}
 		return name
+	}
+	if targets := m.applicationTargets(); len(targets) > 0 {
+		return strings.Join(targets, "\n")
 	}
 	return m.selectedApplication()
 }
