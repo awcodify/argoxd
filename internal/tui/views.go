@@ -105,6 +105,9 @@ func (m Model) applicationsTable() table {
 		if len(application.Conditions) > 0 {
 			name += " " + conditionGlyph
 		}
+		if application.SyncWindowBlocked() {
+			name += " " + syncWindowGlyph
+		}
 		result.rows = append(result.rows, []string{
 			name, application.Project, application.Sync, application.Health,
 			application.Revision, application.Destination, age(application.LastSync),
@@ -209,6 +212,9 @@ func (m Model) renderCrumbs() string {
 			crumbs = append(crumbs, m.viewer.subject, m.viewer.kind)
 		} else {
 			crumbs = append(append(crumbs, m.treePath()...), m.viewer.kind)
+		}
+		if m.viewer.visual {
+			crumbs = append(crumbs, "select")
 		}
 	case historyViewMode:
 		crumbs = append(crumbs, m.history.application, "history")

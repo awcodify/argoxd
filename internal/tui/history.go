@@ -59,6 +59,9 @@ func (m Model) updateHistory(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "down", "j":
 		m.history.cursor = max(0, min(len(m.history.entries)-1, m.history.cursor+1))
 	case "enter":
+		if m.blockReadOnly() {
+			break
+		}
 		if m.history.cursor < len(m.history.entries) {
 			m.confirm = confirmation{kind: confirmRollback, application: m.history.application, entry: m.history.entries[m.history.cursor]}
 		}

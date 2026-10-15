@@ -22,6 +22,7 @@ type fileConfig struct {
 	Context    *string `json:"context"`
 	Namespace  *string `json:"namespace"`
 	Refresh    *string `json:"refresh"`
+	ReadOnly   *bool   `json:"readOnly"`
 }
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
@@ -85,6 +86,9 @@ func (c fileConfig) apply(defaults options) (options, error) {
 			return defaults, fmt.Errorf("refresh: %w", err)
 		}
 		defaults.refresh = refresh
+	}
+	if c.ReadOnly != nil {
+		defaults.readOnly = *c.ReadOnly
 	}
 	return defaults, nil
 }

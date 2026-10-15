@@ -153,14 +153,19 @@ func TestAPISourceSyncsWithOptionsAndRefreshes(t *testing.T) {
 	if err := source.SyncApplication(context.Background(), "payments", SyncOptions{Prune: true, DryRun: true}); err != nil {
 		t.Fatalf("SyncApplication() error = %v", err)
 	}
-	if err := source.RefreshApplication(context.Background(), "payments"); err != nil {
+	if err := source.RefreshApplication(context.Background(), "payments", true); err != nil {
+		t.Fatalf("RefreshApplication() error = %v", err)
+	}
+	if err := source.RefreshApplication(context.Background(), "payments", false); err != nil {
 		t.Fatalf("RefreshApplication() error = %v", err)
 	}
 
 	want := []string{
 		`POST /api/v1/applications/payments/sync {"prune":true,"dryRun":true}`,
 		`GET /api/v1/applications/payments?refresh=hard `,
+		`GET /api/v1/applications/payments?refresh=normal `,
 	}
+
 	if !slices.Equal(requests, want) {
 		t.Fatalf("requests = %q, want %q", requests, want)
 	}

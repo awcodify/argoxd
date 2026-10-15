@@ -105,6 +105,13 @@ func (s *APISource) get(ctx context.Context, path string, target any) error {
 	return s.request(ctx, http.MethodGet, path, nil, target)
 }
 
+var _ ApplicationURLer = (*APISource)(nil)
+
+// ApplicationURL returns the Argo CD web UI URL for an Application.
+func (s *APISource) ApplicationURL(application string) string {
+	return s.baseURL + "/applications/" + url.PathEscape(application)
+}
+
 // LoadResourceTree returns the resources managed by an Application.
 func (s *APISource) LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error) {
 	var response resourceTreeResponse
@@ -179,12 +186,22 @@ func (s *APISource) sync(ctx context.Context, application string, resources []ex
 	return nil
 }
 
-// RefreshApplication makes Argo CD compare the Application with Git again,
-// bypassing its manifest cache.
-func (s *APISource) RefreshApplication(ctx context.Context, application string) error {
-	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=hard"
+// RefreshApplication makes Argo CD compare the Application with Git again.
+// A hard refresh also bypasses its manifest cache.
+func (s *APISource) RefreshApplication(ctx context.Context, application string, hard bool) error {
+	refresh := refreshMode(hard)
+	path := "/api/v1/applications/" + url.PathEscape(application) + "?refresh=" + refresh
 	if err := s.get(ctx, path, nil); err != nil {
 		return fmt.Errorf("refresh application: %w", err)
+	}
+	return nil
+}
+
+// TerminateOperation aborts the Application operation Argo CD is running.
+func (s *APISource) TerminateOperation(ctx context.Context, application string) error {
+	path := "/api/v1/applications/" + url.PathEscape(application) + "/operation"
+	if err := s.request(ctx, http.MethodDelete, path, nil, nil); err != nil {
+		return fmt.Errorf("terminate operation: %w", err)
 	}
 	return nil
 }

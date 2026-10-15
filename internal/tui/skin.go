@@ -32,6 +32,9 @@ const (
 // conditionGlyph flags an Application that has warnings or errors.
 const conditionGlyph = "⚠"
 
+// syncWindowGlyph flags an Application whose sync is blocked by a window.
+const syncWindowGlyph = "⊘"
+
 var (
 	accentStyle  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	brightStyle  = lipgloss.NewStyle().Foreground(colorBright).Bold(true)

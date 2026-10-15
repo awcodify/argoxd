@@ -241,7 +241,7 @@ func TestAFailedContainerLookupIsShown(t *testing.T) {
 
 func TestCOutsideLogsDoesNothing(t *testing.T) {
 	source := containerSource()
-	model := run(press(press(openCheckout(t, source), "j"), "j"), "y")
+	model := run(press(press(openCheckout(t, source), "j"), "j"), "Y")
 
 	if _, command := model.Update(key("c")); command != nil {
 		t.Fatal("c did something in a YAML view")
@@ -256,7 +256,7 @@ func TestLogsHeaderListsContainer(t *testing.T) {
 	if view := run(model, "l").View(); !strings.Contains(view, "c  Container") {
 		t.Fatalf("the logs header does not list c:\n%s", view)
 	}
-	if view := run(model, "y").View(); strings.Contains(view, "c  Container") {
+	if view := run(model, "Y").View(); strings.Contains(view, "c  Container") {
 		t.Fatalf("the YAML header lists c:\n%s", view)
 	}
 }

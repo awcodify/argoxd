@@ -15,11 +15,16 @@ var (
 	errNoInspection = errors.New("the active source cannot inspect resources")
 )
 
+// logsHint explains which cards have logs when l is pressed on one without.
+const logsHint = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
+
 type refreshTick struct{}
 
 type loadedSnapshot struct {
 	snapshot explorer.Snapshot
-	err      error
+	// generation is the source generation the load started under.
+	generation int
+	err        error
 }
 
 type loadedTree struct {
@@ -60,9 +65,10 @@ func (m Model) request(call func(ctx context.Context) tea.Msg) tea.Cmd {
 }
 
 func (m Model) load() tea.Cmd {
+	generation := m.sourceGeneration
 	return m.request(func(ctx context.Context) tea.Msg {
 		snapshot, err := m.source.Load(ctx)
-		return loadedSnapshot{snapshot: snapshot, err: err}
+		return loadedSnapshot{snapshot: snapshot, generation: generation, err: err}
 	})
 }
 
@@ -122,9 +128,19 @@ func (m Model) sync(application string, options argocd.SyncOptions) tea.Cmd {
 	})
 }
 
-func (m Model) hardRefresh(application string) tea.Cmd {
-	return m.operate("hard refresh", application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
-		return operator.RefreshApplication(ctx, application)
+func (m Model) refresh(application string, hard bool) tea.Cmd {
+	action := "refresh"
+	if hard {
+		action = "hard refresh"
+	}
+	return m.operate(action, application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
+		return operator.RefreshApplication(ctx, application, hard)
+	})
+}
+
+func (m Model) terminateOperation(application string) tea.Cmd {
+	return m.operate("terminate operation", application, func(ctx context.Context, operator argocd.ApplicationOperator) error {
+		return operator.TerminateOperation(ctx, application)
 	})
 }
 
@@ -146,15 +162,15 @@ func (m Model) operate(action, application string, call func(context.Context, ar
 	})
 }
 
-// inspect opens the YAML (y), diff (d) or logs (l) of the selected card.
+// inspect opens the YAML (Y), diff (d) or logs (l) of the selected item.
 func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
+	if m.view == listView || m.onRootCard() {
+		return m.inspectApplication(key)
+	}
 	selected := m.selectedCard()
 	switch {
-	case m.onRootCard():
-		m.status = "Select a resource card to inspect it"
-		return m, nil
 	case key == "l" && !hasLogs(selected.Kind):
-		m.status = "Logs are available for Pods and workloads (Deployment, StatefulSet, DaemonSet, ReplicaSet, Job)"
+		m.status = logsHint
 		return m, nil
 	case key == "l" && selected.Kind != "Pod":
 		return m.followLog(selected, nil)
@@ -179,7 +195,7 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 		var err error
 		kind := "yaml"
 		switch key {
-		case "y":
+		case "Y":
 			text, err = inspector.ResourceManifest(ctx, application, selected)
 		case "d":
 			kind = "diff"
@@ -189,5 +205,49 @@ func (m Model) inspect(key string) (tea.Model, tea.Cmd) {
 			text, err = inspector.ResourceLogs(ctx, application, selected, "")
 		}
 		return loadedText{kind: kind, subject: subject, text: text, err: err}
+	})
+}
+
+func (m Model) inspectApplication(key string) (tea.Model, tea.Cmd) {
+	if key == "l" {
+		m.status = logsHint
+		return m, nil
+	}
+	application := m.selectedApplication()
+	if application == "" {
+		return m, nil
+	}
+
+	inspector, ok := m.source.(argocd.ApplicationInspector)
+	if !ok {
+		m.err = errNoInspection
+		return m, nil
+	}
+	m.loading = true
+	return m, m.request(func(ctx context.Context) tea.Msg {
+		var text string
+		var err error
+		kind := "yaml"
+		if key == "Y" {
+			text, err = inspector.ApplicationManifest(ctx, application)
+		} else {
+			kind = "diff"
+			text, err = inspector.ApplicationDiff(ctx, application)
+		}
+		return loadedText{kind: kind, subject: application, text: text, fromList: m.view == listView, err: err}
+	})
+}
+
+func (m Model) inspectProject() (tea.Model, tea.Cmd) {
+	project := m.explorer.SelectedName()
+	inspector, ok := m.source.(argocd.ProjectInspector)
+	if !ok || project == "" {
+		m.err = errNoInspection
+		return m, nil
+	}
+	m.loading = true
+	return m, m.request(func(ctx context.Context) tea.Msg {
+		text, err := inspector.ProjectManifest(ctx, project)
+		return loadedText{kind: "yaml", subject: project, text: text, fromList: true, err: err}
 	})
 }

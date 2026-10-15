@@ -15,11 +15,23 @@ type Source interface {
 	Load(ctx context.Context) (explorer.Snapshot, error)
 }
 
+// ApplicationURLer provides browser URLs for Applications.
+type ApplicationURLer interface {
+	ApplicationURL(application string) string
+}
+
+// ContextSwitcher lists kubeconfig contexts and creates a source for one.
+type ContextSwitcher interface {
+	Contexts() ([]string, error)
+	WithContext(context string) Source
+}
+
 // ApplicationOperator supports interactive application operations.
 type ApplicationOperator interface {
 	LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error)
 	SyncApplication(ctx context.Context, application string, options SyncOptions) error
-	RefreshApplication(ctx context.Context, application string) error
+	RefreshApplication(ctx context.Context, application string, hard bool) error
+	TerminateOperation(ctx context.Context, application string) error
 	DeleteApplication(ctx context.Context, application string) error
 }
 
@@ -38,6 +50,17 @@ type ResourceInspector interface {
 	// means its default container; AllContainers returns every container's
 	// lines, grouped by container and prefixed with its name.
 	ResourceLogs(ctx context.Context, application string, pod explorer.ResourceNode, container string) (string, error)
+}
+
+// ApplicationInspector shows an Application's manifest and its drifted resources.
+type ApplicationInspector interface {
+	ApplicationManifest(ctx context.Context, application string) (string, error)
+	ApplicationDiff(ctx context.Context, application string) (string, error)
+}
+
+// ProjectInspector shows an AppProject manifest.
+type ProjectInspector interface {
+	ProjectManifest(ctx context.Context, project string) (string, error)
 }
 
 // LogEntry is one line of a followed log, or the error that ended the stream.
@@ -119,4 +142,12 @@ type SyncOptions struct {
 	Prune bool
 	// DryRun previews the sync without changing the cluster.
 	DryRun bool
+}
+
+// refreshMode is the value Argo CD expects for a normal or hard refresh.
+func refreshMode(hard bool) string {
+	if hard {
+		return "hard"
+	}
+	return "normal"
 }

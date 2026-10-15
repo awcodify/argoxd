@@ -19,6 +19,46 @@ import (
 // rendered by the Argo CD repo server, which only the API exposes.
 var errDiffNeedsAPI = errors.New("diffs need the Argo CD API; run argoxd with --source api")
 
+var _ ApplicationInspector = (*KubernetesSource)(nil)
+var _ ProjectInspector = (*KubernetesSource)(nil)
+
+// ApplicationManifest returns the Application custom resource as YAML.
+func (s *KubernetesSource) ApplicationManifest(ctx context.Context, application string) (string, error) {
+	object, err := s.getApplication(ctx, application)
+	if err != nil {
+		return "", fmt.Errorf("get application %q: %w", application, err)
+	}
+	return manifestYAML("application", application, object)
+}
+
+// ProjectManifest returns the AppProject custom resource as YAML.
+func (s *KubernetesSource) ProjectManifest(ctx context.Context, project string) (string, error) {
+	client, err := s.client()
+	if err != nil {
+		return "", err
+	}
+	object, err := client.Resource(projectsResource).Namespace(s.namespace).Get(ctx, project, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("get project %q: %w", project, err)
+	}
+	return manifestYAML("project", project, object)
+}
+
+// manifestYAML renders a custom resource as YAML without its managedFields noise.
+func manifestYAML(kind, name string, object *unstructured.Unstructured) (string, error) {
+	unstructured.RemoveNestedField(object.Object, "metadata", "managedFields")
+	manifest, err := yaml.Marshal(object.Object)
+	if err != nil {
+		return "", fmt.Errorf("encode %s %q: %w", kind, name, err)
+	}
+	return string(manifest), nil
+}
+
+// ApplicationDiff is not available from Kubernetes alone.
+func (s *KubernetesSource) ApplicationDiff(context.Context, string) (string, error) {
+	return "", errDiffNeedsAPI
+}
+
 // ResourceManifest returns the live manifest of a resource as YAML.
 func (s *KubernetesSource) ResourceManifest(ctx context.Context, _ string, resource explorer.ResourceNode) (string, error) {
 	client, err := s.client()

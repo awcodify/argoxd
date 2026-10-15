@@ -2,6 +2,27 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] - 2026-10-15
+
+### Added
+
+- **Clipboard and browser.** `y` copies the selected item or open viewer text; `o` opens the selected Application in the Argo CD web UI when using `--source api`.
+- **Runtime contexts.** `:ctx` opens a filterable context picker for the active kubeconfig; `:ctx <name>` switches directly and reconnects.
+- **Sync-window blocks.** Applications that Argo CD reports as blocked by a sync window show `⊘` beside their existing condition marker.
+- **AppProject inspection.** On `:proj`, `Y` opens the selected AppProject manifest without changing Enter's existing Application-filter workflow.
+- **Application inspection.** `Y` shows an Application custom resource from the Applications list or its root dependency card. `d` there shows the concatenated diff of drifted resources.
+- **Refresh modes.** `R` requests a normal Argo CD refresh by default; toggle `h` in its confirmation for a hard refresh that bypasses the manifest cache.
+- **Operation termination.** `T` terminates a selected Application's active operation after confirmation.
+- **Read-only mode.** `--read-only` and `readOnly: true` disable mutating actions and show a `[READ-ONLY]` header badge. `h` still opens an Application's history; rolling back from it is blocked.
+
+### Changed
+
+- **Keymap: `y` now yanks; `Y` now shows YAML.** This intentionally changes the former lowercase `y` YAML shortcut. Use uppercase `Y` for Application and resource manifests; lowercase `y` copies the selected item or the open viewer text to the clipboard. In viewers, both `y` and `Y` yank, and `v` starts visual line selection to copy a chosen range of lines. Marking applications or dependency cards with Space also allows `y` to yank all marked items.
+
+### Permissions
+
+- Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications.argoproj.io`.
+
 ## [0.3.0] - 2026-10-08
 
 ### Added

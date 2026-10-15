@@ -125,7 +125,7 @@ func (m Model) applicationTargets() []string {
 	return nil
 }
 
-// askApplicationAction opens the confirmation for sync (s), hard refresh (R)
+// askApplicationAction opens the confirmation for sync (s), refresh (R)
 // or delete (D). In the dependency view, sync covers only the marked cards.
 func (m Model) askApplicationAction(kind confirmKind) Model {
 	if kind == confirmSync && m.view == applicationTreeView && len(m.markedCards) > 0 {
@@ -136,6 +136,27 @@ func (m Model) askApplicationAction(kind confirmKind) Model {
 		m.confirm = forApplications(kind, names)
 	}
 	return m
+}
+
+// askTerminateOperation only offers termination while the selected Application
+// has an active operation.
+func (m Model) askTerminateOperation() Model {
+	application := m.selectedApplication()
+	if !m.hasActiveOperation() {
+		m.status = "No operation is in progress"
+		return m
+	}
+	m.confirm = confirmation{kind: confirmTerminateOperation, application: application}
+	return m
+}
+
+func (m Model) hasActiveOperation() bool {
+	application := m.selectedApplication()
+	if application == "" {
+		return false
+	}
+	operation := m.applicationNamed(application).Operation
+	return operation != nil && (operation.Phase == "Running" || operation.Phase == "Terminating")
 }
 
 // syncResources syncs only the given resources of an Application.

@@ -13,8 +13,9 @@ import (
 
 // Changed diff lines are drawn as full-width tinted bands, like a code review.
 var (
-	diffAddedStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#BBF7D0")).Background(lipgloss.Color("#12372A"))
-	diffRemovedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FECDD3")).Background(lipgloss.Color("#4A1D27"))
+	diffAddedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#BBF7D0")).Background(lipgloss.Color("#12372A"))
+	diffRemovedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FECDD3")).Background(lipgloss.Color("#4A1D27"))
+	visualSelectedStyle = lipgloss.NewStyle().Foreground(colorBright).Background(lipgloss.Color("#1E3A5F"))
 )
 
 // yamlKey matches the key of a YAML line, including any list marker before it.
@@ -30,6 +31,10 @@ type textView struct {
 	prefixed bool
 	// search keeps only the lines that contain it, ignoring case.
 	search string
+	// visual marks whether line selection mode is active.
+	visual bool
+	cursor int
+	anchor int
 }
 
 func newTextView(kind, subject, text string) textView {
@@ -47,6 +52,10 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.stopFollowing()
 		return m, tea.Quit
 	case "esc":
+		if m.viewer.visual {
+			m.viewer.visual = false
+			return m, nil
+		}
 		if m.viewer.search != "" {
 			m.applySearch("")
 			return m, nil
@@ -56,8 +65,19 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.viewerFromList {
 			m.view = listView
 		}
+	case "v":
+		if len(m.viewer.shown()) > 0 {
+			m.stopFollowing()
+			m.viewer.visual = !m.viewer.visual
+			if m.viewer.visual {
+				m.viewer.cursor = min(m.viewer.offset, len(m.viewer.shown())-1)
+				m.viewer.anchor = m.viewer.cursor
+			}
+		}
+		return m, nil
 	case "/":
 		if m.viewer.kind == "logs" || m.viewer.kind == "events" {
+			m.viewer.visual = false
 			m.prompt = prompt{active: true, search: true, input: m.viewer.search}
 			return m, nil
 		}
@@ -71,17 +91,51 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.viewer.kind == "logs" {
 			return m.chooseContainer()
 		}
+	case "y", "Y":
+		m.yank()
+	case "o":
+		m.openApplicationInBrowser()
 	case "down", "j":
-		m.viewer.offset++
+		if m.viewer.visual {
+			m.viewer.cursor = min(len(m.viewer.shown())-1, m.viewer.cursor+1)
+			if m.viewer.cursor >= m.viewer.offset+m.bodyHeight() {
+				m.viewer.offset = m.viewer.cursor - m.bodyHeight() + 1
+			}
+		} else {
+			m.viewer.offset++
+		}
 	case "up", "k":
-		m.viewer.offset--
+		if m.viewer.visual {
+			m.viewer.cursor = max(0, m.viewer.cursor-1)
+			if m.viewer.cursor < m.viewer.offset {
+				m.viewer.offset = m.viewer.cursor
+			}
+		} else {
+			m.viewer.offset--
+		}
 	case "pgdown", " ", "ctrl+d":
-		m.viewer.offset += m.bodyHeight()
+		if m.viewer.visual {
+			m.viewer.cursor = min(len(m.viewer.shown())-1, m.viewer.cursor+m.bodyHeight())
+			m.viewer.offset = min(last, m.viewer.offset+m.bodyHeight())
+		} else {
+			m.viewer.offset += m.bodyHeight()
+		}
 	case "pgup", "ctrl+u":
-		m.viewer.offset -= m.bodyHeight()
+		if m.viewer.visual {
+			m.viewer.cursor = max(0, m.viewer.cursor-m.bodyHeight())
+			m.viewer.offset = max(0, m.viewer.offset-m.bodyHeight())
+		} else {
+			m.viewer.offset -= m.bodyHeight()
+		}
 	case "g", "home":
+		if m.viewer.visual {
+			m.viewer.cursor = 0
+		}
 		m.viewer.offset = 0
 	case "G", "end":
+		if m.viewer.visual {
+			m.viewer.cursor = max(0, len(m.viewer.shown())-1)
+		}
 		m.viewer.offset = last
 	}
 	m.viewer.offset = min(max(0, m.viewer.offset), last)
@@ -111,8 +165,15 @@ func (v textView) render(width, height int) []string {
 	start := min(v.offset, max(0, len(shown)-height))
 	end := min(len(shown), start+height)
 	lines := make([]string, 0, end-start)
-	for _, line := range shown[start:end] {
-		lines = append(lines, v.highlight(line, width))
+	for i, line := range shown[start:end] {
+		idx := start + i
+		rendered := v.highlight(line, width)
+		if v.visual && idx >= min(v.anchor, v.cursor) && idx <= max(v.anchor, v.cursor) {
+			inner := max(0, width-2)
+			band := padRight(ansi.Truncate(line, inner, "…"), inner)
+			rendered = accentStyle.Render("▌") + " " + visualSelectedStyle.Render(band)
+		}
+		lines = append(lines, rendered)
 	}
 	return lines
 }

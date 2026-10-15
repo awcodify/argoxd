@@ -86,5 +86,62 @@ Sleep 2s
 Enter
 Sleep 2.5s
 
+# Inspect the Application itself, its aggregate drift, and the denied sync window.
+Type ":app store"
+Enter
+Sleep 1.5s
+Type "Y"
+Sleep 3s
+Escape
+Sleep 500ms
+Type "d"
+Sleep 3s
+Escape
+Sleep 500ms
+Type "i"
+Sleep 3s
+Escape
+Sleep 500ms
+
+# A normal refresh is the default; choose hard refresh explicitly in its prompt.
+Type "R"
+Sleep 1s
+Type "h"
+Sleep 1s
+Enter
+Sleep 1.5s
+
+# Select the in-progress search sync, copy its name, then terminate it.
+Down 2
+Sleep 1s
+Type "y"
+Sleep 1s
+Type "T"
+Sleep 1s
+Type "y"
+Sleep 2s
+
+# Inspect the matching AppProject's repositories, roles, and sync-window policy.
+Type ":proj"
+Enter
+Sleep 1.5s
+Type "/store"
+Sleep 1s
+Enter
+Sleep 500ms
+Type "Y"
+Sleep 3s
+Escape
+Sleep 500ms
+
+Type "q"
+Sleep 500ms
+
+# Safe mode makes the same demo data inspect-only.
+Type "argoxd --demo --read-only"
+Enter
+Sleep 2s
+Type "s"
+Sleep 2s
 Type "q"
 Sleep 500ms

@@ -88,3 +88,16 @@ func TestDependencyViewKeepsTheSelectedCardVisibleAboveTheSummary(t *testing.T) 
 		t.Fatalf("selected card scrolled out of view:\n%s", view)
 	}
 }
+
+func TestSyncWindowBlockIsMarkedOnApplications(t *testing.T) {
+	snapshot := storeSnapshot()
+	snapshot.Applications[0].Conditions = []explorer.Condition{{
+		Type: "SyncError", Message: "Sync is blocked by a sync window",
+	}}
+
+	view := New(nil, "test", "argocd", snapshot).View()
+
+	if !strings.Contains(view, "grafana "+conditionGlyph+" "+syncWindowGlyph) {
+		t.Fatalf("sync-window block is not marked:\n%s", view)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,8 +38,10 @@ var (
 
 // KubernetesSource loads Argo CD custom resources from a kubeconfig context.
 type KubernetesSource struct {
-	namespace string
-	clients   func() (kubernetesClients, error)
+	namespace  string
+	kubeconfig string
+	context    string
+	clients    func() (kubernetesClients, error)
 }
 
 // kubernetesClients are created once and shared by every request.
@@ -50,11 +53,36 @@ type kubernetesClients struct {
 // NewKubernetesSource creates a source backed by an Argo CD installation in Kubernetes.
 func NewKubernetesSource(kubeconfig, context, namespace string) *KubernetesSource {
 	return &KubernetesSource{
-		namespace: namespace,
+		namespace:  namespace,
+		kubeconfig: kubeconfig,
+		context:    context,
 		clients: sync.OnceValues(func() (kubernetesClients, error) {
 			return connect(kubeconfig, context)
 		}),
 	}
+}
+
+var _ ContextSwitcher = (*KubernetesSource)(nil)
+
+// Contexts returns the kubeconfig contexts available to switch to.
+func (s *KubernetesSource) Contexts() ([]string, error) {
+	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
+	loadingRules.ExplicitPath = s.kubeconfig
+	config, err := loadingRules.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load kubeconfig contexts: %w", err)
+	}
+	contexts := make([]string, 0, len(config.Contexts))
+	for name := range config.Contexts {
+		contexts = append(contexts, name)
+	}
+	slices.Sort(contexts)
+	return contexts, nil
+}
+
+// WithContext creates a new source that uses context from the same kubeconfig.
+func (s *KubernetesSource) WithContext(context string) Source {
+	return NewKubernetesSource(s.kubeconfig, context, s.namespace)
 }
 
 // Load lists Applications, AppProjects, and cluster secrets.
@@ -208,14 +236,28 @@ func syncOptionsOf(application *unstructured.Unstructured) []any {
 	return options
 }
 
-// RefreshApplication asks Argo CD to compare the Application with Git again,
-// bypassing its manifest cache.
-func (s *KubernetesSource) RefreshApplication(ctx context.Context, application string) error {
+// RefreshApplication asks Argo CD to compare the Application with Git again.
+func (s *KubernetesSource) RefreshApplication(ctx context.Context, application string, hard bool) error {
+	refresh := refreshMode(hard)
 	patch := map[string]any{"metadata": map[string]any{"annotations": map[string]any{
-		"argocd.argoproj.io/refresh": "hard",
+		"argocd.argoproj.io/refresh": refresh,
 	}}}
 	if err := s.patchApplication(ctx, application, patch); err != nil {
 		return fmt.Errorf("refresh application %q: %w", application, err)
+	}
+	return nil
+}
+
+// TerminateOperation asks Argo CD to stop the active operation by moving it to
+// Terminating, the same handshake Argo CD's own terminate uses. The controller
+// then stops the sync and records the final phase.
+func (s *KubernetesSource) TerminateOperation(ctx context.Context, application string) error {
+	patch := map[string]any{"status": map[string]any{"operationState": map[string]any{
+		"phase":   "Terminating",
+		"message": "Operation termination requested by user",
+	}}}
+	if err := s.patchApplication(ctx, application, patch); err != nil {
+		return fmt.Errorf("terminate operation for application %q: %w", application, err)
 	}
 	return nil
 }

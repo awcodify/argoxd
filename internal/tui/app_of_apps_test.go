@@ -176,7 +176,7 @@ func TestSpaceMarksAChildApplicationCardAndSyncSyncsOnlyThatApplication(t *testi
 func TestYOnAChildApplicationCardShowsItsManifest(t *testing.T) {
 	source := appOfAppsSource()
 	source.manifest = "kind: Application\nmetadata:\n  name: payments\n"
-	model := run(press(openRoot(t, source), "j"), "y")
+	model := run(press(openRoot(t, source), "j"), "Y")
 
 	if view := model.View(); !strings.Contains(view, "name: payments") || !strings.Contains(view, "yaml") {
 		t.Fatalf("y did not show the child Application's manifest:\n%s", view)
@@ -193,14 +193,16 @@ func TestEOnAChildApplicationCardShowsItsOwnEvents(t *testing.T) {
 	}
 }
 
-func TestTheOpenApplicationsOwnCardStillCannotBeMarkedOrInspected(t *testing.T) {
-	model := openRoot(t, appOfAppsSource())
+func TestTheOpenApplicationsOwnCardShowsItsApplicationManifest(t *testing.T) {
+	source := appOfAppsSource()
+	source.applicationManifest = "kind: Application\nmetadata:\n  name: platform-root\n"
+	model := openRoot(t, source)
 
 	marked := press(model, " ")
 	if marked.markCount() != 0 || !strings.Contains(marked.View(), "Select a resource card to mark it") {
 		t.Fatalf("the Application's own card should refuse to be marked:\n%s", marked.View())
 	}
-	if view := run(model, "y").View(); !strings.Contains(view, "Select a resource card to inspect it") {
-		t.Fatalf("the Application's own card should refuse to be inspected:\n%s", view)
+	if view := run(model, "Y").View(); !strings.Contains(view, "name: platform-root") {
+		t.Fatalf("the Application's own card should show its manifest:\n%s", view)
 	}
 }

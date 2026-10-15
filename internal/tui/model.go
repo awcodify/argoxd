@@ -3,6 +3,7 @@ package tui
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,13 +27,17 @@ type Model struct {
 	namespace       string
 	requestTimeout  time.Duration
 	refreshInterval time.Duration
+	readOnly        bool
 	loading         bool
-	refreshing      bool
-	err             error
-	width           int
-	height          int
-	view            viewMode
-	tree            []treeItem
+	// sourceGeneration changes whenever the source is swapped, so loads that
+	// started against the old source can be told apart and dropped.
+	sourceGeneration int
+	refreshing       bool
+	err              error
+	width            int
+	height           int
+	view             viewMode
+	tree             []treeItem
 	// origin is the Projects or ApplicationSets list the Applications list was
 	// opened from, which Esc returns to.
 	origin       listOrigin
@@ -60,6 +65,7 @@ type Model struct {
 	logWorkload     explorer.ResourceNode
 	logPod          string
 	logPods         []string
+	contextOptions  []string
 	status          string
 }
 
@@ -103,6 +109,12 @@ func (m Model) WithRefresh(interval time.Duration) Model {
 	return m
 }
 
+// WithReadOnly prevents actions that change Argo CD or live resources.
+func (m Model) WithReadOnly(readOnly bool) Model {
+	m.readOnly = readOnly
+	return m
+}
+
 // Init loads live data when a source is configured.
 func (m Model) Init() tea.Cmd {
 	if m.source == nil {
@@ -122,6 +134,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	case refreshTick:
 		return m.autoRefresh()
 	case loadedSnapshot:
+		if message.generation != m.sourceGeneration {
+			return m, nil
+		}
 		m.loading = false
 		m.refreshing = false
 		m.err = message.err
@@ -200,6 +215,7 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.moveDown()
 	case ":":
 		m.prompt = prompt{active: true}
+		m.contextOptions = m.kubeconfigContexts()
 	case "/":
 		switch m.view {
 		case listView:
@@ -254,7 +270,22 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m.closeTree()
-	case "y", "d", "l":
+	case "Y", "d":
+		if m.view == listView || m.view == applicationTreeView {
+			if m.view == listView && m.explorer.Screen() == explorer.ProjectsScreen {
+				if key == "Y" {
+					return m.inspectProject()
+				}
+				m.status = "Diffs are available for Applications and resource cards"
+				break
+			}
+			return m.inspect(key)
+		}
+	case "y":
+		m.yank()
+	case "o":
+		m.openApplicationInBrowser()
+	case "l":
 		if m.view == applicationTreeView {
 			return m.inspect(key)
 		}
@@ -263,8 +294,14 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		return m.showSyncDetails()
 	case "s":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askApplicationAction(confirmSync)
 	case "x", "X":
+		if m.blockReadOnly() {
+			break
+		}
 		if m.view == applicationTreeView {
 			return m.askResourceAction(key)
 		}
@@ -273,10 +310,24 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openHistory(application)
 		}
 	case "P":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askSyncPolicy()
 	case "R":
-		m = m.askApplicationAction(confirmHardRefresh)
+		if m.blockReadOnly() {
+			break
+		}
+		m = m.askApplicationAction(confirmRefresh)
+	case "T":
+		if m.blockReadOnly() {
+			break
+		}
+		m = m.askTerminateOperation()
 	case "D":
+		if m.blockReadOnly() {
+			break
+		}
 		m = m.askApplicationAction(confirmDeleteApplications)
 	case "r":
 		if m.source != nil && !m.loading {
@@ -286,6 +337,94 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m *Model) yank() {
+	text := m.selectionText()
+	if text == "" {
+		m.status = "Nothing to copy"
+		return
+	}
+	if err := copyToClipboard(text); err != nil {
+		m.err = err
+		return
+	}
+	if m.view == textViewMode {
+		lines := strings.Count(text, "\n") + 1
+		m.viewer.visual = false
+		if lines == 1 {
+			m.status = "Copied 1 line to clipboard"
+		} else {
+			m.status = "Copied " + strconv.Itoa(lines) + " lines to clipboard"
+		}
+		return
+	}
+	if count := strings.Count(text, "\n"); count > 0 {
+		m.status = "Copied " + strconv.Itoa(count+1) + " items to clipboard"
+		return
+	}
+	m.status = "Copied to clipboard"
+}
+
+// resourceLabel names a resource as namespace/Kind/Name, or Kind/Name when cluster scoped.
+func resourceLabel(node explorer.ResourceNode) string {
+	name := node.Kind + "/" + node.Name
+	if node.Namespace != "" {
+		name = node.Namespace + "/" + name
+	}
+	return name
+}
+
+func (m Model) selectionText() string {
+	if m.view == textViewMode {
+		if m.viewer.visual {
+			shown := m.viewer.shown()
+			if len(shown) > 0 {
+				from := min(m.viewer.anchor, m.viewer.cursor)
+				to := min(len(shown), max(m.viewer.anchor, m.viewer.cursor)+1)
+				if from >= 0 && from < to {
+					return strings.Join(shown[from:to], "\n")
+				}
+			}
+		}
+		return strings.Join(m.viewer.shown(), "\n")
+	}
+	if m.view == applicationTreeView && !m.onRootCard() {
+		if marked := m.markedNodes(); len(marked) > 0 {
+			names := make([]string, 0, len(marked))
+			for _, node := range marked {
+				names = append(names, resourceLabel(node))
+			}
+			return strings.Join(names, "\n")
+		}
+		return resourceLabel(m.selectedCard())
+	}
+	if targets := m.applicationTargets(); len(targets) > 0 {
+		return strings.Join(targets, "\n")
+	}
+	return m.selectedApplication()
+}
+
+func (m *Model) openApplicationInBrowser() {
+	application := m.selectedApplication()
+	urler, ok := m.source.(argocd.ApplicationURLer)
+	if !ok || application == "" {
+		m.status = "Opening Applications in a browser needs --source api"
+		return
+	}
+	if err := openInBrowser(urler.ApplicationURL(application)); err != nil {
+		m.err = err
+		return
+	}
+	m.status = "Opened " + application + " in browser"
+}
+
+func (m *Model) blockReadOnly() bool {
+	if !m.readOnly {
+		return false
+	}
+	m.status = "Read-only mode"
+	return true
 }
 
 // openApplicationSetApplications lists the Applications the selected
@@ -528,7 +667,16 @@ func (m *Model) toggleTreeItem() {
 
 func (m Model) selectedApplication() string {
 	switch m.view {
-	case applicationTreeView, textViewMode:
+	case textViewMode:
+		// A viewer opened on the list has no tree, but its subject is the Application.
+		if m.viewerFromList {
+			if m.onApplicationRows() {
+				return m.viewer.subject
+			}
+			return ""
+		}
+		return m.resourceTree.Application
+	case applicationTreeView:
 		return m.resourceTree.Application
 	case inventoryTreeView:
 		if visible := m.visibleTree(); len(visible) > 0 {
