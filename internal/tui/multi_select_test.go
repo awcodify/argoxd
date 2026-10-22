@@ -30,7 +30,7 @@ func TestSpaceMarksApplicationsAndSyncSyncsThemAll(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
 	model := openApplications(t, source)
 
-	model = typeKeys(model, " ", " ")
+	model = typeKeys(model, " ", "j", " ")
 	if view := model.View(); strings.Count(view, "●") < 2 {
 		t.Fatalf("marked applications are not shown:\n%s", view)
 	}
@@ -83,7 +83,7 @@ func TestSyncingSeveralReportsTheOnesThatFailed(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), syncErrors: map[string]error{"checkout": errors.New("denied")}}
 	model := openApplications(t, source)
 
-	model = run(typeKeys(model, " ", " ", "s"), "enter")
+	model = run(typeKeys(model, " ", "j", " ", "s"), "enter")
 
 	view := model.View()
 	if !strings.Contains(view, "1 of 2") || !strings.Contains(view, "checkout") || !strings.Contains(view, "denied") {
@@ -95,7 +95,7 @@ func TestSpaceMarksCardsAndSyncSyncsOnlyThoseResources(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), tree: checkoutTree()}
 	model := openCheckout(t, source)
 
-	model = typeKeys(model, "j", " ", " ")
+	model = typeKeys(model, "j", " ", "j", " ")
 	if view := model.View(); strings.Count(view, "●") < 2 {
 		t.Fatalf("marked cards are not shown:\n%s", view)
 	}

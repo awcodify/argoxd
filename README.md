@@ -94,7 +94,7 @@ Press Enter on an Application to open its dependencies. A summary strip counts r
 
 An Application with `⊘` after its name is currently blocked by an Argo CD sync window. The existing `⚠` remains for its reported condition; open its sync details with `i` for Argo CD's full explanation. On `:proj`, press `Y` to inspect the selected AppProject manifest, including its repositories, destinations, roles, and sync-window policy.
 
-Press Space to mark Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. Marked rows and cards show a `●`; Esc clears the marks.
+Press Space to mark (or unmark) Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. The cursor stays where it is, so move with `j`/`k` between marks. Marked rows and cards show a `●`; Esc clears the marks.
 
 Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there; refresh defaults to normal, and `h` toggles a cache-bypassing hard refresh. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run. `T` terminates the selected Application's running operation after confirmation.
 

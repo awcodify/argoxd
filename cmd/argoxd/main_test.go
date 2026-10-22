@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -134,5 +136,23 @@ func TestShortFlagsMatchTheirLongForms(t *testing.T) {
 	if options.namespace != "gitops" || options.context != "production" || options.server != "https://argocd.example.com" ||
 		options.refresh != 10*time.Second || !options.insecure {
 		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestHelpShowsShortFlagsOnTheRowOfTheirLongForm(t *testing.T) {
+	var buffer bytes.Buffer
+	flags := newFlagSet(&options{namespace: "argocd"})
+	flags.SetOutput(&buffer)
+
+	flags.Usage()
+
+	help := buffer.String()
+	for _, row := range []string{"-n, --namespace string", "-c, --context string", "-s, --server string", "-r, --refresh duration", "-k, --insecure"} {
+		if !strings.Contains(help, row) {
+			t.Errorf("help does not contain %q:\n%s", row, help)
+		}
+	}
+	if strings.Contains(help, "Shorthand for") || strings.Contains(help, "  -n string") {
+		t.Errorf("shorthands are listed on their own rows:\n%s", help)
 	}
 }

@@ -29,7 +29,6 @@ func (m *Model) toggleMark() {
 			m.marked = make(map[string]bool)
 		}
 		flip(m.marked, name)
-		m.explorer.MoveDown()
 	case applicationTreeView:
 		card := m.selectedCard()
 		if m.onRootCard() {
@@ -40,7 +39,6 @@ func (m *Model) toggleMark() {
 			m.markedCards = make(map[explorer.ResourceReference]bool)
 		}
 		flip(m.markedCards, card.Reference())
-		m.moveDown()
 	default:
 		m.toggleTreeItem()
 		return

@@ -7,7 +7,11 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 ### Added
 
 - **Runtime namespaces.** `:ns` opens a namespace picker; `:ns <name>` switches the Argo CD namespace and reloads, without restarting.
-- **Short flags.** `-n` (`--namespace`), `-c` (`--context`), `-s` (`--server`), `-r` (`--refresh`) and `-k` (`--insecure`).
+- **Short flags.** `-n` (`--namespace`), `-c` (`--context`), `-s` (`--server`), `-r` (`--refresh`) and `-k` (`--insecure`). `--help` lists each beside its long form, e.g. `-n, --namespace`.
+
+### Changed
+
+- **Marking with Space.** Space marks or unmarks the selected row or card and stays on it instead of moving down.
 
 ## [0.4.0] - 2026-10-15
 
