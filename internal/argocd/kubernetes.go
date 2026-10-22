@@ -85,6 +85,34 @@ func (s *KubernetesSource) WithContext(context string) Source {
 	return NewKubernetesSource(s.kubeconfig, context, s.namespace)
 }
 
+var _ NamespaceSwitcher = (*KubernetesSource)(nil)
+
+// Namespaces lists the cluster's namespaces. It needs permission to list them.
+func (s *KubernetesSource) Namespaces(ctx context.Context) ([]string, error) {
+	clients, err := s.clients()
+	if err != nil {
+		return nil, err
+	}
+	list, err := clients.typed.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list namespaces: %w", err)
+	}
+	namespaces := make([]string, 0, len(list.Items))
+	for _, namespace := range list.Items {
+		namespaces = append(namespaces, namespace.Name)
+	}
+	slices.Sort(namespaces)
+	return namespaces, nil
+}
+
+// WithNamespace creates a new source that looks for Argo CD in namespace,
+// reusing this source's connection to the cluster.
+func (s *KubernetesSource) WithNamespace(namespace string) Source {
+	switched := *s
+	switched.namespace = namespace
+	return &switched
+}
+
 // Load lists Applications, AppProjects, and cluster secrets.
 func (s *KubernetesSource) Load(ctx context.Context) (explorer.Snapshot, error) {
 	client, err := s.client()

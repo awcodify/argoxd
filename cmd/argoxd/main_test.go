@@ -122,3 +122,17 @@ func TestDemoFlagUsesSampleDataWithoutConnection(t *testing.T) {
 		t.Fatalf("Load() = %d applications, %v; want sample applications", len(snapshot.Applications), err)
 	}
 }
+
+func TestShortFlagsMatchTheirLongForms(t *testing.T) {
+	isolateConfig(t, "")
+
+	options, err := parseOptions([]string{"-n", "gitops", "-c", "production", "-s", "https://argocd.example.com", "-r", "10s", "-k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if options.namespace != "gitops" || options.context != "production" || options.server != "https://argocd.example.com" ||
+		options.refresh != 10*time.Second || !options.insecure {
+		t.Fatalf("options = %+v", options)
+	}
+}

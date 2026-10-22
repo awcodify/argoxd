@@ -41,6 +41,7 @@ This is the default. `argoxd` loads the active kubeconfig context and looks for 
 ```sh
 argoxd
 argoxd --context production --namespace argocd
+argoxd -c production -n argocd
 argoxd --kubeconfig ~/.kube/config --context production
 ```
 
@@ -137,6 +138,10 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 
 With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kubeconfig: type to narrow it, use Tab or arrows to choose one, then Enter reconnects. `:ctx <name>` also reconnects directly. It is unavailable with `--source api`.
 
+`:ns` does the same for the namespace Argo CD is installed in, so you can move between Argo CD instances without restarting. The picker lists the cluster's namespaces when your identity may list them; otherwise it is empty and `:ns <name>` still works.
+
+Short flags: `-n` `--namespace`, `-c` `--context`, `-s` `--server`, `-r` `--refresh`, `-k` `--insecure`.
+
 | Command | Opens |
 | --- | --- |
 | `:app`, `:apps`, `:applications` | Applications, optionally filtered: `:app store`, `:app all` |
@@ -146,6 +151,7 @@ With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kub
 | `:pulse`, `:overview` | Overview of the Applications that need attention |
 | `:settings` | Connection settings |
 | `:ctx`, `:context` | Pick a kubeconfig context and reconnect; `<name>` switches directly |
+| `:ns`, `:namespace` | Pick the namespace Argo CD runs in and reload; `<name>` switches directly |
 | `:q`, `:quit` | Quit |
 
 ## Keys

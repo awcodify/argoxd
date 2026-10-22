@@ -26,6 +26,13 @@ type ContextSwitcher interface {
 	WithContext(context string) Source
 }
 
+// NamespaceSwitcher lists the namespaces of the connected cluster and creates
+// a source that looks for Argo CD in another one.
+type NamespaceSwitcher interface {
+	Namespaces(ctx context.Context) ([]string, error)
+	WithNamespace(namespace string) Source
+}
+
 // ApplicationOperator supports interactive application operations.
 type ApplicationOperator interface {
 	LoadResourceTree(ctx context.Context, application string) (explorer.ResourceTree, error)

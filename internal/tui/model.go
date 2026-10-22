@@ -44,29 +44,30 @@ type Model struct {
 	resourceTree explorer.ResourceTree
 	// parents are the Applications whose dependency views are left open while a
 	// child Application is shown, the first one opened first.
-	parents         []treeFrame
-	treeCursor      int
-	treeSearch      string
-	treeFilter      explorer.Filter
-	expanded        map[string]bool
-	viewer          textView
-	viewerFromList  bool
-	marked          map[string]bool
-	markedCards     map[explorer.ResourceReference]bool
-	prompt          prompt
-	confirm         confirmation
-	history         historyList
-	follow          followState
-	logTarget       explorer.ResourceNode
-	logContainers   argocd.Containers
-	containersKnown bool
-	logContainer    string
-	logSeen         string
-	logWorkload     explorer.ResourceNode
-	logPod          string
-	logPods         []string
-	contextOptions  []string
-	status          string
+	parents          []treeFrame
+	treeCursor       int
+	treeSearch       string
+	treeFilter       explorer.Filter
+	expanded         map[string]bool
+	viewer           textView
+	viewerFromList   bool
+	marked           map[string]bool
+	markedCards      map[explorer.ResourceReference]bool
+	prompt           prompt
+	confirm          confirmation
+	history          historyList
+	follow           followState
+	logTarget        explorer.ResourceNode
+	logContainers    argocd.Containers
+	containersKnown  bool
+	logContainer     string
+	logSeen          string
+	logWorkload      explorer.ResourceNode
+	logPod           string
+	logPods          []string
+	contextOptions   []string
+	namespaceOptions []string
+	status           string
 }
 
 type viewMode int

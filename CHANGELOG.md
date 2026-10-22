@@ -2,6 +2,13 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Runtime namespaces.** `:ns` opens a namespace picker; `:ns <name>` switches the Argo CD namespace and reloads, without restarting.
+- **Short flags.** `-n` (`--namespace`), `-c` (`--context`), `-s` (`--server`), `-r` (`--refresh`) and `-k` (`--insecure`).
+
 ## [0.4.0] - 2026-10-15
 
 ### Added
