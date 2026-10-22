@@ -20,6 +20,8 @@ go install github.com/awcodify/argoxd/cmd/argoxd@latest
 
 Prebuilt binaries for Linux, macOS and Windows are attached to each [GitHub release](https://github.com/awcodify/argoxd/releases).
 
+`argoxd --version` prints the installed version.
+
 For local development:
 
 ```sh

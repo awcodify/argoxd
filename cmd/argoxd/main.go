@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/awcodify/argoxd/internal/argocd"
@@ -26,12 +27,18 @@ type options struct {
 	refresh    time.Duration
 	readOnly   bool
 	demo       bool
+	version    bool
 }
 
 func main() {
 	options, err := parseOptions(os.Args[1:])
 	if err != nil {
 		log.Fatal(err)
+	}
+	if options.version {
+		info, _ := debug.ReadBuildInfo()
+		fmt.Println(versionString(version, info))
+		return
 	}
 	source, err := buildSource(options)
 	if err != nil {
@@ -94,6 +101,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.DurationVar(&options.refresh, "r", options.refresh, "Shorthand for --refresh")
 	flags.BoolVar(&options.readOnly, "read-only", options.readOnly, "Disable actions that change Argo CD or live resources")
 	flags.BoolVar(&options.demo, "demo", false, "Show built-in sample data instead of connecting to Argo CD")
+	flags.BoolVar(&options.version, "version", false, "Print the argoxd version and exit")
 	flags.Usage = func() { printUsage(flags) }
 	return flags
 }

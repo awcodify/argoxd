@@ -8,6 +8,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 - **Runtime namespaces.** `:ns` opens a namespace picker; `:ns <name>` switches the Argo CD namespace and reloads, without restarting.
 - **Short flags.** `-n` (`--namespace`), `-c` (`--context`), `-s` (`--server`), `-r` (`--refresh`) and `-k` (`--insecure`). `--help` lists each beside its long form, e.g. `-n, --namespace`.
+- **Version.** `--version` prints the argoxd version and exits.
 
 ### Changed
 
