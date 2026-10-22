@@ -44,7 +44,7 @@ func markCards(model Model, positions ...int) Model {
 
 func TestTheSyncDialogListsEveryApplicationItWillSync(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot()}
-	model := typeKeys(openApplications(t, source), " ", " ", "s")
+	model := typeKeys(openApplications(t, source), " ", "j", " ", "s")
 
 	view := model.View()
 
@@ -123,7 +123,7 @@ func TestMarkedApplicationsAreRefreshedAndDeletedTogether(t *testing.T) {
 		{"D", "Delete 2 applications and their managed resources?", func(s *fakeSource) []string { return s.deletedApps }},
 	} {
 		source := &fakeSource{snapshot: storeSnapshot()}
-		model := press(typeKeys(openApplications(t, source), " ", " "), test.key)
+		model := press(typeKeys(openApplications(t, source), " ", "j", " "), test.key)
 
 		if view := model.View(); !strings.Contains(view, test.question) || !strings.Contains(view, "• grafana") || !strings.Contains(view, "• checkout") {
 			t.Fatalf("%s: the dialog is wrong:\n%s", test.key, view)
@@ -197,7 +197,7 @@ func TestMarkedCardsThatCannotTakeTheActionAreNamedAndNothingRuns(t *testing.T) 
 
 func TestAFailureInTheMiddleIsReportedAndTheRestStillRun(t *testing.T) {
 	source := &fakeSource{snapshot: storeSnapshot(), failures: map[string]error{"checkout": errors.New("denied")}}
-	model := run(press(typeKeys(openApplications(t, source), " ", " "), "D"), "y")
+	model := run(press(typeKeys(openApplications(t, source), " ", "j", " "), "D"), "y")
 
 	view := model.View()
 	if len(source.deletedApps) != 2 || !strings.Contains(view, "1 of 2") || !strings.Contains(view, "checkout: denied") {
@@ -214,7 +214,7 @@ func TestLongTargetListsAreCutShort(t *testing.T) {
 	source := &fakeSource{snapshot: snapshot}
 	model := openApplications(t, source)
 	for range names {
-		model = press(model, " ")
+		model = press(press(model, " "), "j")
 	}
 
 	view := press(model, "s").View()

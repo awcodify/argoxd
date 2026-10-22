@@ -110,6 +110,7 @@ func TestYankCopiesMarkedApplications(t *testing.T) {
 
 	// Mark first two applications with space
 	list = press(list, " ")
+	list = press(list, "j")
 	list = press(list, " ")
 
 	list = press(list, "y")

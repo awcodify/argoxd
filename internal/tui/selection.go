@@ -17,7 +17,7 @@ var errNoResourceSync = fmt.Errorf("the active source cannot sync individual res
 const markGlyph = "●"
 
 // toggleMark marks or unmarks the selected Application, or the selected card
-// in the dependency view, and moves on to the next one.
+// in the dependency view, keeping the cursor on it.
 func (m *Model) toggleMark() {
 	switch m.view {
 	case listView:
@@ -29,7 +29,6 @@ func (m *Model) toggleMark() {
 			m.marked = make(map[string]bool)
 		}
 		flip(m.marked, name)
-		m.explorer.MoveDown()
 	case applicationTreeView:
 		card := m.selectedCard()
 		if m.onRootCard() {
@@ -40,7 +39,6 @@ func (m *Model) toggleMark() {
 			m.markedCards = make(map[explorer.ResourceReference]bool)
 		}
 		flip(m.markedCards, card.Reference())
-		m.moveDown()
 	default:
 		m.toggleTreeItem()
 		return

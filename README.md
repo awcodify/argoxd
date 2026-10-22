@@ -20,6 +20,8 @@ go install github.com/awcodify/argoxd/cmd/argoxd@latest
 
 Prebuilt binaries for Linux, macOS and Windows are attached to each [GitHub release](https://github.com/awcodify/argoxd/releases).
 
+`argoxd --version` prints the installed version.
+
 For local development:
 
 ```sh
@@ -41,6 +43,7 @@ This is the default. `argoxd` loads the active kubeconfig context and looks for 
 ```sh
 argoxd
 argoxd --context production --namespace argocd
+argoxd -c production -n argocd
 argoxd --kubeconfig ~/.kube/config --context production
 ```
 
@@ -93,7 +96,7 @@ Press Enter on an Application to open its dependencies. A summary strip counts r
 
 An Application with `⊘` after its name is currently blocked by an Argo CD sync window. The existing `⚠` remains for its reported condition; open its sync details with `i` for Argo CD's full explanation. On `:proj`, press `Y` to inspect the selected AppProject manifest, including its repositories, destinations, roles, and sync-window policy.
 
-Press Space to mark Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. Marked rows and cards show a `●`; Esc clears the marks.
+Press Space to mark (or unmark) Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. The cursor stays where it is, so move with `j`/`k` between marks. Marked rows and cards show a `●`; Esc clears the marks.
 
 Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there; refresh defaults to normal, and `h` toggles a cache-bypassing hard refresh. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run. `T` terminates the selected Application's running operation after confirmation.
 
@@ -137,6 +140,10 @@ Press `:` to open the command bar. Matching commands are suggested as you type: 
 
 With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kubeconfig: type to narrow it, use Tab or arrows to choose one, then Enter reconnects. `:ctx <name>` also reconnects directly. It is unavailable with `--source api`.
 
+`:ns` does the same for the namespace Argo CD is installed in, so you can move between Argo CD instances without restarting. The picker lists the cluster's namespaces when your identity may list them; otherwise it is empty and `:ns <name>` still works.
+
+Short flags: `-n` `--namespace`, `-c` `--context`, `-s` `--server`, `-r` `--refresh`, `-k` `--insecure`.
+
 | Command | Opens |
 | --- | --- |
 | `:app`, `:apps`, `:applications` | Applications, optionally filtered: `:app store`, `:app all` |
@@ -146,6 +153,7 @@ With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kub
 | `:pulse`, `:overview` | Overview of the Applications that need attention |
 | `:settings` | Connection settings |
 | `:ctx`, `:context` | Pick a kubeconfig context and reconnect; `<name>` switches directly |
+| `:ns`, `:namespace` | Pick the namespace Argo CD runs in and reload; `<name>` switches directly |
 | `:q`, `:quit` | Quit |
 
 ## Keys
@@ -162,7 +170,7 @@ With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kub
 | `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
-| Space | Mark or unmark the selected Application, or the selected resource card, and move to the next; `s`, `R`, `D`, `x`, `X` and `y` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
+| Space | Mark or unmark the selected Application, or the selected resource card, keeping the cursor on it; `s`, `R`, `D`, `x`, `X` and `y` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
 | `v` | In a YAML, diff, events or log view, start line selection; `j`/`k` expand the range and `y`/`Y` yanks it; Esc cancels |
 | `y` / `Y` / `d` / `l` | Yank the selected item or viewer text (in a viewer, either `y` or `Y` yanks); show the selected Application's YAML or concatenated drift diff; or show the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
 | `o` | Open the selected Application in the Argo CD web UI (`--source api` only) |

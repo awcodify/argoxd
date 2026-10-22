@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -120,5 +122,37 @@ func TestDemoFlagUsesSampleDataWithoutConnection(t *testing.T) {
 	snapshot, err := source.Load(context.Background())
 	if err != nil || len(snapshot.Applications) == 0 {
 		t.Fatalf("Load() = %d applications, %v; want sample applications", len(snapshot.Applications), err)
+	}
+}
+
+func TestShortFlagsMatchTheirLongForms(t *testing.T) {
+	isolateConfig(t, "")
+
+	options, err := parseOptions([]string{"-n", "gitops", "-c", "production", "-s", "https://argocd.example.com", "-r", "10s", "-k"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if options.namespace != "gitops" || options.context != "production" || options.server != "https://argocd.example.com" ||
+		options.refresh != 10*time.Second || !options.insecure {
+		t.Fatalf("options = %+v", options)
+	}
+}
+
+func TestHelpShowsShortFlagsOnTheRowOfTheirLongForm(t *testing.T) {
+	var buffer bytes.Buffer
+	flags := newFlagSet(&options{namespace: "argocd"})
+	flags.SetOutput(&buffer)
+
+	flags.Usage()
+
+	help := buffer.String()
+	for _, row := range []string{"-n, --namespace string", "-c, --context string", "-s, --server string", "-r, --refresh duration", "-k, --insecure"} {
+		if !strings.Contains(help, row) {
+			t.Errorf("help does not contain %q:\n%s", row, help)
+		}
+	}
+	if strings.Contains(help, "Shorthand for") || strings.Contains(help, "  -n string") {
+		t.Errorf("shorthands are listed on their own rows:\n%s", help)
 	}
 }

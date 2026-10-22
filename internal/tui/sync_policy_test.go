@@ -118,7 +118,7 @@ func TestEscCancelsTheSyncPolicyDialog(t *testing.T) {
 
 func TestPAppliesToEveryMarkedApplication(t *testing.T) {
 	source := &fakeSource{snapshot: policySnapshot()}
-	model := typeKeys(openApplications(t, source), " ", " ", "P")
+	model := typeKeys(openApplications(t, source), " ", "j", " ", "P")
 
 	view := model.View()
 	if !strings.Contains(view, "Set the sync policy of 2 applications?") || !strings.Contains(view, "• checkout") || !strings.Contains(view, "• grafana") {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -30,7 +31,12 @@ var quitCommands = []string{"q", "quit"}
 
 var contextCommands = []string{"ctx", "context"}
 
-const contextField = "context"
+var namespaceCommands = []string{"ns", "namespace"}
+
+const (
+	contextField   = "context"
+	namespaceField = "namespace"
+)
 
 // filterCommand is a ':' command that sets one filter, e.g. "health degraded".
 // Its shortcut opens the same filter from the keyboard.
@@ -110,6 +116,11 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 				matches = append(matches, command)
 			}
 		}
+		for _, command := range namespaceCommands {
+			if strings.HasPrefix(command, input) {
+				matches = append(matches, command)
+			}
+		}
 		for _, command := range filterCommands {
 			if _, available := filters[command.name]; available && strings.HasPrefix(command.name, input) {
 				matches = append(matches, command.name)
@@ -160,6 +171,9 @@ func (m Model) suggestions() []string {
 	}
 	if m.prompt.field == contextField {
 		return matchOptions(m.prompt.input, m.contextOptions)
+	}
+	if m.prompt.field == namespaceField {
+		return matchOptions(m.prompt.input, m.namespaceOptions)
 	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
@@ -233,6 +247,8 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.showPod(input)
 			case contextField:
 				return m, m.switchContext(input)
+			case namespaceField:
+				return m, m.switchNamespace(input)
 			}
 			m.runFilter(field, input)
 			return m, nil
@@ -337,6 +353,13 @@ func (m *Model) runCommand(input string) tea.Cmd {
 		}
 		return m.switchContext(strings.TrimSpace(project))
 	}
+	if slices.Contains(namespaceCommands, name) {
+		if strings.TrimSpace(project) == "" {
+			m.openNamespacePicker()
+			return nil
+		}
+		return m.switchNamespace(strings.TrimSpace(project))
+	}
 	if filter, found := findFilterCommand(name); found {
 		m.runFilterCommand(filter, strings.TrimSpace(project))
 		return nil
@@ -421,10 +444,58 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.connection = "Kubeconfig context: " + context
 	m.explorer = explorer.NewModel(explorer.Snapshot{})
 	m.closeTree()
+	m.marked = nil
 	m.contextOptions = nil
 	m.loading = true
 	m.err = nil
 	m.status = "Switching to kubeconfig context " + context
+	return m.load()
+}
+
+// clusterNamespaces lists the cluster's namespaces, or an error when the
+// source cannot switch namespaces or the identity may not list them.
+func (m Model) clusterNamespaces(switcher argocd.NamespaceSwitcher) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), m.requestTimeout)
+	defer cancel()
+	return switcher.Namespaces(ctx)
+}
+
+func (m *Model) openNamespacePicker() {
+	switcher, ok := m.source.(argocd.NamespaceSwitcher)
+	if !ok {
+		m.err = fmt.Errorf(":ns is available only with --source kubeconfig")
+		return
+	}
+	// Listing namespaces is a cluster-wide permission; without it the picker
+	// is empty and a typed name still works.
+	m.namespaceOptions, _ = m.clusterNamespaces(switcher)
+	m.prompt = prompt{active: true, field: namespaceField}
+}
+
+func (m *Model) switchNamespace(namespace string) tea.Cmd {
+	switcher, ok := m.source.(argocd.NamespaceSwitcher)
+	if !ok {
+		m.err = fmt.Errorf(":ns is available only with --source kubeconfig")
+		return nil
+	}
+	if namespace == "" {
+		m.err = fmt.Errorf(":ns requires a namespace")
+		return nil
+	}
+	if namespaces, err := m.clusterNamespaces(switcher); err == nil && !slices.Contains(namespaces, namespace) {
+		m.err = fmt.Errorf("namespace %q not found", namespace)
+		return nil
+	}
+	m.source = switcher.WithNamespace(namespace)
+	m.sourceGeneration++
+	m.namespace = namespace
+	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.closeTree()
+	m.marked = nil
+	m.namespaceOptions = nil
+	m.loading = true
+	m.err = nil
+	m.status = "Switching to namespace " + namespace
 	return m.load()
 }
 
