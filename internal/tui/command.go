@@ -444,6 +444,7 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.connection = "Kubeconfig context: " + context
 	m.explorer = explorer.NewModel(explorer.Snapshot{})
 	m.closeTree()
+	m.marked = nil
 	m.contextOptions = nil
 	m.loading = true
 	m.err = nil
@@ -490,6 +491,7 @@ func (m *Model) switchNamespace(namespace string) tea.Cmd {
 	m.namespace = namespace
 	m.explorer = explorer.NewModel(explorer.Snapshot{})
 	m.closeTree()
+	m.marked = nil
 	m.namespaceOptions = nil
 	m.loading = true
 	m.err = nil

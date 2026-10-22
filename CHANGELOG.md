@@ -14,6 +14,10 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 - **Marking with Space.** Space marks or unmarks the selected row or card and stays on it instead of moving down.
 
+### Fixed
+
+- **Marks after `:ctx`.** Switching the kubeconfig context now clears marked Applications. Before, an Application with the same name in the new context stayed marked, so `s`, `R`, `D` or `P` could act on it.
+
 ## [0.4.0] - 2026-10-15
 
 ### Added

@@ -78,3 +78,23 @@ func TestNamespaceCommandNeedsAKubeconfigSource(t *testing.T) {
 		t.Fatalf("namespace = %q, err = %v", model.namespace, model.err)
 	}
 }
+
+func TestSwitchingNamespaceOrContextForgetsMarks(t *testing.T) {
+	model, source := newNamespaceModel()
+	model = press(model, " ")
+	if len(model.marked) != 1 {
+		t.Fatalf("marked = %v, want one marked application", model.marked)
+	}
+
+	model = settle(command(model, ":ns gitops"), source.loadCommand())
+	if len(model.marked) != 0 {
+		t.Fatalf("marks from namespace argocd survived the switch to gitops: %v", model.marked)
+	}
+
+	contexts := &contextSource{fakeSource: &fakeSource{snapshot: storeSnapshot()}, contexts: []string{"production"}}
+	model = press(settle(New(contexts, "Kubeconfig context: development", "argocd", explorer.Snapshot{}), contexts.loadCommand()), " ")
+	model = settle(command(model, ":ctx production"), contexts.loadCommand())
+	if len(model.marked) != 0 {
+		t.Fatalf("marks from context development survived the switch to production: %v", model.marked)
+	}
+}

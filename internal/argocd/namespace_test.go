@@ -37,5 +37,3 @@ func TestKubernetesSourceListsAndSwitchesNamespaces(t *testing.T) {
 		t.Fatalf("WithNamespace changed the original source to %q", source.namespace)
 	}
 }
-
-var _ NamespaceSwitcher = (*KubernetesSource)(nil)

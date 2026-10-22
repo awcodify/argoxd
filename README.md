@@ -170,7 +170,7 @@ Short flags: `-n` `--namespace`, `-c` `--context`, `-s` `--server`, `-r` `--refr
 | `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
 | `t` | Open the inventory tree: Projects → Applications and Clusters |
 | Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
-| Space | Mark or unmark the selected Application, or the selected resource card, and move to the next; `s`, `R`, `D`, `x`, `X` and `y` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
+| Space | Mark or unmark the selected Application, or the selected resource card, keeping the cursor on it; `s`, `R`, `D`, `x`, `X` and `y` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
 | `v` | In a YAML, diff, events or log view, start line selection; `j`/`k` expand the range and `y`/`Y` yanks it; Esc cancels |
 | `y` / `Y` / `d` / `l` | Yank the selected item or viewer text (in a viewer, either `y` or `Y` yanks); show the selected Application's YAML or concatenated drift diff; or show the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
 | `o` | Open the selected Application in the Argo CD web UI (`--source api` only) |
