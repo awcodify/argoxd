@@ -77,7 +77,11 @@
         "@type": "Answer",
         "text": "argoxd supports macOS, Linux, and Windows. Install it with Homebrew on macOS or Linux, with go install, or by downloading a prebuilt binary from GitHub Releases."
       }
-    }
+    },
+    {"@type": "Question", "name": "Is it safe to point argoxd at production?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, with care. Every action shows what it will touch and waits for confirmation, --read-only blocks all of them, and argoxd can only do what your own kubeconfig user or Argo CD token is allowed to do. Nothing is installed in the cluster."}},
+    {"@type": "Question", "name": "What permissions does argoxd need?", "acceptedAnswer": {"@type": "Answer", "text": "To browse, it needs to list Argo CD's Applications, AppProjects and cluster Secrets. Logs, events and workloads need the matching read access, and each action needs its own write permission. The README lists them all and includes a ready-made read-only Role."}},
+    {"@type": "Question", "name": "Does argoxd work with several Argo CD instances?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. :ctx switches the kubeconfig context and :ns switches the namespace Argo CD runs in, both without restarting. Marks are cleared on every switch, so an action never carries over to another instance."}},
+    {"@type": "Question", "name": "Can I use argoxd without access to the cluster?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. With --source api, a server URL and a token, argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI."}}
   ]
 }
 </script>
@@ -269,6 +273,8 @@
   .term-body img { display: block; width: 100%; }
 
   .demo { padding-top: 8px; }
+  .section-gap { margin: 28px 0 20px; }
+  .section-sub code { font-family: var(--mono); color: var(--sky); }
 
   /* features */
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -311,6 +317,7 @@
     padding: 2px 7px;
   }
   td .muted { color: var(--fg-dim); }
+  td code { font-family: var(--mono); color: var(--sky); font-size: 13px; }
 
   .faq-list { display: grid; gap: 16px; }
   .faq-item {
@@ -362,7 +369,7 @@
   <p class="wordmark-tag">Argo CD, from the terminal</p>
 
   <div class="infoline"><span class="k">Kind</span><span class="v">k9s-style TUI for Argo CD</span></div>
-  <div class="infoline"><span class="k">Version</span><span class="v"><a href="https://github.com/awcodify/argoxd/releases">0.4.1</a></span></div>
+  <div class="infoline"><span class="k">Version</span><span class="v"><a id="version" href="https://github.com/awcodify/argoxd/releases">latest</a></span></div>
   <div class="infoline"><span class="k">License</span><span class="v"><a href="https://github.com/awcodify/argoxd/blob/main/LICENSE">MIT</a></span></div>
 
   <span class="star-btn"><a class="label" href="https://github.com/awcodify/argoxd" title="Star argoxd on GitHub"><svg class="gh" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg><span class="star-glyph">★</span> Star</a><a class="count" id="star-count" href="https://github.com/awcodify/argoxd/stargazers" style="display:none"></a></span>
@@ -372,6 +379,7 @@
     <a href="#features">features</a>
     <a href="#install">install</a>
     <a href="#keys">keys</a>
+    <a href="#safety">safety</a>
     <a href="#faq">FAQ</a>
     <a href="https://github.com/awcodify/argoxd">github <span class="ext">↗</span></a>
   </nav>
@@ -412,15 +420,15 @@
 
     <section id="features">
       <h2 class="frame-title"><span class="diamond">◆</span> features</h2>
-      <p class="section-sub">Everything Argo CD does, at k9s speed.</p>
+      <p class="section-sub">Day-to-day Argo CD, at k9s speed.</p>
       <div class="grid">
         <div class="card">
           <h3><span class="icon">◆</span>k9s-style navigation</h3>
-          <p>List Applications, ApplicationSets, AppProjects and Clusters. Press <code>Enter</code> to drill into an Application's resources, <code>Esc</code> to go back. Command bar with <code>:</code>, search with <code>/</code>.</p>
+          <p>List Applications, AppProjects and Clusters. Press <code>Enter</code> to drill into an Application's resources, <code>Esc</code> to go back. Command bar with <code>:</code>, search with <code>/</code>.</p>
         </div>
         <div class="card">
-          <h3><span class="icon">⎈</span>kubeconfig or API</h3>
-          <p>Connect through the Kubernetes API with your active kubeconfig context (switch anytime with <code>:ctx</code>), or talk to the Argo CD API directly with <code>--source api</code> and a token.</p>
+          <h3><span class="icon">⎈</span>Every cluster, every instance</h3>
+          <p>Connect with your kubeconfig, or to the Argo CD API with <code>--source api</code> and a token. Hop between clusters with <code>:ctx</code> and between Argo CD instances with <code>:ns</code>, without restarting.</p>
         </div>
         <div class="card">
           <h3><span class="icon">▣</span>Resource cards</h3>
@@ -428,7 +436,15 @@
         </div>
         <div class="card">
           <h3><span class="icon">●</span>Safe bulk actions</h3>
-          <p>Mark rows with <code>Space</code>, then sync, refresh, restart or delete them together. Every action shows exactly what it will touch and waits for confirmation first.</p>
+          <p>Mark rows with <code>Space</code>, then sync, refresh, restart or delete them together. Every action shows exactly what it will touch and waits for confirmation first. Run with <code>--read-only</code> to block them all.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">≡</span>Logs that follow</h3>
+          <p><code>l</code> on a Deployment, StatefulSet or Job streams all its Pods at once, each line tagged with its Pod. Follow with <code>f</code>, switch container with <code>c</code> or Pod with <code>p</code>, filter with <code>/</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">⑂</span>App of apps &amp; ApplicationSets</h3>
+          <p>Enter on a child Application opens it, Esc returns to the parent, breadcrumbs show the path. <code>:appset</code> lists ApplicationSets with their generators and problems, and Enter shows what each generated.</p>
         </div>
         <div class="card">
           <h3><span class="icon">◐</span>Pulse overview</h3>
@@ -472,15 +488,39 @@
           <tr><td class="keys"><span class="keycap">Space</span></td><td>Mark Applications or resource cards; bulk actions apply to everything marked</td></tr>
           <tr><td class="keys"><span class="keycap">y</span> <span class="keycap">v</span></td><td>Yank item name or open viewer text · visual line selection</td></tr>
           <tr><td class="keys"><span class="keycap">Y</span> <span class="keycap">d</span> <span class="keycap">l</span> <span class="keycap">e</span></td><td>YAML manifest · diff · logs · events of the selected card or app</td></tr>
-          <tr><td class="keys"><span class="keycap">s</span> <span class="keycap">R</span> <span class="keycap">D</span> <span class="keycap">T</span></td><td>Sync · hard refresh · delete · terminate operation <span class="muted">(always asks first)</span></td></tr>
+          <tr><td class="keys"><span class="keycap">s</span> <span class="keycap">R</span> <span class="keycap">D</span> <span class="keycap">T</span></td><td>Sync · refresh · delete · terminate operation <span class="muted">(always asks first)</span></td></tr>
           <tr><td class="keys"><span class="keycap">o</span></td><td>Open selected Application in the Argo CD web UI <span class="muted">(--source api)</span></td></tr>
           <tr><td class="keys"><span class="keycap">x</span> <span class="keycap">X</span></td><td>Rolling-restart a workload · delete a Pod</td></tr>
           <tr><td class="keys"><span class="keycap">h</span> <span class="keycap">i</span> <span class="keycap">P</span></td><td>Deployment history &amp; rollback · sync details · sync policy</td></tr>
           <tr><td class="keys"><span class="keycap">H</span> <span class="keycap">S</span> <span class="keycap">K</span></td><td>Filter by health · sync status · resource kind, with suggestions</td></tr>
-          <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar (e.g. <code>:ctx</code> to switch context) · search as you type</td></tr>
+          <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar (e.g. <code>:ctx</code>, <code>:ns</code> to switch context or namespace) · search as you type</td></tr>
           <tr><td class="keys"><span class="keycap">Esc</span></td><td>Back, or clear search and filters</td></tr>
         </table>
       </div>
+    </section>
+
+    <section id="safety">
+      <h2 class="frame-title"><span class="diamond">◆</span> safe on production</h2>
+      <p class="section-sub">argoxd can sync and delete, so it is built to make that hard to do by accident.</p>
+      <div class="grid">
+        <div class="card">
+          <h3><span class="icon">?</span>Every action asks</h3>
+          <p>Sync, refresh, rollback, terminate, restart and delete show the exact Applications or resources they will touch, and wait for <code>Enter</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">⊘</span>Read-only mode</h3>
+          <p><code>--read-only</code> or <code>readOnly: true</code> blocks every action that changes something, and the header shows <code>[READ-ONLY]</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">⎈</span>Your own identity</h3>
+          <p>argoxd acts as your kubeconfig user or Argo CD token. It cannot do anything your RBAC does not already allow.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">○</span>No agent, no install</h3>
+          <p>Nothing runs in the cluster. It is a single binary that talks to the Kubernetes or Argo CD API you already use.</p>
+        </div>
+      </div>
+      <p class="section-sub section-gap">Need a read-only identity for your team? The <a href="https://github.com/awcodify/argoxd#permissions">README</a> has a ready-made Role and the full permission list.</p>
     </section>
 
     <section id="faq" aria-labelledby="faq-title">
@@ -501,6 +541,22 @@
         <article class="faq-item">
           <h3>Which operating systems support argoxd?</h3>
           <p>argoxd supports macOS, Linux, and Windows. Install with Homebrew on macOS or Linux, with <code>go install</code>, or by downloading a prebuilt binary from GitHub Releases.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Is it safe to point argoxd at production?</h3>
+          <p>Yes, with care. Every action shows what it will touch and waits for confirmation, <code>--read-only</code> blocks all of them, and argoxd can only do what your own kubeconfig user or Argo CD token is allowed to do. Nothing is installed in the cluster.</p>
+        </article>
+        <article class="faq-item">
+          <h3>What permissions does argoxd need?</h3>
+          <p>To browse, it needs to list Argo CD's Applications, AppProjects and cluster Secrets. Logs, events and workloads need the matching read access, and each action needs its own write permission. The README lists them all and includes a ready-made read-only Role.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Does argoxd work with several Argo CD instances?</h3>
+          <p>Yes. <code>:ctx</code> switches the kubeconfig context and <code>:ns</code> switches the namespace Argo CD runs in, both without restarting. Marks are cleared on every switch, so an action never carries over to another instance.</p>
+        </article>
+        <article class="faq-item">
+          <h3>Can I use argoxd without access to the cluster?</h3>
+          <p>Yes. With <code>--source api</code>, a server URL and a token, argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI.</p>
         </article>
       </div>
     </section>
@@ -528,6 +584,16 @@
       el.style.display = '';
     })
     .catch(function () { /* the ★ Star segment keeps working on its own */ });
+  // the version in the pane follows the latest release; "latest" is the fallback,
+  // so a release never needs a manual edit here
+  fetch('https://api.github.com/repos/awcodify/argoxd/releases/latest')
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(); })
+    .then(function (release) {
+      var el = document.getElementById('version');
+      el.textContent = release.tag_name.replace(/^v/, '');
+      el.href = release.html_url;
+    })
+    .catch(function () { /* keep the version written in the page */ });
 </script>
 
 </body>

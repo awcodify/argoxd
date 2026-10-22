@@ -1,79 +1,36 @@
 # argoxd
 
-`argoxd` is an interactive terminal user interface for Argo CD. It focuses on the GitOps lifecycle: Applications, drift, sync operations, and Argo CD workflows from either the Kubernetes API or the Argo CD API. It intentionally does not provide Kubernetes-generic pod exec, port-forwarding, or live-manifest editing.
+A terminal UI for Argo CD: browse Applications, spot drift, and sync, refresh or roll back without leaving the terminal. It reads from the Kubernetes API or the Argo CD API.
+
+argoxd sticks to the GitOps lifecycle. It does not exec into Pods, port-forward, or edit live manifests.
 
 ![argoxd demo](demo/demo.gif)
 
 ## Install
 
-With Homebrew (macOS and Linux):
-
 ```sh
-brew install awcodify/tap/argoxd
+brew install awcodify/tap/argoxd                          # macOS and Linux
+go install github.com/awcodify/argoxd/cmd/argoxd@latest   # with Go
 ```
 
-With Go:
+Prebuilt binaries for Linux, macOS and Windows are on the [releases page](https://github.com/awcodify/argoxd/releases). `argoxd --version` prints the installed version.
+
+## Quick start
 
 ```sh
-go install github.com/awcodify/argoxd/cmd/argoxd@latest
+argoxd --demo                     # sample data, no cluster needed
+argoxd                            # current kubeconfig context, Argo CD in "argocd"
+argoxd -c production -n argocd    # another context and namespace
+argoxd --source api -s https://argocd.example.com --auth-token "$TOKEN"
 ```
 
-Prebuilt binaries for Linux, macOS and Windows are attached to each [GitHub release](https://github.com/awcodify/argoxd/releases).
+With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags. Use `-k` (`--insecure`) only for a development instance with an untrusted certificate.
 
-`argoxd --version` prints the installed version.
-
-For local development:
-
-```sh
-go run ./cmd/argoxd
-```
-
-## Try it without Argo CD
-
-```sh
-argoxd --demo
-```
-
-`--demo` shows built-in sample Applications, resources, YAML, diffs and logs, and needs no cluster or credentials. Its `cart` Application shows a denied sync window and drift for inspecting, while `search` has a running operation for trying termination. Use `:proj` and `Y` on `store` to inspect an AppProject with repositories, destinations, roles, and its named sync-window policy. Sync, refresh, terminate, and delete change the sample data in memory only.
-
-## Connect with kubeconfig
-
-This is the default. `argoxd` loads the active kubeconfig context and looks for Argo CD in the `argocd` namespace.
-
-```sh
-argoxd
-argoxd --context production --namespace argocd
-argoxd -c production -n argocd
-argoxd --kubeconfig ~/.kube/config --context production
-```
-
-The selected identity must be allowed to list `applications.argoproj.io`, `appprojects.argoproj.io`, and Argo CD cluster Secrets. To show the ReplicaSets, Jobs and Pods behind each workload, it also needs to list those in the Application's destination namespaces; kinds it cannot list are left out. Viewing a Pod's logs needs `pods/log`, and viewing events needs `list` on `events` in the namespaces involved (and in the Argo CD namespace for an Application's own events). Restarting a workload needs `patch` on it and deleting a Pod needs `delete` on `pods`. Terminating an Application operation with `--source kubeconfig` needs `patch` on `applications.argoproj.io`. With `--source api`, the token needs Argo CD's `action/…/restart` and resource delete permissions.
-
-ApplicationSets are optional. With `list` on `applicationsets.argoproj.io` (or access to `/api/v1/applicationsets` with `--source api`) they appear under `:appset`; without it, or on an Argo CD that has none, they are left out and everything else still loads. Changing an Application's sync policy (`P`) needs `patch` on `applications.argoproj.io`, or permission to update Applications with `--source api`.
-
-Resources reload every 5 seconds. Change this with `--refresh 30s`, or turn it off with `--refresh 0`. Requests that take longer than 15 seconds are abandoned and reported as errors.
-
-## Connect to the Argo CD API
-
-```sh
-ARGOCD_SERVER=https://argocd.example.com \
-ARGOCD_AUTH_TOKEN="$TOKEN" \
-argoxd --source api
-```
-
-Or provide the values directly:
-
-```sh
-argoxd --source api --server https://argocd.example.com --auth-token "$TOKEN"
-```
-
-Use `--insecure` only when connecting to a development instance with an untrusted TLS certificate.
-
-With `--source api`, press `o` on an Application to open it in the Argo CD web UI. Browser opening is intentionally unavailable with `--source kubeconfig`, where argoxd does not infer a server URL from cluster resources.
+In the demo, `cart` is blocked by a sync window and has drift, `search` has a running operation to terminate, and `:proj` → `Y` on `store` shows a full AppProject. Actions change the sample data in memory only.
 
 ## Configuration
 
-Defaults can be kept in `~/.config/argoxd/config.yaml` (or `$XDG_CONFIG_HOME/argoxd/config.yaml`; set `ARGOXD_CONFIG` to use another path). Every key is optional:
+Defaults go in `~/.config/argoxd/config.yaml` (or `$XDG_CONFIG_HOME/argoxd/config.yaml`, or the path in `ARGOXD_CONFIG`). Every key is optional:
 
 ```yaml
 source: kubeconfig   # kubeconfig or api
@@ -83,126 +40,190 @@ kubeconfig: ~/.kube/config
 server: https://argocd.example.com   # for source: api
 insecure: false
 refresh: 5s          # 0s turns auto-refresh off
-readOnly: false      # disable sync, refresh, termination, and resource actions
+readOnly: false      # block every action that changes something
 ```
 
-Settings are resolved in this order, later ones winning: built-in defaults, the config file, the `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` environment variables, then command-line flags. The API token is not read from the config file; keep it in `ARGOCD_AUTH_TOKEN`. Unknown keys and invalid durations are reported as errors at startup.
+Flags beat environment variables, which beat the config file. The API token is never read from the file; use `ARGOCD_AUTH_TOKEN`. Unknown keys and bad durations fail at startup.
 
-## Layout
+| Flag | Short | Default |
+| --- | --- | --- |
+| `--source` | | `kubeconfig` |
+| `--context` | `-c` | current context |
+| `--namespace` | `-n` | `argocd` |
+| `--kubeconfig` | | default loading rules |
+| `--server` | `-s` | `$ARGOCD_SERVER` |
+| `--auth-token` | | `$ARGOCD_AUTH_TOKEN` |
+| `--insecure` | `-k` | `false` |
+| `--refresh` | `-r` | `5s` |
+| `--read-only` | | `false` |
+| `--demo` | | `false` |
+| `--version` | | |
 
-The header shows the connection, the project shortcuts and the key hints. Below it is the active resource list in a titled frame such as `◆ applications · store · 3`, then breadcrumbs and a status line. Status columns use Argo CD's colors and glyphs: `♥ Healthy`, `✓ Synced`, `◐ Progressing`, `⟳ OutOfSync`, `✗ Degraded`.
+## Features
 
-Press Enter on an Application to open its dependencies. A summary strip counts resources by status. The Application and its resources are shown as cards nested under their owners (Deployment → ReplicaSet → Pod), and a details pane describes the selected card. Press `/` to search the cards by `kind/name` (e.g. `pod`, `web`, `deploy/web`): matching cards stay with the cards on their path, which are dimmed for context. Press `Y` on an Application row or its root card to view its Application custom resource. Press `d` there for the concatenated diff of its drifted resources (needs `--source api`). From a resource card you can open its live YAML (`Y`), its diff against the desired state (`d`, needs `--source api`), a Pod's recent logs (`l`), or its Kubernetes events (`e`). The events of a workload include those of the ReplicaSets and Pods under it (up to 30 resources). On the Applications list, `e` shows the selected Application's events.
+- **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block.
+- **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions.
+- **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
+- **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
+- **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
+- **Marking**: Space marks Applications or cards; actions then run on all of them, one after another.
+- **Prune and orphans**: `✂ to prune` for resources a pruning sync would delete, `◌ orphaned` for resources no Application manages.
+- **App of apps**: Enter on a child Application opens it; Esc returns to the parent.
+- **ApplicationSets** (`:appset`) with their generators, status and generated Applications.
+- **Pulse** (`:pulse`): health and sync at a glance, and the Applications that need attention, worst first.
+- **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
+- **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
+- **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
-An Application with `⊘` after its name is currently blocked by an Argo CD sync window. The existing `⚠` remains for its reported condition; open its sync details with `i` for Argo CD's full explanation. On `:proj`, press `Y` to inspect the selected AppProject manifest, including its repositories, destinations, roles, and sync-window policy.
-
-Press Space to mark (or unmark) Applications on the list, or resource cards in this view. `s`, `R`, `D`, `x` and `X` then act on everything marked instead of the selected item: each marked Application, or in this view only the marked resources. The cursor stays where it is, so move with `j`/`k` between marks. Marked rows and cards show a `●`; Esc clears the marks.
-
-Every action asks first. A confirmation replaces the view and lists each Application or resource the action will touch, then waits for Enter (or `y`) to run it or Esc (or `n`) to cancel. Sync and rollback also offer `p` prune and `r` dry run there; refresh defaults to normal, and `h` toggles a cache-bypassing hard refresh. When several items are marked they run one after another; if some fail, the status line says how many and why, and the rest still run. `T` terminates the selected Application's running operation after confirmation.
-
-Use `--read-only` or `readOnly: true` to disable mutating actions. The header shows `[READ-ONLY]` whenever this safety mode is active.
-
-Rollback follows `argocd app rollback`: Argo CD refuses it while the Application has auto-sync enabled, so disable auto-sync first (`P`). With `--source kubeconfig` the identity also needs to `get` and `patch` `applications.argoproj.io`.
-
-### Conditions and sync details
-
-An Application that Argo CD reports conditions for, such as a `ComparisonError` or a `SyncError`, has a `⚠` after its name on the list. The dependency view shows the first three in a `summary` box below the cards, next to the count of resources by status; each takes up to two lines, and the rest are counted. The box is amber when there are conditions.
-
-`i` shows how the Application's last sync went: its phase, message and revision, how long ago it started and finished, and what it did to each resource or hook (its sync phase and result), with the resources that did not sync first. It works on the Applications list, in the dependency view and in the overview.
-
-### Sync policy
-
-`P` sets how the marked or selected Applications sync on their own. The dialog starts from the first Application's policy: `a` toggles auto-sync, `h` self-heal and `p` prune, and Enter applies it. Self-heal and prune only count while auto-sync is on, so turning it off clears them. Other sync options, such as `CreateNamespace=true`, are left as they are.
-
-### Resources to prune and orphans
-
-In the dependency view `✂ to prune` marks a resource that is no longer in Git and that a sync with prune would delete, and `◌ orphaned` marks a resource in the destination namespace that no Application manages. The summary box counts both and the details pane explains each. Resources to prune work with both sources; with `--source api` they need the token to be able to read the Application, and without that they are not marked. Orphans only come from the Argo CD API, and only when the AppProject monitors orphaned resources.
-
-### App of apps
-
-A card that is itself an Application, as an app of apps deploys, opens with Enter. Esc returns to the Application it came from, with its cursor, search, filter and marks as they were, and the breadcrumbs show the whole path. Actions in the child act on the child. Cards of child Applications can be marked and synced selectively like any other resource.
-
-### ApplicationSets
-
-`:appset` lists each ApplicationSet with its generators (such as `git` or `matrix(list, clusters)`), how many Applications it generated, and its status: `OK`, or the problem it reports. Enter shows the Applications it generated (`applications · appset/<name>`), and Esc returns to the ApplicationSets list with the same one selected. `0` or choosing a project shows every Application again.
-
-### Pulse
-
-`:pulse` (or `:overview`) shows the state of everything at once. On a terminal at least 100 columns wide it draws four panels: the number of Applications and ApplicationSets, health and sync as bars sized by count with a legend, and how many Applications use auto-sync, self-heal and prune. Narrower or shorter terminals get the same counts as text. Below them it lists the Applications that need attention, worst first: degraded or missing ones, ones whose last sync failed, and ones with conditions, with the reasons. Enter opens one, and `i`, `e`, `s`, `P`, `h`, `R` and `D` work on its row.
+Some features need `--source api`: diffs, orphaned resources, and `o`.
 
 ## Commands
 
-Press `/` on a list to search it by name as you type: Enter keeps the search, Esc clears it.
-
-`H`, `S` and `K` open a bar like `:` with suggestions for one field: health (Healthy, Progressing, Degraded, Suspended, Missing, Unknown), sync status (Synced, OutOfSync, Unknown) and, on dependency cards, resource kind. The bar lists `all` followed by the values, starting on the current one. Tab or ↓ moves to the next value, Shift+Tab or ↑ to the previous one (both wrap around), and Enter applies the highlighted value. Type to narrow the list instead. Choosing `all` clears just that field. Health and sync work on Applications and on dependency cards. Filters combine with each other and with the search, and Esc clears them together. The same filters work from the command bar: `:health degraded`, `:sync outofsync` and `:kind pod` complete as you type, the suggestions show their shortcut (`shift+H`, `shift+S`, `shift+K`), and `:health all` (or `:health` alone) clears that filter.
-
-Press `:` to open the command bar. Matching commands are suggested as you type: Tab or Right accepts the highlighted suggestion, Up/Down picks another, Enter runs what you typed, Esc closes it.
-
-With `--source kubeconfig`, `:ctx` opens a picker for contexts in the active kubeconfig: type to narrow it, use Tab or arrows to choose one, then Enter reconnects. `:ctx <name>` also reconnects directly. It is unavailable with `--source api`.
-
-`:ns` does the same for the namespace Argo CD is installed in, so you can move between Argo CD instances without restarting. The picker lists the cluster's namespaces when your identity may list them; otherwise it is empty and `:ns <name>` still works.
-
-Short flags: `-n` `--namespace`, `-c` `--context`, `-s` `--server`, `-r` `--refresh`, `-k` `--insecure`.
+Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter runs, Esc closes.
 
 | Command | Opens |
 | --- | --- |
-| `:app`, `:apps`, `:applications` | Applications, optionally filtered: `:app store`, `:app all` |
-| `:proj`, `:projects` | Projects |
-| `:cluster`, `:clusters` | Clusters |
-| `:appset`, `:appsets`, `:applicationset`, `:applicationsets` | ApplicationSets |
-| `:pulse`, `:overview` | Overview of the Applications that need attention |
+| `:app [project\|all]` | Applications, optionally of one project |
+| `:proj` | Projects (`Y` shows the AppProject) |
+| `:cluster` | Clusters |
+| `:appset` | ApplicationSets |
+| `:pulse`, `:overview` | Overview of what needs attention |
+| `:ctx [name]` | Switch kubeconfig context (picker without a name) |
+| `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
+| `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |
-| `:ctx`, `:context` | Pick a kubeconfig context and reconnect; `<name>` switches directly |
-| `:ns`, `:namespace` | Pick the namespace Argo CD runs in and reload; `<name>` switches directly |
-| `:q`, `:quit` | Quit |
+| `:q` | Quit |
+
+`:ctx` and `:ns` need `--source kubeconfig`.
 
 ## Keys
 
+**Navigate**
+
 | Key | Action |
 | --- | --- |
-| `0` | Show Applications from every project |
-| `1`–`9` | Show Applications from the project listed under that number in the header |
-| `:` | Open the command bar |
-| `/` | Search the list by name, or the dependency cards by `kind/name`; in a log, keep only the lines that contain the text (ignoring case). Enter keeps the filter, Esc clears it |
-| `H` / `S` | Filter by health / sync status, with suggestions (Applications and dependency cards) |
-| `K` | Filter dependency cards by resource kind, with suggestions |
-| `j` / Down, `k` / Up | Move the selection, or scroll a YAML, diff or log view |
-| `g` / `G` | Jump to the top or bottom of a YAML, diff or log view |
-| `t` | Open the inventory tree: Projects → Applications and Clusters |
-| Enter | Open the selected Application's dependencies, an ApplicationSet's Applications, or, in the dependency view, the Application a card stands for |
-| Space | Mark or unmark the selected Application, or the selected resource card, keeping the cursor on it; `s`, `R`, `D`, `x`, `X` and `y` then act on the marked ones. Esc clears the marks. In the inventory tree, Space expands or collapses the selected node |
-| `v` | In a YAML, diff, events or log view, start line selection; `j`/`k` expand the range and `y`/`Y` yanks it; Esc cancels |
-| `y` / `Y` / `d` / `l` | Yank the selected item or viewer text (in a viewer, either `y` or `Y` yanks); show the selected Application's YAML or concatenated drift diff; or show the selected resource card's YAML, diff, or logs. Application diffs need `--source api`. On a Deployment, StatefulSet, DaemonSet, ReplicaSet or Job, `l` follows the logs of all its Pods, each line starting with the Pod's name (up to 30 Pods). On a Pod that such a workload runs, `l` opens that same log already filtered to the Pod and followed, so `p` can switch to its siblings or to `all` |
-| `o` | Open the selected Application in the Argo CD web UI (`--source api` only) |
-| `f` | In a log view, follow new lines as they arrive (the last 10,000 are kept); press again, or Esc, to stop |
-| `c` | In a log view, open a bar to choose the container, like `H`, `S` and `K`: it lists the containers and `all`; Tab or ↓ and Shift+Tab or ↑ move through them, typing narrows them, Enter shows the highlighted one. With `all`, lines start with `container`, or `pod/container` on a workload. A Pod starts on its `kubectl.kubernetes.io/default-container`, else its first container |
-| `p` | In the log of a workload, or of a Pod it runs, open a bar to choose one of the workload's Pods, or `all`; it works like the container bar and matches any part of a Pod's name |
-| Left / Right | Expand or collapse the selected inventory node |
-| Esc | Go back, or clear the search and filters. From the Applications of a project or an ApplicationSet it returns to that list |
-| `e` | Show the events of the selected Application, or of the selected card and its Pods. In the events view, `/` keeps only the lines that contain the text |
-| `s` | Sync the marked Applications, or the marked resources in the dependency view, else the selected Application. Confirm with Enter; toggle `p` prune and `r` dry run first if needed |
-| `h` | Show the selected Application's deployment history, newest first. `j`/`k` pick a deployment, Enter rolls back to it (toggle `p` prune and `r` dry run, then Enter) |
-| `i` | Show how the selected Application's last sync went, resource by resource |
-| `P` | Set the sync policy of the marked or selected Applications: `a` auto-sync, `h` self-heal, `p` prune, Enter applies |
-| `R` | Refresh the marked or selected Applications. It defaults to Argo CD's normal refresh; toggle `h` in the confirmation to bypass the manifest cache with a hard refresh |
-| `T` | Terminate the selected Application's running operation. Asks first and is unavailable when no operation is active |
-| `D` | Delete the marked or selected Applications and their managed resources. Asks first |
-| `x` | In the dependency view, restart the marked or selected Deployments, StatefulSets and DaemonSets with a rolling restart, like `kubectl rollout restart`. Asks first; refused if a marked card cannot be restarted |
-| `X` | In the dependency view, delete the marked or selected Pods; the workload that owns each starts a replacement. Asks first; refused if a marked card is not a Pod |
-| `r` | Reload resources now |
-| `q` / Ctrl+C | Quit |
+| `j` `k` / ↓ ↑ | Move, or scroll a viewer |
+| `g` `G` | Top / bottom of a viewer |
+| Enter | Open the dependencies, an ApplicationSet's Applications, or a child Application |
+| Esc | Back, or clear the search, filters and marks |
+| `0`, `1`–`9` | All projects, or the numbered project in the header |
+| `/` | Search by name, or by `kind/name` on cards; in logs and events, keep matching lines |
+| `H` `S` `K` | Filter by health, sync status or kind |
+| `t` | Inventory tree (Space or ←/→ expands) |
+| `r` | Reload now |
+| `q` | Quit |
 
-## License
+**Inspect**
 
-[MIT](LICENSE)
+| Key | Action |
+| --- | --- |
+| `Y` | YAML of the Application, card or AppProject |
+| `d` | Diff (`--source api`) |
+| `e` | Events, including those of a workload's Pods |
+| `i` | Last sync, resource by resource |
+| `h` | Deployment history; Enter rolls back |
+| `l` | Logs; on a workload, all its Pods |
+| `f` `c` `p` | In logs: follow, choose container, choose Pod |
+| `y` | Copy the selection, marked items or viewer text |
+| `v` | Select lines in a viewer, then `y` |
+| `o` | Open in the Argo CD web UI (`--source api`) |
+
+**Act** (every action asks first; Enter or `y` confirms)
+
+| Key | Action |
+| --- | --- |
+| Space | Mark or unmark |
+| `s` | Sync; in the dependency view, sync only the marked cards. `p` prune, `r` dry run |
+| `R` | Refresh; `h` for a hard refresh |
+| `P` | Sync policy: `a` auto-sync, `h` self-heal, `p` prune |
+| `T` | Terminate the running operation |
+| `D` | Delete the Application and its resources |
+| `x` | Rolling restart of a Deployment, StatefulSet or DaemonSet |
+| `X` | Delete a Pod so its workload replaces it |
+
+Rollback is refused while auto-sync is on, as with `argocd app rollback`. Turn it off with `P` first.
+
+## Permissions
+
+With `--source kubeconfig`, the identity needs to list `applications`, `appprojects` and Argo CD's cluster Secrets. Anything else it cannot read is left out, and the rest still loads.
+
+| To | Needs |
+| --- | --- |
+| See ReplicaSets, Jobs and Pods | `list` on them in the destination namespaces |
+| See ApplicationSets | `list` on `applicationsets` |
+| View logs | `get` on `pods/log` |
+| View events | `list` on `events`, including the Argo CD namespace |
+| Change sync policy, terminate, roll back | `get` and `patch` on `applications` |
+| Restart a workload | `patch` on it |
+| Delete a Pod | `delete` on `pods` |
+| List namespaces in `:ns` | `list` on `namespaces` (optional; `:ns <name>` works without it) |
+
+With `--source api`, the token needs the matching Argo CD RBAC: `get` and `sync` on Applications, `update` for sync policy, and `action/…/restart` and resource delete for `x` and `X`. Orphaned resources only appear when the AppProject monitors them.
+
+A read-only identity for `--source kubeconfig`, with Argo CD in `argocd`. The built-in `view` ClusterRole covers Pods, logs, events, workloads and namespaces, so only Argo CD's own objects need a Role:
+
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argoxd-viewer
+  namespace: argocd
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argoxd-viewer
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications", "appprojects", "applicationsets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]   # Argo CD's cluster Secrets, for :cluster
+    verbs: ["list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argoxd-viewer
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: argoxd-viewer
+    namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: argoxd-viewer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: argoxd-viewer
+subjects:
+  - kind: ServiceAccount
+    name: argoxd-viewer
+    namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+```
+
+Run argoxd with `--read-only` alongside it, so actions are refused up front instead of failing on RBAC. Kubernetes cannot limit `list` to labelled Secrets, so this Role can read every Secret in `argocd`. Where that matters, use `--source api` with a read-only token.
+
+Requests that take longer than 15 seconds are abandoned and reported as errors.
 
 ## Development
 
 ```sh
-go test ./...
-go build ./cmd/argoxd
+make test   # go vet and go test
+make build  # dist/argoxd
+make demo   # re-record demo/demo.gif; needs vhs
 ```
 
-`make demo` re-records `demo/demo.gif` from the sample data; it needs [vhs](https://github.com/charmbracelet/vhs).
+Pushing a tag such as `v0.4.1` publishes release binaries and the Homebrew cask with GoReleaser.
 
-Pushing a tag such as `v0.1.0` builds and publishes release binaries with GoReleaser.
+## License
+
+[MIT](LICENSE)
