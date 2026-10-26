@@ -7,16 +7,35 @@ import (
 
 	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type namespaceSource struct {
 	*fakeSource
 	namespaces []string
 	switched   string
+	listed     int
 }
 
 func (s *namespaceSource) Namespaces(context.Context) ([]string, error) {
+	s.listed++
 	return s.namespaces, nil
+}
+
+// enter types a command and presses Enter, returning the model and the command
+// that Bubble Tea would run next.
+func enter(model Model, value string) (Model, tea.Cmd) {
+	for _, character := range value {
+		model = press(model, string(character))
+	}
+	updated, next := model.Update(key("enter"))
+	return updated.(Model), next
+}
+
+// commandSettled is command, but also runs the commands it returns.
+func commandSettled(model Model, value string) Model {
+	model, next := enter(model, value)
+	return settle(model, next)
 }
 
 func (s *namespaceSource) WithNamespace(namespace string) argocd.Source {
@@ -35,7 +54,7 @@ func newNamespaceModel() (Model, *namespaceSource) {
 func TestNamespaceCommandSwitchesAndReloads(t *testing.T) {
 	model, source := newNamespaceModel()
 
-	model = command(model, ":ns gitops")
+	model = commandSettled(model, ":ns gitops")
 	if source.switched != "gitops" || model.namespace != "gitops" || !strings.Contains(model.View(), "gitops") {
 		t.Fatalf("namespace switch = %q, model %q:\n%s", source.switched, model.namespace, model.View())
 	}
@@ -44,7 +63,7 @@ func TestNamespaceCommandSwitchesAndReloads(t *testing.T) {
 func TestNamespaceCommandOpensAPicker(t *testing.T) {
 	model, source := newNamespaceModel()
 
-	picker := command(model, ":ns")
+	picker := commandSettled(model, ":ns")
 	if !picker.prompt.active || picker.prompt.field != namespaceField {
 		t.Fatalf(":ns did not open the namespace picker:\n%s", picker.View())
 	}
@@ -61,8 +80,10 @@ func TestNamespaceSwitchIgnoresLoadsFromThePreviousNamespace(t *testing.T) {
 	model, _ := newNamespaceModel()
 	inFlight := model.load()
 
-	model = command(model, ":namespace gitops")
-	updated, _ := model.Update(inFlight())
+	model, _ = enter(model, ":namespace gitops")
+	updated, _ := model.Update(namespacesListed{namespaces: []string{"argocd", "gitops"}, switchTo: "gitops"})
+	model = updated.(Model)
+	updated, _ = model.Update(inFlight())
 	model = updated.(Model)
 
 	if apps := model.explorer.Snapshot().Applications; len(apps) != 0 {
@@ -86,7 +107,7 @@ func TestSwitchingNamespaceOrContextForgetsMarks(t *testing.T) {
 		t.Fatalf("marked = %v, want one marked application", model.marked)
 	}
 
-	model = settle(command(model, ":ns gitops"), source.loadCommand())
+	model = settle(commandSettled(model, ":ns gitops"), source.loadCommand())
 	if len(model.marked) != 0 {
 		t.Fatalf("marks from namespace argocd survived the switch to gitops: %v", model.marked)
 	}
@@ -96,5 +117,40 @@ func TestSwitchingNamespaceOrContextForgetsMarks(t *testing.T) {
 	model = settle(command(model, ":ctx production"), contexts.loadCommand())
 	if len(model.marked) != 0 {
 		t.Fatalf("marks from context development survived the switch to production: %v", model.marked)
+	}
+}
+
+func TestNamespaceLookupsRunInACommandNotInTheKeyHandler(t *testing.T) {
+	model, source := newNamespaceModel()
+
+	picker, next := enter(model, ":ns")
+	if source.listed != 0 {
+		t.Fatalf("opening the picker listed namespaces inside Update (%d calls); that freezes the screen on a slow cluster", source.listed)
+	}
+	if !picker.prompt.active || next == nil {
+		t.Fatalf("picker open = %v, command = %v; want the picker open at once and a lookup command", picker.prompt.active, next != nil)
+	}
+	picker = settle(picker, next)
+	if source.listed != 1 || !strings.Contains(picker.View(), "gitops") {
+		t.Fatalf("listed = %d; picker after the lookup:\n%s", source.listed, picker.View())
+	}
+
+	before := source.listed
+	switching, next := enter(model, ":ns gitops")
+	if source.listed != before || source.switched != "" || switching.namespace != "argocd" {
+		t.Fatalf("switching checked the namespace inside Update: listed %d, switched %q, namespace %q", source.listed, source.switched, switching.namespace)
+	}
+	if switching = settle(switching, next); switching.namespace != "gitops" || source.switched != "gitops" {
+		t.Fatalf("namespace = %q, switched = %q after the lookup", switching.namespace, source.switched)
+	}
+}
+
+func TestNamespaceSwitchToAMissingNamespaceReportsItAfterTheLookup(t *testing.T) {
+	model, source := newNamespaceModel()
+
+	model = commandSettled(model, ":ns nowhere")
+
+	if model.namespace != "argocd" || source.switched != "" || model.err == nil || !strings.Contains(model.err.Error(), "nowhere") {
+		t.Fatalf("namespace = %q, switched = %q, err = %v", model.namespace, source.switched, model.err)
 	}
 }

@@ -2,6 +2,7 @@
 package tui
 
 import (
+	"context"
 	"slices"
 	"strconv"
 	"strings"
@@ -66,6 +67,8 @@ type Model struct {
 	logPod           string
 	logPods          []string
 	contextOptions   []string
+	updateCheck      func(context.Context) string
+	updateVersion    string
 	namespaceOptions []string
 	status           string
 }
@@ -121,7 +124,11 @@ func (m Model) Init() tea.Cmd {
 	if m.source == nil {
 		return nil
 	}
-	return tea.Batch(m.load(), m.scheduleRefresh())
+	commands := []tea.Cmd{m.load(), m.scheduleRefresh()}
+	if m.updateCheck != nil {
+		commands = append(commands, m.checkForUpdate())
+	}
+	return tea.Batch(commands...)
 }
 
 // Update handles TUI messages.
@@ -129,6 +136,10 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(message)
+	case namespacesListed:
+		return m, m.finishNamespaceLookup(message)
+	case updateAvailable:
+		m.updateVersion = message.version
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height

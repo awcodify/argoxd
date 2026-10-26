@@ -355,8 +355,7 @@ func (m *Model) runCommand(input string) tea.Cmd {
 	}
 	if slices.Contains(namespaceCommands, name) {
 		if strings.TrimSpace(project) == "" {
-			m.openNamespacePicker()
-			return nil
+			return m.openNamespacePicker()
 		}
 		return m.switchNamespace(strings.TrimSpace(project))
 	}
@@ -452,24 +451,37 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	return m.load()
 }
 
-// clusterNamespaces lists the cluster's namespaces, or an error when the
-// source cannot switch namespaces or the identity may not list them.
-func (m Model) clusterNamespaces(switcher argocd.NamespaceSwitcher) ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), m.requestTimeout)
-	defer cancel()
-	return switcher.Namespaces(ctx)
+// namespacesListed carries the cluster's namespaces, or the error from asking.
+// switchTo is set when the lookup checks a namespace the user asked to switch to.
+type namespacesListed struct {
+	namespaces []string
+	err        error
+	switchTo   string
 }
 
-func (m *Model) openNamespacePicker() {
+// listNamespaces asks the cluster for its namespaces in a command, so a slow
+// or unreachable cluster never freezes the screen.
+func (m Model) listNamespaces(switcher argocd.NamespaceSwitcher, switchTo string) tea.Cmd {
+	timeout := m.requestTimeout
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		defer cancel()
+		namespaces, err := switcher.Namespaces(ctx)
+		return namespacesListed{namespaces: namespaces, err: err, switchTo: switchTo}
+	}
+}
+
+func (m *Model) openNamespacePicker() tea.Cmd {
 	switcher, ok := m.source.(argocd.NamespaceSwitcher)
 	if !ok {
 		m.err = fmt.Errorf(":ns is available only with --source kubeconfig")
-		return
+		return nil
 	}
 	// Listing namespaces is a cluster-wide permission; without it the picker
-	// is empty and a typed name still works.
-	m.namespaceOptions, _ = m.clusterNamespaces(switcher)
+	// stays empty and a typed name still works.
+	m.namespaceOptions = nil
 	m.prompt = prompt{active: true, field: namespaceField}
+	return m.listNamespaces(switcher, "")
 }
 
 func (m *Model) switchNamespace(namespace string) tea.Cmd {
@@ -482,20 +494,39 @@ func (m *Model) switchNamespace(namespace string) tea.Cmd {
 		m.err = fmt.Errorf(":ns requires a namespace")
 		return nil
 	}
-	if namespaces, err := m.clusterNamespaces(switcher); err == nil && !slices.Contains(namespaces, namespace) {
-		m.err = fmt.Errorf("namespace %q not found", namespace)
+	m.err = nil
+	m.status = "Switching to namespace " + namespace
+	return m.listNamespaces(switcher, namespace)
+}
+
+// finishNamespaceLookup fills the picker, or finishes a switch once the namespace
+// is known to exist. A cluster that cannot list namespaces is not an obstacle.
+func (m *Model) finishNamespaceLookup(listed namespacesListed) tea.Cmd {
+	if listed.switchTo == "" {
+		if m.prompt.active && m.prompt.field == namespaceField {
+			m.namespaceOptions = listed.namespaces
+		}
 		return nil
 	}
-	m.source = switcher.WithNamespace(namespace)
+	if listed.err == nil && !slices.Contains(listed.namespaces, listed.switchTo) {
+		m.err = fmt.Errorf("namespace %q not found", listed.switchTo)
+		m.status = ""
+		return nil
+	}
+	switcher, ok := m.source.(argocd.NamespaceSwitcher)
+	if !ok {
+		return nil
+	}
+	m.source = switcher.WithNamespace(listed.switchTo)
 	m.sourceGeneration++
-	m.namespace = namespace
+	m.namespace = listed.switchTo
 	m.explorer = explorer.NewModel(explorer.Snapshot{})
 	m.closeTree()
 	m.marked = nil
 	m.namespaceOptions = nil
 	m.loading = true
 	m.err = nil
-	m.status = "Switching to namespace " + namespace
+	m.status = "Switching to namespace " + listed.switchTo
 	return m.load()
 }
 

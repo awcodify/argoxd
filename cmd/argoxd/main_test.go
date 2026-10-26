@@ -156,3 +156,22 @@ func TestHelpShowsShortFlagsOnTheRowOfTheirLongForm(t *testing.T) {
 		t.Errorf("shorthands are listed on their own rows:\n%s", help)
 	}
 }
+
+func TestUpdateChecksCanBeSwitchedOff(t *testing.T) {
+	isolateConfig(t, "")
+	options, err := parseOptions(nil)
+	if err != nil || !options.checkUpdates {
+		t.Fatalf("checkUpdates = %v, %v; want on by default", options.checkUpdates, err)
+	}
+
+	isolateConfig(t, "checkUpdates: false\n")
+	if options, err = parseOptions(nil); err != nil || options.checkUpdates {
+		t.Fatalf("checkUpdates = %v, %v; want off from the config file", options.checkUpdates, err)
+	}
+
+	isolateConfig(t, "")
+	t.Setenv("ARGOXD_NO_UPDATE_CHECK", "1")
+	if options, err = parseOptions(nil); err != nil || options.checkUpdates {
+		t.Fatalf("checkUpdates = %v, %v; want off from ARGOXD_NO_UPDATE_CHECK", options.checkUpdates, err)
+	}
+}
