@@ -108,6 +108,14 @@ func (m Model) applicationsTable() table {
 		columns: []string{"NAME", "PROJECT", "SYNC", "HEALTH", "REVISION", "DESTINATION", "LAST SYNC"},
 		status:  map[int]bool{2: true, 3: true},
 	}
+	if field, reverse := m.explorer.Sort(); field != explorer.SortDefault {
+		arrow := " ▲"
+		if reverse {
+			arrow = " ▼"
+		}
+		column := map[explorer.SortField]int{explorer.SortName: 0, explorer.SortSync: 2, explorer.SortHealth: 3}[field]
+		result.columns[column] += arrow
+	}
 	for _, application := range m.explorer.Applications() {
 		name := application.Name
 		if len(application.Conditions) > 0 {

@@ -95,7 +95,7 @@ Some features need `--source api`: diffs, orphaned resources, and `o`.
 
 ## Commands
 
-Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter runs, Esc closes.
+Press `:` to open the command bar. It suggests as you type: Tab fills in the highlighted suggestion and, pressed again, moves to the next; ↑ and ↓ move through them too. Enter runs, Esc closes.
 
 | Command | Opens |
 | --- | --- |
@@ -106,7 +106,7 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | `:pulse`, `:overview` | Overview of what needs attention |
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
-| `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first, and `:sort` alone restores Argo CD's order |
+| `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first. Run it again with the same field to flip the direction, add `reverse` to force it, or use `:sort` alone to restore Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |
 | `:q` | Quit |

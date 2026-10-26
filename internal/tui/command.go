@@ -76,6 +76,10 @@ type prompt struct {
 	field     string
 	input     string
 	selection int
+	// base is what was typed before Tab started filling in suggestions. While
+	// it is set the suggestions come from it, so Tab and the arrows keep
+	// moving through the same list instead of narrowing to the one chosen.
+	base string
 }
 
 func findCommand(name string) (viewCommand, bool) {
@@ -157,7 +161,17 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 func (p prompt) typed(input string) prompt {
 	p.input = input
 	p.selection = 0
+	p.base = ""
 	return p
+}
+
+// typedInput is the text suggestions are made from: what the user typed, even
+// while Tab has filled in one of them.
+func (p prompt) typedInput() string {
+	if p.base != "" {
+		return p.base
+	}
+	return p.input
 }
 
 // valueSuggestions lists the choices of a filter field that start with the
@@ -200,7 +214,7 @@ func (m Model) suggestions() []string {
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
-	if name, context, hasContext := strings.Cut(m.prompt.input, " "); hasContext && slices.Contains(contextCommands, name) {
+	if name, context, hasContext := strings.Cut(m.prompt.typedInput(), " "); hasContext && slices.Contains(contextCommands, name) {
 		var matches []string
 		for _, candidate := range m.contextOptions {
 			if strings.HasPrefix(candidate, context) {
@@ -213,7 +227,25 @@ func (m Model) suggestions() []string {
 	for _, project := range m.explorer.Snapshot().Projects {
 		projects = append(projects, project.Name)
 	}
-	return suggestions(m.prompt.input, projects, m.availableFilters())
+	return suggestions(m.prompt.typedInput(), projects, m.availableFilters())
+}
+
+// completeCommand fills the command bar with a suggestion. The first Tab takes
+// the highlighted one; after that Tab and Down move on, Up and Shift+Tab go
+// back, and all of them wrap around the same list.
+func (m *Model) completeCommand(step int) {
+	matches := m.suggestions()
+	if len(matches) == 0 {
+		return
+	}
+	index := m.prompt.selection % len(matches)
+	if m.prompt.base != "" {
+		index = (index + step + len(matches)) % len(matches)
+	} else {
+		m.prompt.base = m.prompt.input
+	}
+	m.prompt.selection = index
+	m.prompt.input = matches[index]
 }
 
 // canFilterBy reports whether the active view has a filter on the field. Only
@@ -279,13 +311,19 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyTab, tea.KeyRight:
 		if m.prompt.field != "" {
 			m.prompt.selection++
-		} else if suggestion := m.selectedSuggestion(); suggestion != "" {
-			m.prompt = m.prompt.typed(suggestion)
+		} else {
+			m.completeCommand(1)
 		}
 	case tea.KeyDown:
-		m.prompt.selection++
+		if m.prompt.field == "" && m.prompt.base != "" {
+			m.completeCommand(1)
+		} else {
+			m.prompt.selection++
+		}
 	case tea.KeyUp, tea.KeyShiftTab:
-		if count := len(m.suggestions()); count > 0 {
+		if m.prompt.field == "" && m.prompt.base != "" {
+			m.completeCommand(-1)
+		} else if count := len(m.suggestions()); count > 0 {
 			m.prompt.selection = (m.prompt.selection + count - 1) % count
 		}
 	case tea.KeyBackspace:
@@ -494,7 +532,13 @@ func (m *Model) runSortCommand(arguments string) {
 		m.err = errors.New(sortHelp)
 		return
 	}
+	// An explicit "reverse" always reverses. Without it, sorting by the field
+	// that is already in use flips the direction, and a new field starts in its
+	// normal direction.
 	reverse := len(words) == 2
+	if current, currentReverse := m.explorer.Sort(); len(words) == 1 && field != explorer.SortDefault && current == field {
+		reverse = !currentReverse
+	}
 	m.explorer.SetSort(field, reverse)
 	m.err = nil
 	if field == explorer.SortDefault {
