@@ -175,3 +175,64 @@ func TestUpdateChecksCanBeSwitchedOff(t *testing.T) {
 		t.Fatalf("checkUpdates = %v, %v; want off from ARGOXD_NO_UPDATE_CHECK", options.checkUpdates, err)
 	}
 }
+
+func TestConnectionFlagsAndConfigKeysForTLSAndTimeout(t *testing.T) {
+	isolateConfig(t, "caCert: /etc/ssl/corp-ca.pem\nclientCert: /etc/argoxd/client.crt\nclientKey: /etc/argoxd/client.key\nrequestTimeout: 45s\n")
+
+	options, err := parseOptions(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.caCert != "/etc/ssl/corp-ca.pem" || options.clientCert != "/etc/argoxd/client.crt" || options.clientKey != "/etc/argoxd/client.key" || options.requestTimeout != 45*time.Second {
+		t.Fatalf("options = %+v, want the config file's values", options)
+	}
+
+	options, err = parseOptions([]string{"--ca-cert", "ca.pem", "--client-cert", "c.crt", "--client-key", "c.key", "--request-timeout", "2m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.caCert != "ca.pem" || options.clientCert != "c.crt" || options.clientKey != "c.key" || options.requestTimeout != 2*time.Minute {
+		t.Fatalf("options = %+v, want the flags to win over the config file", options)
+	}
+}
+
+func TestRequestTimeoutDefaultsToFifteenSecondsAndRejectsNonsense(t *testing.T) {
+	isolateConfig(t, "")
+	options, err := parseOptions(nil)
+	if err != nil || options.requestTimeout != 15*time.Second {
+		t.Fatalf("requestTimeout = %v, %v; want 15s", options.requestTimeout, err)
+	}
+
+	for _, contents := range []string{"requestTimeout: soon\n", "requestTimeout: 0s\n", "requestTimeout: -5s\n"} {
+		isolateConfig(t, contents)
+		if _, err := parseOptions(nil); err == nil {
+			t.Fatalf("parseOptions() accepted config %q", contents)
+		}
+	}
+}
+
+func TestBuildSourcePassesTLSOptionsToTheAPISource(t *testing.T) {
+	if _, err := buildSource(options{source: "api", server: "https://argocd.example.com", caCert: "/no/such/ca.pem"}); err == nil || !strings.Contains(err.Error(), "/no/such/ca.pem") {
+		t.Fatalf("buildSource() error = %v, want the unreadable CA file named", err)
+	}
+	if _, err := buildSource(options{source: "api", server: "https://argocd.example.com", clientCert: "c.crt"}); err == nil || !strings.Contains(err.Error(), "client key") {
+		t.Fatalf("buildSource() error = %v, want a missing client key reported", err)
+	}
+	if _, err := buildSource(options{source: "kubeconfig", caCert: "/no/such/ca.pem"}); err != nil {
+		t.Fatalf("a CA file set for another source must not fail the kubeconfig source: %v", err)
+	}
+}
+
+func TestHelpListsTheNewConnectionFlags(t *testing.T) {
+	var buffer bytes.Buffer
+	flags := newFlagSet(&options{namespace: "argocd"})
+	flags.SetOutput(&buffer)
+
+	flags.Usage()
+
+	for _, flag := range []string{"--ca-cert", "--client-cert", "--client-key", "--request-timeout"} {
+		if !strings.Contains(buffer.String(), flag) {
+			t.Errorf("help does not list %s:\n%s", flag, buffer.String())
+		}
+	}
+}

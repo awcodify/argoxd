@@ -113,6 +113,15 @@ func (m Model) WithRefresh(interval time.Duration) Model {
 	return m
 }
 
+// WithRequestTimeout sets how long a call to the source may take before it is
+// abandoned. A zero or negative value keeps the current timeout.
+func (m Model) WithRequestTimeout(timeout time.Duration) Model {
+	if timeout > 0 {
+		m.requestTimeout = timeout
+	}
+	return m
+}
+
 // WithReadOnly prevents actions that change Argo CD or live resources.
 func (m Model) WithReadOnly(readOnly bool) Model {
 	m.readOnly = readOnly

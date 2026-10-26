@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
@@ -110,5 +111,19 @@ func TestUpdateBadgeIsFilledWithTheAccentColor(t *testing.T) {
 	}
 	if want := updateBadgeStyle.Render("x"); want == "x" {
 		t.Skip("the test terminal has no color profile, so styles render as plain text")
+	}
+}
+
+func TestWithRequestTimeoutSetsHowLongSourceCallsMayTake(t *testing.T) {
+	model := New(&fakeSource{}, "test", "argocd", explorer.Snapshot{})
+	if model.requestTimeout != defaultRequestTimeout {
+		t.Fatalf("requestTimeout = %v, want the default", model.requestTimeout)
+	}
+
+	if model = model.WithRequestTimeout(45 * time.Second); model.requestTimeout != 45*time.Second {
+		t.Fatalf("requestTimeout = %v, want 45s", model.requestTimeout)
+	}
+	if model = model.WithRequestTimeout(0); model.requestTimeout != 45*time.Second {
+		t.Fatalf("a zero timeout replaced the setting: %v", model.requestTimeout)
 	}
 }

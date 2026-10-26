@@ -25,6 +25,11 @@ type fileConfig struct {
 	ReadOnly   *bool   `json:"readOnly"`
 
 	CheckUpdates *bool `json:"checkUpdates"`
+
+	CACert         *string `json:"caCert"`
+	ClientCert     *string `json:"clientCert"`
+	ClientKey      *string `json:"clientKey"`
+	RequestTimeout *string `json:"requestTimeout"`
 }
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
@@ -94,6 +99,22 @@ func (c fileConfig) apply(defaults options) (options, error) {
 	}
 	if c.CheckUpdates != nil {
 		defaults.checkUpdates = *c.CheckUpdates
+	}
+	if c.CACert != nil {
+		defaults.caCert = *c.CACert
+	}
+	if c.ClientCert != nil {
+		defaults.clientCert = *c.ClientCert
+	}
+	if c.ClientKey != nil {
+		defaults.clientKey = *c.ClientKey
+	}
+	if c.RequestTimeout != nil {
+		timeout, err := time.ParseDuration(*c.RequestTimeout)
+		if err != nil {
+			return defaults, fmt.Errorf("requestTimeout: %w", err)
+		}
+		defaults.requestTimeout = timeout
 	}
 	return defaults, nil
 }

@@ -32,6 +32,11 @@ type options struct {
 	version    bool
 
 	checkUpdates bool
+
+	caCert         string
+	clientCert     string
+	clientKey      string
+	requestTimeout time.Duration
 }
 
 func main() {
@@ -51,7 +56,8 @@ func main() {
 
 	model := tui.New(source, connectionDescription(options), options.namespace, explorer.Snapshot{}).
 		WithRefresh(options.refresh).
-		WithReadOnly(options.readOnly)
+		WithReadOnly(options.readOnly).
+		WithRequestTimeout(options.requestTimeout)
 	if options.checkUpdates && !options.demo {
 		current := releaseVersion(version, info)
 		checker := update.NewChecker()
@@ -73,6 +79,8 @@ func parseOptions(arguments []string) (options, error) {
 		refresh:   5 * time.Second,
 
 		checkUpdates: true,
+
+		requestTimeout: 15 * time.Second,
 	}
 	config, err := loadConfig(configPath())
 	if err != nil {
@@ -91,6 +99,9 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if options.requestTimeout <= 0 {
+		return options, fmt.Errorf("request timeout must be positive, got %s", options.requestTimeout)
+	}
 	return options, nil
 }
 
@@ -106,6 +117,10 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.token, "auth-token", options.token, "Argo CD API token")
 	flags.BoolVar(&options.insecure, "insecure", options.insecure, "Skip TLS certificate verification for API connections")
 	flags.BoolVar(&options.insecure, "k", options.insecure, "Shorthand for --insecure")
+	flags.StringVar(&options.caCert, "ca-cert", options.caCert, "PEM file of extra certificate authorities to trust for --source api")
+	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
+	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
+	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
 	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")
 	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")
 	flags.StringVar(&options.context, "c", options.context, "Shorthand for --context")
@@ -158,7 +173,10 @@ func buildSource(options options) (argocd.Source, error) {
 		if options.server == "" {
 			return nil, errors.New("--server or ARGOCD_SERVER is required when --source=api")
 		}
-		return argocd.NewAPISource(options.server, options.token, options.insecure), nil
+		return argocd.NewConfiguredAPISource(options.server, options.token, argocd.APIOptions{
+			Insecure: options.insecure, CACertFile: options.caCert,
+			ClientCertFile: options.clientCert, ClientKeyFile: options.clientKey, Timeout: options.requestTimeout,
+		})
 	default:
 		return nil, fmt.Errorf("unsupported --source %q; use kubeconfig or api", options.source)
 	}
