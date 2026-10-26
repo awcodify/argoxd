@@ -69,6 +69,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
 - **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
+- **Resource actions** (`a` on a card): run any action Argo CD defines for the resource, such as a Rollout's promote and abort, a Deployment's pause and resume, a CronJob's create-job, or your own from `argocd-cm`.
 - **Marking**: Space marks Applications or cards; actions then run on all of them, one after another.
 - **Prune and orphans**: `✂ to prune` for resources a pruning sync would delete, `◌ orphaned` for resources no Application manages.
 - **App of apps**: Enter on a child Application opens it; Esc returns to the parent.
@@ -141,6 +142,7 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | `P` | Sync policy: `a` auto-sync, `h` self-heal, `p` prune |
 | `T` | Terminate the running operation |
 | `D` | Delete the Application and its resources |
+| `a` | Pick and run an Argo CD action on the selected resource (all but restart need `--source api`) |
 | `x` | Rolling restart of a Deployment, StatefulSet or DaemonSet |
 | `X` | Delete a Pod so its workload replaces it |
 
@@ -161,7 +163,7 @@ With `--source kubeconfig`, the identity needs to list `applications`, `appproje
 | Delete a Pod | `delete` on `pods` |
 | List namespaces in `:ns` | `list` on `namespaces` (optional; `:ns <name>` works without it) |
 
-With `--source api`, the token needs the matching Argo CD RBAC: `get` and `sync` on Applications, `update` for sync policy, and `action/…/restart` and resource delete for `x` and `X`. Orphaned resources only appear when the AppProject monitors them.
+With `--source api`, the token needs the matching Argo CD RBAC: `get` and `sync` on Applications, `update` for sync policy, and `action/…` for the actions you run with `a` (including `restart` for `x`), and resource delete for `X`. Orphaned resources only appear when the AppProject monitors them.
 
 A read-only identity for `--source kubeconfig`, with Argo CD in `argocd`. The built-in `view` ClusterRole covers Pods, logs, events, workloads and namespaces, so only Argo CD's own objects need a Role:
 

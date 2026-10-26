@@ -14,7 +14,27 @@ import (
 	"k8s.io/client-go/dynamic"
 )
 
-var _ ResourceActor = (*KubernetesSource)(nil)
+var (
+	_ ResourceActor        = (*KubernetesSource)(nil)
+	_ ResourceActionRunner = (*KubernetesSource)(nil)
+)
+
+// ResourceActions offers only restart: the other actions are Lua scripts that
+// the Argo CD server runs, which a kubeconfig connection cannot do.
+func (s *KubernetesSource) ResourceActions(_ context.Context, _ string, resource explorer.ResourceNode) ([]ResourceAction, error) {
+	if Restartable(resource.Kind) {
+		return []ResourceAction{{Name: "restart"}}, nil
+	}
+	return nil, nil
+}
+
+// RunResourceAction runs restart; every other action needs the Argo CD API.
+func (s *KubernetesSource) RunResourceAction(ctx context.Context, application string, resource explorer.ResourceNode, action string) error {
+	if action == "restart" {
+		return s.RestartResource(ctx, application, resource)
+	}
+	return fmt.Errorf("%s needs the Argo CD API; run argoxd with --source api", action)
+}
 
 // restartedAtAnnotation is what `kubectl rollout restart` stamps on a workload's
 // Pod template to make it roll out again.

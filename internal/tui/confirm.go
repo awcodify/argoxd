@@ -27,6 +27,7 @@ const (
 	confirmRollback
 	confirmSyncPolicy
 	confirmTerminateOperation
+	confirmResourceAction
 )
 
 // confirmation asks before an action runs, listing everything it will touch.
@@ -44,6 +45,8 @@ type confirmation struct {
 	hard         bool
 	// policy is the sync policy to set, which the dialog lets the user change.
 	policy explorer.SyncPolicy
+	// action is the name of the resource action to run.
+	action string
 }
 
 // target is one line of the list in a confirmation.
@@ -116,6 +119,8 @@ func (c confirmation) question() string {
 		return "Set the sync policy of " + c.subject() + "?"
 	case confirmTerminateOperation:
 		return "Terminate the operation of " + c.application + "?"
+	case confirmResourceAction:
+		return "Run " + c.action + " on " + c.subject() + "?"
 	}
 	return ""
 }
@@ -126,6 +131,8 @@ func (c confirmation) glyph() string {
 		return "↻"
 	case confirmRollback:
 		return "↩"
+	case confirmResourceAction:
+		return "▶"
 	case confirmDeleteApplications, confirmDeleteResources:
 		return "✗"
 	}
@@ -305,7 +312,7 @@ func (m Model) perform(c confirmation) tea.Cmd {
 			})
 		}
 		return m.deleteApplication(c.application)
-	case confirmRestart, confirmDeleteResources:
+	case confirmRestart, confirmDeleteResources, confirmResourceAction:
 		return m.actOnResources(c)
 	case confirmRollback:
 		return m.rollback(c)

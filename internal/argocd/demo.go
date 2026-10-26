@@ -658,6 +658,24 @@ func (s *DemoSource) RestartResource(_ context.Context, name string, resource ex
 	return nil
 }
 
+var _ ResourceActionRunner = (*DemoSource)(nil)
+
+// ResourceActions offers restart on workloads, like a plain Argo CD does.
+func (s *DemoSource) ResourceActions(_ context.Context, _ string, resource explorer.ResourceNode) ([]ResourceAction, error) {
+	if Restartable(resource.Kind) {
+		return []ResourceAction{{Name: "restart"}}, nil
+	}
+	return nil, nil
+}
+
+// RunResourceAction runs restart; the sample data has no other actions.
+func (s *DemoSource) RunResourceAction(ctx context.Context, application string, resource explorer.ResourceNode, action string) error {
+	if action == "restart" {
+		return s.RestartResource(ctx, application, resource)
+	}
+	return fmt.Errorf("%s/%s has no action %q", resource.Kind, resource.Name, action)
+}
+
 // DeleteResource replaces a Pod with a new one, as its ReplicaSet would.
 func (s *DemoSource) DeleteResource(_ context.Context, name string, resource explorer.ResourceNode) error {
 	if _, err := s.find(name); err != nil {

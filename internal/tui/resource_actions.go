@@ -59,23 +59,41 @@ func (m Model) resourceTargets(kind confirmKind) ([]explorer.ResourceNode, strin
 	return targets, ""
 }
 
-// actOnResources restarts or deletes the confirmed resources, one after another.
+// actOnResources restarts, deletes or runs an action on the confirmed resources,
+// one after another.
 func (m Model) actOnResources(c confirmation) tea.Cmd {
 	action := "restart"
-	if c.kind == confirmDeleteResources {
+	switch c.kind {
+	case confirmDeleteResources:
 		action = "delete"
+	case confirmResourceAction:
+		action = c.action
 	}
-	actor, ok := m.source.(argocd.ResourceActor)
-	if !ok {
+	fail := func() tea.Cmd {
 		return func() tea.Msg {
 			return operationCompleted{action: action, application: c.application, err: errNoActions}
 		}
 	}
-	act := func(ctx context.Context, resource explorer.ResourceNode) error {
-		if action == "restart" {
-			return actor.RestartResource(ctx, c.application, resource)
+	var act func(context.Context, explorer.ResourceNode) error
+	if c.kind == confirmResourceAction {
+		runner, ok := m.source.(argocd.ResourceActionRunner)
+		if !ok {
+			return fail()
 		}
-		return actor.DeleteResource(ctx, c.application, resource)
+		act = func(ctx context.Context, resource explorer.ResourceNode) error {
+			return runner.RunResourceAction(ctx, c.application, resource, c.action)
+		}
+	} else {
+		actor, ok := m.source.(argocd.ResourceActor)
+		if !ok {
+			return fail()
+		}
+		act = func(ctx context.Context, resource explorer.ResourceNode) error {
+			if action == "restart" {
+				return actor.RestartResource(ctx, c.application, resource)
+			}
+			return actor.DeleteResource(ctx, c.application, resource)
+		}
 	}
 	if len(c.resources) == 1 {
 		return m.request(func(ctx context.Context) tea.Msg {

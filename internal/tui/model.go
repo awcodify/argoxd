@@ -68,6 +68,7 @@ type Model struct {
 	logPods          []string
 	contextOptions   []string
 	updateCheck      func(context.Context) string
+	actionOptions    []string
 	updateVersion    string
 	namespaceOptions []string
 	status           string
@@ -136,6 +137,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(message)
+	case loadedActions:
+		return m.applyActions(message)
 	case namespacesListed:
 		return m, m.finishNamespaceLookup(message)
 	case updateAvailable:
@@ -310,6 +313,13 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 			break
 		}
 		m = m.askApplicationAction(confirmSync)
+	case "a":
+		if m.blockReadOnly() {
+			break
+		}
+		if m.view == applicationTreeView {
+			return m.askResourceActions()
+		}
 	case "x", "X":
 		if m.blockReadOnly() {
 			break

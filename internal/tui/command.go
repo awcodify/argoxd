@@ -175,6 +175,9 @@ func (m Model) suggestions() []string {
 	if m.prompt.field == namespaceField {
 		return matchOptions(m.prompt.input, m.namespaceOptions)
 	}
+	if m.prompt.field == actionField {
+		return matchOptions(m.prompt.input, m.actionOptions)
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
@@ -249,6 +252,8 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.switchContext(input)
 			case namespaceField:
 				return m, m.switchNamespace(input)
+			case actionField:
+				return m.confirmAction(input)
 			}
 			m.runFilter(field, input)
 			return m, nil

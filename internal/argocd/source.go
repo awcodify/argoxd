@@ -115,6 +115,24 @@ type ResourceActor interface {
 	DeleteResource(ctx context.Context, application string, resource explorer.ResourceNode) error
 }
 
+// ResourceAction is an operation Argo CD offers on a resource, such as a
+// Deployment's "restart" or an Argo Rollouts Rollout's "promote-full".
+type ResourceAction struct {
+	Name string
+	// Disabled actions are listed by Argo CD but do not apply to the
+	// resource in its current state.
+	Disabled bool
+	// NeedsParameters marks actions such as a Deployment's "scale", which
+	// Argo CD runs with values the caller supplies.
+	NeedsParameters bool
+}
+
+// ResourceActionRunner lists and runs the actions defined for a resource.
+type ResourceActionRunner interface {
+	ResourceActions(ctx context.Context, application string, resource explorer.ResourceNode) ([]ResourceAction, error)
+	RunResourceAction(ctx context.Context, application string, resource explorer.ResourceNode, action string) error
+}
+
 // SyncPolicySetter changes how an Application syncs on its own.
 type SyncPolicySetter interface {
 	// SetSyncPolicy turns auto-sync on or off and sets its self-heal and prune

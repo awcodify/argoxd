@@ -2,6 +2,16 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-10-26
+
+### Added
+
+- **Resource actions.** `a` on a dependency card lists the actions Argo CD defines for that resource and runs the one you pick, after confirmation: a Rollout's promote, abort and retry, a Deployment's pause and resume, a CronJob's create-job, and any custom action from `argocd-cm`. Actions that do not apply in the resource's current state are left out. With `--source kubeconfig` only restart is offered; the rest need `--source api`. Actions that need parameters, such as a Deployment's scale, are not offered yet. Read-only mode blocks the menu.
+
+### Permissions
+
+- Running an action with `--source api` needs Argo CD's `action/<group>/<kind>/<action>` permission for it.
+
 ## [0.4.2] - 2026-10-26
 
 ### Added
