@@ -39,6 +39,7 @@ type fileConfig struct {
 	ResourceView *string `json:"resourceView"`
 	StartView    *string `json:"startView"`
 
+	K9sCommand    *string `json:"k9sCommand"`
 	ArgoCDContext *string `json:"argocdContext"`
 	ArgoCDConfig  *string `json:"argocdConfig"`
 }
@@ -125,6 +126,9 @@ func (c fileConfig) apply(defaults options) (options, error) {
 			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
 		}
 		defaults.sort = *c.Sort
+	}
+	if c.K9sCommand != nil {
+		defaults.k9sCommand = *c.K9sCommand
 	}
 	if c.ArgoCDContext != nil {
 		defaults.argocdContext = *c.ArgoCDContext

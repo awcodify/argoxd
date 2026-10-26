@@ -137,6 +137,9 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 		if strings.HasPrefix(sortCommand, input) {
 			matches = append(matches, sortCommand)
 		}
+		if strings.HasPrefix(k9sCommandName, input) {
+			matches = append(matches, k9sCommandName)
+		}
 		for _, command := range contextCommands {
 			if strings.HasPrefix(command, input) {
 				matches = append(matches, command)
@@ -418,6 +421,9 @@ func (m *Model) runCommand(input string) tea.Cmd {
 			return m.openNamespacePicker()
 		}
 		return m.switchNamespace(strings.TrimSpace(project))
+	}
+	if name == k9sCommandName {
+		return m.openK9s()
 	}
 	if name == sortCommand {
 		m.runSortCommand(strings.TrimSpace(project))

@@ -297,3 +297,10 @@ func TestStartViewFromTheConfigFileAndFlag(t *testing.T) {
 		}
 	}
 }
+
+func TestK9sCommandFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "k9sCommand: /opt/bin/k9s\n")
+	if options, err := parseOptions(nil); err != nil || options.k9sCommand != "/opt/bin/k9s" {
+		t.Fatalf("k9sCommand = %q, %v", options.k9sCommand, err)
+	}
+}

@@ -3,6 +3,8 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -69,6 +71,8 @@ type Model struct {
 	contextOptions   []string
 	updateCheck      func(context.Context) string
 	resourceTable    bool
+	tools            ExternalTools
+	launch           func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	startView        string
 	collapsed        map[explorer.ResourceReference]bool
 	updateVersion    string
@@ -170,6 +174,11 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(message)
+	case externalDone:
+		if message.err != nil {
+			m.err = fmt.Errorf("%s: %w", message.program, message.err)
+		}
+		m.status = ""
 	case namespacesListed:
 		return m, m.finishNamespaceLookup(message)
 	case updateAvailable:

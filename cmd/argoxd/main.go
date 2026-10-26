@@ -47,6 +47,7 @@ type options struct {
 	resourceView string
 	startView    string
 
+	k9sCommand    string
 	argocdContext string
 	argocdConfig  string
 	tokenFromCLI  bool
@@ -75,7 +76,8 @@ func main() {
 		WithReadOnly(options.readOnly).
 		WithRequestTimeout(options.requestTimeout).
 		WithResourceView(options.resourceView).
-		WithStartView(options.startView)
+		WithStartView(options.startView).
+		WithExternalTools(tui.ExternalTools{K9s: options.k9sCommand, KubeContext: options.context})
 	if field, ok := explorer.ParseSortField(options.sort); ok {
 		model = model.WithSort(field, options.sortReverse)
 	}
