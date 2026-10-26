@@ -23,6 +23,8 @@ type APISource struct {
 	baseURL string
 	token   string
 	client  *http.Client
+	// loginHint is added to an authentication error.
+	loginHint string
 }
 
 // defaultAPITimeout is how long a request to Argo CD may take.
@@ -42,6 +44,9 @@ type APIOptions struct {
 	ClientKeyFile  string
 	// Timeout limits each request; zero means 15 seconds.
 	Timeout time.Duration
+	// TokenFromCLI marks a token read from the argocd CLI's saved login, so a
+	// refusal can suggest logging in again.
+	TokenFromCLI bool
 }
 
 // NewAPISource creates an Argo CD API source with the default settings.
@@ -65,11 +70,15 @@ func NewConfiguredAPISource(server, token string, options APIOptions) (*APISourc
 	transport.TLSClientConfig = tlsConfig
 	transport.ResponseHeaderTimeout = timeout
 
-	return &APISource{
+	source := &APISource{
 		baseURL: strings.TrimRight(server, "/"),
 		token:   token,
 		client:  &http.Client{Transport: transport, Timeout: timeout},
-	}, nil
+	}
+	if options.TokenFromCLI {
+		source.loginHint = "; your argocd CLI login may have expired, run: argocd login"
+	}
+	return source, nil
 }
 
 func (o APIOptions) tlsConfig() (*tls.Config, error) {
@@ -324,6 +333,14 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 
 // do sends a request and returns the response of a successful call. The
 // caller must close the response body.
+// hintFor is advice to add to an error with this status.
+func (s *APISource) hintFor(status int) string {
+	if status == http.StatusUnauthorized {
+		return s.loginHint
+	}
+	return ""
+}
+
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
 	return s.send(ctx, s.client, method, path, body)
 }
@@ -358,7 +375,7 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
 		return nil, &httpStatusError{
-			message: fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body)),
+			message: fmt.Sprintf("%s returned %s%s%s", endpoint.Path, response.Status, errorMessage(response.Body), s.hintFor(response.StatusCode)),
 			code:    response.StatusCode,
 		}
 	}

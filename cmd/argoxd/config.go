@@ -38,6 +38,9 @@ type fileConfig struct {
 
 	ResourceView *string `json:"resourceView"`
 	StartView    *string `json:"startView"`
+
+	ArgoCDContext *string `json:"argocdContext"`
+	ArgoCDConfig  *string `json:"argocdConfig"`
 }
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
@@ -122,6 +125,12 @@ func (c fileConfig) apply(defaults options) (options, error) {
 			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
 		}
 		defaults.sort = *c.Sort
+	}
+	if c.ArgoCDContext != nil {
+		defaults.argocdContext = *c.ArgoCDContext
+	}
+	if c.ArgoCDConfig != nil {
+		defaults.argocdConfig = *c.ArgoCDConfig
 	}
 	if c.StartView != nil {
 		defaults.startView = *c.StartView

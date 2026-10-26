@@ -26,6 +26,8 @@ argoxd --source api -s https://argocd.example.com --auth-token "$TOKEN"
 
 With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags.
 
+If you have already run `argocd login`, `--source api` needs no server or token: argoxd reads them from the CLI's login in `~/.config/argocd/config` (use `--argocd-context` for a context other than the current one, or `--argocd-config` for another file). Anything you pass yourself wins. A logged-in `--insecure` server still needs `-k`, and when the saved token has expired argoxd says to run `argocd login` again.
+
 If your Argo CD uses a certificate from an internal CA, trust it with `--ca-cert corp-ca.pem` instead of `-k` (`--insecure`), which skips verification and is only for development. If the server asks for a client certificate, add `--client-cert client.crt --client-key client.key`. These three apply to `--source api`.
 
 In the demo, `cart` is blocked by a sync window and has drift, `search` has a running operation to terminate, and `:proj` → `Y` on `store` shows a full AppProject. Actions change the sample data in memory only.
@@ -48,6 +50,9 @@ requestTimeout: 15s  # raise it for installs with thousands of Applications
 sort: health         # name, health (worst first) or sync (out of sync first)
 sortReverse: false
 mouse: false         # true scrolls with the wheel; the terminal then needs Shift to select text
+resourceView: cards  # or table: how an Application's resources are first shown
+startView: proj      # open this view first, e.g. appset, pulse or "app store"
+argocdContext: staging   # which argocd CLI login to use for source: api
 caCert: /etc/ssl/corp-ca.pem         # for source: api
 clientCert: /etc/argoxd/client.crt   # for source: api, with clientKey
 clientKey: /etc/argoxd/client.key
@@ -71,6 +76,9 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--request-timeout` | | `15s` |
 | `--refresh` | `-r` | `5s` |
 | `--mouse` | | `false` |
+| `--resource-view` | | `cards` |
+| `--start-view` | | Applications |
+| `--argocd-context`, `--argocd-config` | | the CLI's current login |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
@@ -78,7 +86,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 ## Features
 
 - **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block. `:sort` orders it by name, health or sync.
-- **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions.
+- **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions. `w` switches to a table of the same resources, and `←`/`→` fold a card (`z` folds them all). A `▾` marks a card that can fold and `▸` one that is folded.
 - **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
 - **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
@@ -127,6 +135,8 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | `/` | Search by name, or by `kind/name` on cards; in logs and events, keep matching lines |
 | `H` `S` `K` | Filter by health, sync status or kind |
 | `t` | Inventory tree (Space or ←/→ expands) |
+| `w` | Switch the resources between cards and a table |
+| `←` `→` `z` | Fold or unfold the selected card; `z` folds or unfolds them all |
 | `r` | Reload now |
 | `q` | Quit |
 

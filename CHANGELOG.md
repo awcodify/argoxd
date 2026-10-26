@@ -15,6 +15,15 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 - **Tab in the command bar.** After Tab filled in a suggestion for a command with an argument, such as `:sort `, `:health `, `:app ` or `:ctx `, the other suggestions disappeared and Tab did nothing more. Tab and the arrow keys now keep moving through the same list, and Shift+Tab goes back.
 
+- **Resources as a table.** `w` in an Application's dependency view lists its resources as a table (kind, name, namespace, health, sync, and `✂ to prune` or `◌ orphaned`), indented under their owners, with the same search, filters, marks and actions as the cards. `resourceView: table` or `--resource-view table` starts there.
+- **Fold cards.** `←` folds the selected card (and on a card with nothing to fold, goes to its owner), `→` unfolds it, and `z` folds or unfolds every card at once. A `▾` marks a card that can fold, `▸` one that is folded, and a folded card says how many resources it hides.
+- **Start view.** `startView` or `--start-view` opens a view first: `proj`, `cluster`, `appset`, `pulse`, or `app store` for one project.
+- **argocd CLI login.** With `--source api` and no server or token, argoxd reads them from `~/.config/argocd/config`, so `argocd login` once is enough. `--argocd-context` and `--argocd-config` choose another login or file. When the saved token has expired, the error says to run `argocd login`.
+
+### Changed
+
+- **Dependency view hints.** The key hints are five steady columns, so an optional hint no longer shifts the others. Their padding counted bytes instead of width, which a two-column key such as `←→` threw off.
+
 ## [0.4.2] - 2026-10-26
 
 ### Added

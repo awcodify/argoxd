@@ -46,6 +46,10 @@ type options struct {
 
 	resourceView string
 	startView    string
+
+	argocdContext string
+	argocdConfig  string
+	tokenFromCLI  bool
 }
 
 func main() {
@@ -57,6 +61,9 @@ func main() {
 	if options.version {
 		fmt.Println(versionString(version, info))
 		return
+	}
+	if options, err = withArgoCDLogin(options); err != nil {
+		log.Fatal(err)
 	}
 	source, err := buildSource(options)
 	if err != nil {
@@ -149,6 +156,8 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
 	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
+	flags.StringVar(&options.argocdContext, "argocd-context", options.argocdContext, "Context of the argocd CLI login to use for --source api when no server or token is given")
+	flags.StringVar(&options.argocdConfig, "argocd-config", options.argocdConfig, "Path of the argocd CLI config (default ~/.config/argocd/config)")
 	flags.StringVar(&options.startView, "start-view", options.startView, "View to open first, as a command without the colon, e.g. proj or \"app store\"")
 	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")
 	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")
@@ -207,6 +216,7 @@ func buildSource(options options) (argocd.Source, error) {
 		return argocd.NewConfiguredAPISource(options.server, options.token, argocd.APIOptions{
 			Insecure: options.insecure, CACertFile: options.caCert,
 			ClientCertFile: options.clientCert, ClientKeyFile: options.clientKey, Timeout: options.requestTimeout,
+			TokenFromCLI: options.tokenFromCLI,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported --source %q; use kubeconfig or api", options.source)
