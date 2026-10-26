@@ -99,6 +99,9 @@ func (m Model) keyHints() []keyHint {
 		} else if m.viewer.kind == "logs" {
 			hints = append(hints, keyHint{"f", "Follow"})
 		}
+		if m.viewer.kind == "diff" {
+			hints = append(hints, keyHint{"x", "Diff viewer"})
+		}
 		hints = append(hints, keyHint{"v", "Select"}, keyHint{"y", "Yank"})
 		if m.canOpenApplicationInBrowser() {
 			hints = append(hints, keyHint{"o", "Browser"})

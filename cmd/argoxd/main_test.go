@@ -304,3 +304,10 @@ func TestK9sCommandFromTheConfigFile(t *testing.T) {
 		t.Fatalf("k9sCommand = %q, %v", options.k9sCommand, err)
 	}
 }
+
+func TestDiffViewerFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "diffViewer: meld {left} {right}\n")
+	if options, err := parseOptions(nil); err != nil || options.diffViewer != "meld {left} {right}" {
+		t.Fatalf("diffViewer = %q, %v", options.diffViewer, err)
+	}
+}

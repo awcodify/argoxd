@@ -95,6 +95,8 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.yank()
 	case "o":
 		m.openApplicationInBrowser()
+	case "x":
+		return m, m.openDiffViewer()
 	case "down", "j":
 		if m.viewer.visual {
 			m.viewer.cursor = min(len(m.viewer.shown())-1, m.viewer.cursor+1)
