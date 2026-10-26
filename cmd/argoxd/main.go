@@ -40,6 +40,7 @@ type options struct {
 
 	sort        string
 	sortReverse bool
+	mouse       bool
 }
 
 func main() {
@@ -69,7 +70,11 @@ func main() {
 		checker := update.NewChecker()
 		model = model.WithUpdateCheck(func(ctx context.Context) string { return checker.Available(ctx, current) })
 	}
-	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
+	program := []tea.ProgramOption{tea.WithAltScreen()}
+	if options.mouse {
+		program = append(program, tea.WithMouseCellMotion())
+	}
+	if _, err := tea.NewProgram(model, program...).Run(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -127,6 +132,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
 	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
+	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")
 	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")
 	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")
 	flags.StringVar(&options.context, "c", options.context, "Shorthand for --context")

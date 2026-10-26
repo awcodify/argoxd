@@ -249,3 +249,17 @@ func TestSortFromTheConfigFile(t *testing.T) {
 		t.Fatalf("a bad sort field: error = %v, want a message listing the fields", err)
 	}
 }
+
+func TestMouseIsOffUnlessAskedFor(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.mouse {
+		t.Fatalf("mouse = %v, %v; want off by default so the terminal can still select text", options.mouse, err)
+	}
+	if options, _ := parseOptions([]string{"--mouse"}); !options.mouse {
+		t.Fatal("--mouse did not turn it on")
+	}
+	isolateConfig(t, "mouse: true\n")
+	if options, err := parseOptions(nil); err != nil || !options.mouse {
+		t.Fatalf("mouse = %v, %v; want it on from the config file", options.mouse, err)
+	}
+}

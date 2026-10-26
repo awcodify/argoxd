@@ -155,6 +155,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.finishNamespaceLookup(message)
 	case updateAvailable:
 		m.updateVersion = message.version
+	case tea.MouseMsg:
+		return m.updateMouse(message)
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height

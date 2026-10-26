@@ -24,7 +24,9 @@ argoxd -c production -n argocd    # another context and namespace
 argoxd --source api -s https://argocd.example.com --auth-token "$TOKEN"
 ```
 
-With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags. Use `-k` (`--insecure`) only for a development instance with an untrusted certificate.
+With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags.
+
+If your Argo CD uses a certificate from an internal CA, trust it with `--ca-cert corp-ca.pem` instead of `-k` (`--insecure`), which skips verification and is only for development. If the server asks for a client certificate, add `--client-cert client.crt --client-key client.key`. These three apply to `--source api`.
 
 In the demo, `cart` is blocked by a sync window and has drift, `search` has a running operation to terminate, and `:proj` → `Y` on `store` shows a full AppProject. Actions change the sample data in memory only.
 
@@ -42,6 +44,13 @@ insecure: false
 refresh: 5s          # 0s turns auto-refresh off
 readOnly: false      # block every action that changes something
 checkUpdates: true   # false stops the daily check for a newer release
+requestTimeout: 15s  # raise it for installs with thousands of Applications
+sort: health         # name, health (worst first) or sync (out of sync first)
+sortReverse: false
+mouse: false         # true scrolls with the wheel; the terminal then needs Shift to select text
+caCert: /etc/ssl/corp-ca.pem         # for source: api
+clientCert: /etc/argoxd/client.crt   # for source: api, with clientKey
+clientKey: /etc/argoxd/client.key
 ```
 
 argoxd checks GitHub for a newer release at most once a day, in the background, and quietly does nothing if it cannot connect. Development builds and `--demo` skip the check. To turn it off, set `checkUpdates: false` or the environment variable `ARGOXD_NO_UPDATE_CHECK=1`.
@@ -57,14 +66,18 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--server` | `-s` | `$ARGOCD_SERVER` |
 | `--auth-token` | | `$ARGOCD_AUTH_TOKEN` |
 | `--insecure` | `-k` | `false` |
+| `--ca-cert` | | none |
+| `--client-cert`, `--client-key` | | none |
+| `--request-timeout` | | `15s` |
 | `--refresh` | `-r` | `5s` |
+| `--mouse` | | `false` |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
 
 ## Features
 
-- **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block.
+- **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block. `:sort` orders it by name, health or sync.
 - **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions.
 - **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
@@ -93,6 +106,7 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | `:pulse`, `:overview` | Overview of what needs attention |
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
+| `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first, and `:sort` alone restores Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |
 | `:q` | Quit |
@@ -215,7 +229,7 @@ roleRef:
 
 Run argoxd with `--read-only` alongside it, so actions are refused up front instead of failing on RBAC. Kubernetes cannot limit `list` to labelled Secrets, so this Role can read every Secret in `argocd`. Where that matters, use `--source api` with a read-only token.
 
-Requests that take longer than 15 seconds are abandoned and reported as errors.
+Requests that take longer than `requestTimeout` (15 seconds by default) are abandoned and reported as errors.
 
 ## Development
 

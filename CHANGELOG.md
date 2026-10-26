@@ -2,6 +2,15 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-10-26
+
+### Added
+
+- **Custom CA and client certificates.** `--ca-cert` trusts an internal certificate authority for `--source api`, and `--client-cert` with `--client-key` presents a client certificate to a server that asks for one. Use these instead of `--insecure`. Also `caCert`, `clientCert` and `clientKey` in the config file. An unreadable file is reported at startup.
+- **Request timeout.** `--request-timeout` and `requestTimeout` set how long a request to Argo CD or Kubernetes may take (15 seconds by default), for installs with thousands of Applications.
+- **Sorting.** `:sort name`, `:sort health` (worst first) and `:sort sync` (out of sync first) order the Applications; add `reverse` to flip them, or run `:sort` alone to restore Argo CD's order. The list's title shows the active sort, and it survives `:ctx` and `:ns`. Set a default with `sort` and `sortReverse` in the config file.
+- **Mouse wheel.** `--mouse` or `mouse: true` scrolls lists and viewers with the wheel. It is off by default, because capturing the mouse means the terminal needs Shift to select text.
+
 ## [0.4.2] - 2026-10-26
 
 ### Added
