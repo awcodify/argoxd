@@ -6,7 +6,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 
 ### Added
 
-- **Update notice.** argoxd checks GitHub once a day, in the background, for a newer release and shows `↑ <version> available` in the header. It never delays startup and says nothing when it cannot connect. Turn it off with `checkUpdates: false` in the config file or `ARGOXD_NO_UPDATE_CHECK=1`. Development builds and `--demo` never check.
+- **Update notice.** argoxd checks GitHub once a day, in the background, for a newer release and shows an orange `↑ <version> available` badge at the bottom right. It never delays startup and says nothing when it cannot connect. Turn it off with `checkUpdates: false` in the config file or `ARGOXD_NO_UPDATE_CHECK=1`. Development builds and `--demo` never check.
 
 ### Fixed
 

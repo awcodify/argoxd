@@ -479,7 +479,7 @@ func (m Model) View() string {
 		width:  m.width,
 		height: m.bodyHeight() + 2,
 	}.render(lines)
-	return strings.Join(append(sections, main, m.renderCrumbs(), m.renderFlash()), "\n")
+	return strings.Join(append(sections, main, m.renderCrumbs(), m.renderFooter()), "\n")
 }
 
 // bodyHeight is the number of lines available inside the main frame.

@@ -55,9 +55,6 @@ func (m Model) renderConnection() string {
 		{"Project", project},
 		{"Apps", strconv.Itoa(len(m.explorer.Applications()))},
 	}
-	if m.updateVersion != "" {
-		rows = append(rows, [2]string{"Update", "↑ " + m.updateVersion + " available"})
-	}
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
 		lines = append(lines, " "+mutedStyle.Render(padRight(row[0], 11))+brightStyle.Render(row[1]))
