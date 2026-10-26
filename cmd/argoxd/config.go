@@ -35,6 +35,8 @@ type fileConfig struct {
 	Sort        *string `json:"sort"`
 	SortReverse *bool   `json:"sortReverse"`
 	Mouse       *bool   `json:"mouse"`
+
+	ResourceView *string `json:"resourceView"`
 }
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
@@ -119,6 +121,9 @@ func (c fileConfig) apply(defaults options) (options, error) {
 			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
 		}
 		defaults.sort = *c.Sort
+	}
+	if c.ResourceView != nil {
+		defaults.resourceView = *c.ResourceView
 	}
 	if c.Mouse != nil {
 		defaults.mouse = *c.Mouse

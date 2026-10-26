@@ -9,11 +9,12 @@ import (
 // treeFrame is the dependency view of an Application that is left open while
 // one of the Applications it deploys is shown.
 type treeFrame struct {
-	tree   explorer.ResourceTree
-	cursor int
-	search string
-	filter explorer.Filter
-	marked map[explorer.ResourceReference]bool
+	tree      explorer.ResourceTree
+	cursor    int
+	search    string
+	filter    explorer.Filter
+	marked    map[explorer.ResourceReference]bool
+	collapsed map[explorer.ResourceReference]bool
 }
 
 // onRootCard reports whether the selected card is the open Application's own
@@ -58,9 +59,9 @@ func (m Model) openChildApplication() (tea.Model, tea.Cmd) {
 // search, filter or marks.
 func (m *Model) enterChild() {
 	m.parents = append(m.parents, treeFrame{
-		tree: m.resourceTree, cursor: m.treeCursor, search: m.treeSearch, filter: m.treeFilter, marked: m.markedCards,
+		tree: m.resourceTree, cursor: m.treeCursor, search: m.treeSearch, filter: m.treeFilter, marked: m.markedCards, collapsed: m.collapsed,
 	})
-	m.treeSearch, m.treeFilter, m.markedCards = "", explorer.Filter{}, nil
+	m.treeSearch, m.treeFilter, m.markedCards, m.collapsed = "", explorer.Filter{}, nil, nil
 }
 
 // leaveChild goes back to the Application the child was opened from.
@@ -68,7 +69,7 @@ func (m *Model) leaveChild() {
 	frame := m.parents[len(m.parents)-1]
 	m.parents = m.parents[:len(m.parents)-1]
 	m.resourceTree, m.treeCursor = frame.tree, frame.cursor
-	m.treeSearch, m.treeFilter, m.markedCards = frame.search, frame.filter, frame.marked
+	m.treeSearch, m.treeFilter, m.markedCards, m.collapsed = frame.search, frame.filter, frame.marked, frame.collapsed
 	m.status = ""
 }
 

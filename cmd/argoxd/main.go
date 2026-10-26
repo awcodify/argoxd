@@ -41,6 +41,8 @@ type options struct {
 	sort        string
 	sortReverse bool
 	mouse       bool
+
+	resourceView string
 }
 
 func main() {
@@ -61,7 +63,8 @@ func main() {
 	model := tui.New(source, connectionDescription(options), options.namespace, explorer.Snapshot{}).
 		WithRefresh(options.refresh).
 		WithReadOnly(options.readOnly).
-		WithRequestTimeout(options.requestTimeout)
+		WithRequestTimeout(options.requestTimeout).
+		WithResourceView(options.resourceView)
 	if field, ok := explorer.ParseSortField(options.sort); ok {
 		model = model.WithSort(field, options.sortReverse)
 	}
@@ -92,6 +95,7 @@ func parseOptions(arguments []string) (options, error) {
 		checkUpdates: true,
 
 		requestTimeout: 15 * time.Second,
+		resourceView:   "cards",
 	}
 	config, err := loadConfig(configPath())
 	if err != nil {
@@ -110,6 +114,9 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if options.resourceView != "cards" && options.resourceView != "table" {
+		return options, fmt.Errorf("resource view must be cards or table, got %q", options.resourceView)
+	}
 	if options.requestTimeout <= 0 {
 		return options, fmt.Errorf("request timeout must be positive, got %s", options.requestTimeout)
 	}
@@ -132,6 +139,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
 	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
+	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")
 	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")
 	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")
 	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")

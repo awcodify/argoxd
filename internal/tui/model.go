@@ -68,6 +68,8 @@ type Model struct {
 	logPods          []string
 	contextOptions   []string
 	updateCheck      func(context.Context) string
+	resourceTable    bool
+	collapsed        map[explorer.ResourceReference]bool
 	updateVersion    string
 	namespaceOptions []string
 	status           string
@@ -280,7 +282,23 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleMark()
 	case "right", "left":
+		if m.view == applicationTreeView {
+			if key == "left" {
+				m.collapseSelected()
+			} else {
+				m.expandSelected()
+			}
+			break
+		}
 		m.toggleTreeItem()
+	case "z":
+		if m.view == applicationTreeView {
+			m.toggleFoldAll()
+		}
+	case "w":
+		if m.view == applicationTreeView {
+			m.resourceTable = !m.resourceTable
+		}
 	case "esc":
 		if m.searching() {
 			m.clearSearchAndFilter()
@@ -529,6 +547,7 @@ func (m *Model) closeTree() {
 	m.treeSearch = ""
 	m.treeFilter = explorer.Filter{}
 	m.markedCards = nil
+	m.collapsed = nil
 }
 
 // searchAndFilter returns the search text and status filter of the active view:

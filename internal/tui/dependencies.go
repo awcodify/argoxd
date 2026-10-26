@@ -28,16 +28,29 @@ var summaryOrder = []string{"Healthy", "Progressing", "Suspended", "Unknown", "M
 type card struct {
 	node  explorer.ResourceNode
 	owner string
+	// depth is how many owners the card has; the Application's own card is 0.
+	depth int
 }
 
 // renderDependencies shows the Application and its managed resources as a tree
 // of cards, the details of the selected card beside it, and below them a
 // summary of the resources' statuses and the Application's conditions.
 func (m Model) renderDependencies(width, height int) []string {
-	root := m.dependencyRoot()
+	if m.resourceTable {
+		summary := m.renderSummary(width)
+		lines := m.renderResourceTable(width-2, max(0, height-len(summary)))
+		for index := range lines {
+			lines[index] = " " + lines[index]
+		}
+		for len(lines) < height-len(summary) {
+			lines = append(lines, "")
+		}
+		return append(lines, summary...)
+	}
+	root, hidden := m.collapsedRoot()
 
 	index := 0
-	tree := renderBranch(root, m.treeCursor, m.treeSearch, m.treeFilter, m.markedCards, "", &index)
+	tree := renderBranch(root, m.treeCursor, m.treeSearch, m.treeFilter, m.markedCards, hidden, "", &index)
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
@@ -121,8 +134,15 @@ func conditionBanner(conditions []explorer.Condition, width int) []string {
 	return lines
 }
 
-// dependencyRoot is the Application card with its resources nested beneath it.
+// dependencyRoot is the Application card with its resources nested beneath it,
+// without what the user folded away.
 func (m Model) dependencyRoot() explorer.ResourceNode {
+	root, _ := m.collapsedRoot()
+	return root
+}
+
+// filteredRoot is dependencyRoot before anything is folded away.
+func (m Model) filteredRoot() explorer.ResourceNode {
 	application := m.application()
 	return explorer.ResourceNode{
 		Group:     "argoproj.io",
@@ -148,13 +168,13 @@ func (m Model) selectedCard() explorer.ResourceNode {
 // renderBranch renders a card followed by its children, numbering cards in
 // the same depth-first order the cursor moves through them. While searching or filtering,
 // cards shown only to give a match its context are dimmed.
-func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, marked map[explorer.ResourceReference]bool, inheritedSync string, index *int) []string {
+func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, marked map[explorer.ResourceReference]bool, hidden map[explorer.ResourceReference]int, inheritedSync string, index *int) []string {
 	context := (search != "" || filter.Active()) && *index > 0 && !node.Matches(search, filter, inheritedSync)
-	lines := strings.Split(drawCard(node, *index == selected, context, marked[node.Reference()]), "\n")
+	lines := strings.Split(drawCard(node, *index == selected, context, marked[node.Reference()], hidden[node.Reference()]), "\n")
 	*index++
 	for position, child := range node.Children {
 		last := position == len(node.Children)-1
-		for row, line := range renderBranch(child, selected, search, filter, marked, node.EffectiveSync(inheritedSync), index) {
+		for row, line := range renderBranch(child, selected, search, filter, marked, hidden, node.EffectiveSync(inheritedSync), index) {
 			lines = append(lines, "  "+mutedStyle.Render(connector(row, last))+line)
 		}
 	}
@@ -177,11 +197,12 @@ func connector(row int, last bool) string {
 // resourceCard shows the kind in a border colored by status, the name with
 // its namespace, and the health and sync status.
 func resourceCard(node explorer.ResourceNode, selected, context bool) string {
-	return drawCard(node, selected, context, false)
+	return drawCard(node, selected, context, false, 0)
 }
 
-// drawCard renders a card; a marked one has a ● before its kind.
-func drawCard(node explorer.ResourceNode, selected, context, marked bool) string {
+// drawCard renders a card; a marked one has a ● before its kind, and one that
+// is folded says how many resources it hides.
+func drawCard(node explorer.ResourceNode, selected, context, marked bool, hidden int) string {
 	color := statusColor(node.Health, node.Sync)
 	border := lipgloss.RoundedBorder()
 	nameStyle := brightStyle
@@ -204,6 +225,9 @@ func drawCard(node explorer.ResourceNode, selected, context, marked bool) string
 	}
 	if status == "" {
 		status = mutedStyle.Render("no status reported")
+	}
+	if hidden > 0 {
+		status = joinNonEmpty(status, mutedStyle.Render("▸ "+strconv.Itoa(hidden)+" hidden"))
 	}
 	return box{
 		border: border,
@@ -270,9 +294,13 @@ func resourceSummary(nodes []explorer.ResourceNode) string {
 }
 
 func flatten(node explorer.ResourceNode, owner string) []card {
-	cards := []card{{node: node, owner: owner}}
+	return flattenAt(node, owner, 0)
+}
+
+func flattenAt(node explorer.ResourceNode, owner string, depth int) []card {
+	cards := []card{{node: node, owner: owner, depth: depth}}
 	for _, child := range node.Children {
-		cards = append(cards, flatten(child, node.Kind+"/"+node.Name)...)
+		cards = append(cards, flattenAt(child, node.Kind+"/"+node.Name, depth+1)...)
 	}
 	return cards
 }

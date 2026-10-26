@@ -110,7 +110,7 @@ func (m Model) keyHints() []keyHint {
 		hints := []keyHint{
 			{"y", "Yank"}, {"Y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
 			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Refresh"}, {"D", "Delete"},
-			{"x", "Restart"}, {"X", "Delete pod"},
+			{"x", "Restart"}, {"X", "Delete pod"}, {"w", "Cards/Table"}, {"←→ z", "Fold"},
 			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
 			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
 		}

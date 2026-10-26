@@ -263,3 +263,21 @@ func TestMouseIsOffUnlessAskedFor(t *testing.T) {
 		t.Fatalf("mouse = %v, %v; want it on from the config file", options.mouse, err)
 	}
 }
+
+func TestResourceViewFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.resourceView != "cards" {
+		t.Fatalf("resourceView = %q, %v; want cards by default", options.resourceView, err)
+	}
+	isolateConfig(t, "resourceView: table\n")
+	if options, err := parseOptions(nil); err != nil || options.resourceView != "table" {
+		t.Fatalf("resourceView = %q, %v; want table from the config file", options.resourceView, err)
+	}
+	if options, _ := parseOptions([]string{"--resource-view", "cards"}); options.resourceView != "cards" {
+		t.Fatalf("resourceView = %q, want the flag to win", options.resourceView)
+	}
+	isolateConfig(t, "resourceView: grid\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "cards or table") {
+		t.Fatalf("a bad resourceView: error = %v, want one naming cards or table", err)
+	}
+}
