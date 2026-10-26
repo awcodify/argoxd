@@ -44,7 +44,7 @@ readOnly: false      # block every action that changes something
 checkUpdates: true   # false stops the daily check for a newer release
 ```
 
-argoxd asks GitHub for the latest release at most once a day, in the background, and shows an orange `↑ 0.4.3 available` badge at the right of the breadcrumb row when yours is older. It sends nothing but the request, never delays startup, and stays silent when it cannot connect. Release builds and `go install` builds check; development builds and `--demo` do not. Turn it off with `checkUpdates: false` or `ARGOXD_NO_UPDATE_CHECK=1`.
+argoxd checks GitHub for a newer release at most once a day, in the background, and quietly does nothing if it cannot connect. Development builds and `--demo` skip the check. To turn it off, set `checkUpdates: false` or the environment variable `ARGOXD_NO_UPDATE_CHECK=1`.
 
 Flags beat environment variables, which beat the config file. The API token is never read from the file; use `ARGOCD_AUTH_TOKEN`. Unknown keys and bad durations fail at startup.
 
