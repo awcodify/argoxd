@@ -35,21 +35,19 @@ func (m Model) WithUpdateCheck(check func(context.Context) string) Model {
 	return m
 }
 
-// renderFooter is the bottom line: the status message on the left and, when a
-// newer release exists, the update badge at the right edge. The message is cut
-// short rather than pushing the badge off screen.
-func (m Model) renderFooter() string {
-	flash := m.renderFlash()
+// withUpdateBadge puts the update badge at the right edge of the breadcrumb
+// row. The breadcrumbs are cut short rather than pushing the badge off screen.
+func (m Model) withUpdateBadge(crumbs string) string {
 	if m.updateVersion == "" {
-		return flash
+		return crumbs
 	}
 	badge := renderUpdateBadge(m.updateVersion)
 	room := m.width - lipgloss.Width(badge) - 1
 	if room < 0 {
-		return flash
+		return crumbs
 	}
-	flash = ansi.Truncate(flash, room, "…")
-	return flash + strings.Repeat(" ", room-lipgloss.Width(flash)+1) + badge
+	crumbs = ansi.Truncate(crumbs, room, "…")
+	return crumbs + strings.Repeat(" ", room-lipgloss.Width(crumbs)+1) + badge
 }
 
 // checkForUpdate runs the check as a command so it never blocks the interface.

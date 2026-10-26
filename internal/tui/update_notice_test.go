@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -64,12 +63,15 @@ func viewWithUpdate(t *testing.T, width int) (Model, []string) {
 	return model, strings.Split(model.View(), "\n")
 }
 
-func TestUpdateBadgeSitsAtTheBottomRightOfTheScreen(t *testing.T) {
+func TestUpdateBadgeSharesTheRowOfTheBreadcrumbs(t *testing.T) {
 	_, lines := viewWithUpdate(t, 140)
 
-	last := lines[len(lines)-1]
-	if !strings.HasSuffix(last, "↑ 0.4.2 available ") || lipgloss.Width(last) != 140 {
-		t.Fatalf("badge is not at the bottom right (width %d): %q", lipgloss.Width(last), last)
+	row := lines[len(lines)-2]
+	if !strings.Contains(row, "applications") || !strings.HasSuffix(row, "↑ 0.4.2 available ") || lipgloss.Width(row) != 140 {
+		t.Fatalf("the breadcrumb row is not %q ending in the badge (width %d): %q", "applications", lipgloss.Width(row), row)
+	}
+	if strings.Contains(lines[len(lines)-1], "available") {
+		t.Fatalf("the status line carries the badge: %q", lines[len(lines)-1])
 	}
 	for _, line := range lines[:headerHeight] {
 		if strings.Contains(line, "available") {
@@ -78,26 +80,20 @@ func TestUpdateBadgeSitsAtTheBottomRightOfTheScreen(t *testing.T) {
 	}
 }
 
-func TestUpdateBadgeLeavesRoomForTheStatusMessage(t *testing.T) {
+func TestUpdateBadgeDoesNotTouchTheStatusLine(t *testing.T) {
 	model, _ := viewWithUpdate(t, 140)
 	model.status = "Switching to namespace gitops"
-	last := lastLine(model.View())
 
-	if !strings.Contains(last, "Switching to namespace gitops") || !strings.HasSuffix(last, "available ") {
-		t.Fatalf("status line = %q, want the message on the left and the badge on the right", last)
-	}
-
-	model.err = fmt.Errorf("%s", strings.Repeat("a very long error ", 20))
-	if last = lastLine(model.View()); !strings.HasSuffix(last, "available ") || lipgloss.Width(last) > 140 {
-		t.Fatalf("a long error pushed the badge away or overflowed (width %d): %q", lipgloss.Width(last), last)
+	if last := lastLine(model.View()); last != " "+infoStyle.Render("● Switching to namespace gitops") {
+		t.Fatalf("status line = %q, want the plain status message", last)
 	}
 }
 
-func TestUpdateBadgeSurvivesANarrowTerminal(t *testing.T) {
-	_, lines := viewWithUpdate(t, 40)
+func TestUpdateBadgeSurvivesALongBreadcrumbPathAndANarrowTerminal(t *testing.T) {
+	_, lines := viewWithUpdate(t, 30)
 
-	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "available ") || lipgloss.Width(last) > 40 {
-		t.Fatalf("badge is missing or too wide at 40 columns (width %d): %q", lipgloss.Width(last), last)
+	if row := lines[len(lines)-2]; !strings.HasSuffix(row, "available ") || lipgloss.Width(row) > 30 {
+		t.Fatalf("badge is missing or too wide at 30 columns (width %d): %q", lipgloss.Width(row), row)
 	}
 }
 
