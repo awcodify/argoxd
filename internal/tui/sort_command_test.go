@@ -39,6 +39,9 @@ func TestSortCommandOrdersTheApplicationsAndSaysSo(t *testing.T) {
 	}
 
 	model = command(model, ":sort name reverse")
+	if !strings.Contains(model.status, "Sorted by name (reverse)") {
+		t.Fatalf("status = %q, want it to say the order is reversed", model.status)
+	}
 	if got := applicationOrder(model); strings.Join(got, ",") != "grafana,checkout,cart" {
 		t.Fatalf("order = %v, want names Z to A", got)
 	}

@@ -502,6 +502,9 @@ func (m *Model) runSortCommand(arguments string) {
 		return
 	}
 	m.status = "Sorted by " + string(field)
+	if reverse {
+		m.status += " (reverse)"
+	}
 }
 
 // resetExplorer empties the lists for another context or namespace, keeping
