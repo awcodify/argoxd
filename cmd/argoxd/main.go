@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/awcodify/argoxd/internal/argocd"
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/awcodify/argoxd/internal/tui"
+	"github.com/awcodify/argoxd/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -28,6 +30,8 @@ type options struct {
 	readOnly   bool
 	demo       bool
 	version    bool
+
+	checkUpdates bool
 }
 
 func main() {
@@ -35,8 +39,8 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	info, _ := debug.ReadBuildInfo()
 	if options.version {
-		info, _ := debug.ReadBuildInfo()
 		fmt.Println(versionString(version, info))
 		return
 	}
@@ -48,6 +52,11 @@ func main() {
 	model := tui.New(source, connectionDescription(options), options.namespace, explorer.Snapshot{}).
 		WithRefresh(options.refresh).
 		WithReadOnly(options.readOnly)
+	if options.checkUpdates && !options.demo {
+		current := releaseVersion(version, info)
+		checker := update.NewChecker()
+		model = model.WithUpdateCheck(func(ctx context.Context) string { return checker.Available(ctx, current) })
+	}
 	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
 		log.Fatal(err)
 	}
@@ -62,6 +71,8 @@ func parseOptions(arguments []string) (options, error) {
 		token:     os.Getenv("ARGOCD_AUTH_TOKEN"),
 		namespace: "argocd",
 		refresh:   5 * time.Second,
+
+		checkUpdates: true,
 	}
 	config, err := loadConfig(configPath())
 	if err != nil {
@@ -73,6 +84,9 @@ func parseOptions(arguments []string) (options, error) {
 	}
 	if envServer != "" {
 		options.server = envServer
+	}
+	if os.Getenv("ARGOXD_NO_UPDATE_CHECK") != "" {
+		options.checkUpdates = false
 	}
 
 	flags := newFlagSet(&options)

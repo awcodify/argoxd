@@ -41,7 +41,10 @@ server: https://argocd.example.com   # for source: api
 insecure: false
 refresh: 5s          # 0s turns auto-refresh off
 readOnly: false      # block every action that changes something
+checkUpdates: true   # false stops the daily check for a newer release
 ```
+
+argoxd checks GitHub for a newer release at most once a day, in the background, and quietly does nothing if it cannot connect. Development builds and `--demo` skip the check. To turn it off, set `checkUpdates: false` or the environment variable `ARGOXD_NO_UPDATE_CHECK=1`.
 
 Flags beat environment variables, which beat the config file. The API token is never read from the file; use `ARGOCD_AUTH_TOKEN`. Unknown keys and bad durations fail at startup.
 

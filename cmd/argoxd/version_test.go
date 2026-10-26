@@ -41,3 +41,15 @@ func TestVersionStringReportsDevelopmentBuilds(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseVersionIsEmptyForDevelopmentBuilds(t *testing.T) {
+	if got := releaseVersion("0.4.1", nil); got != "0.4.1" {
+		t.Fatalf("releaseVersion() = %q, want the release version", got)
+	}
+	if got := releaseVersion("dev", &debug.BuildInfo{Main: debug.Module{Version: "v0.4.1"}}); got != "v0.4.1" {
+		t.Fatalf("releaseVersion() = %q, want the module version", got)
+	}
+	if got := releaseVersion("dev", nil); got != "dev" {
+		t.Fatalf("releaseVersion() = %q, want dev", got)
+	}
+}
