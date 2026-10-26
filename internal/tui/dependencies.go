@@ -170,7 +170,7 @@ func (m Model) selectedCard() explorer.ResourceNode {
 // cards shown only to give a match its context are dimmed.
 func renderBranch(node explorer.ResourceNode, selected int, search string, filter explorer.Filter, marked map[explorer.ResourceReference]bool, hidden map[explorer.ResourceReference]int, inheritedSync string, index *int) []string {
 	context := (search != "" || filter.Active()) && *index > 0 && !node.Matches(search, filter, inheritedSync)
-	lines := strings.Split(drawCard(node, *index == selected, context, marked[node.Reference()], hidden[node.Reference()]), "\n")
+	lines := strings.Split(drawCard(node, *index == selected, context, marked[node.Reference()], hidden[node.Reference()], foldMark(node, hidden[node.Reference()], *index == 0)), "\n")
 	*index++
 	for position, child := range node.Children {
 		last := position == len(node.Children)-1
@@ -197,12 +197,27 @@ func connector(row int, last bool) string {
 // resourceCard shows the kind in a border colored by status, the name with
 // its namespace, and the health and sync status.
 func resourceCard(node explorer.ResourceNode, selected, context bool) string {
-	return drawCard(node, selected, context, false, 0)
+	return drawCard(node, selected, context, false, 0, "")
+}
+
+// foldMark tells whether a card can be folded: ▾ when its resources are
+// showing, ▸ when they are folded away, nothing when it has none or is the
+// Application's own card, which cannot be folded.
+func foldMark(node explorer.ResourceNode, hidden int, isRoot bool) string {
+	switch {
+	case isRoot:
+		return ""
+	case hidden > 0:
+		return "▸"
+	case len(node.Children) > 0:
+		return "▾"
+	}
+	return ""
 }
 
 // drawCard renders a card; a marked one has a ● before its kind, and one that
 // is folded says how many resources it hides.
-func drawCard(node explorer.ResourceNode, selected, context, marked bool, hidden int) string {
+func drawCard(node explorer.ResourceNode, selected, context, marked bool, hidden int, fold string) string {
 	color := statusColor(node.Health, node.Sync)
 	border := lipgloss.RoundedBorder()
 	nameStyle := brightStyle
@@ -232,7 +247,7 @@ func drawCard(node explorer.ResourceNode, selected, context, marked bool, hidden
 	return box{
 		border: border,
 		color:  color,
-		title:  " " + markPrefix(marked) + lipgloss.NewStyle().Foreground(color).Bold(true).Render(node.Kind) + " ",
+		title:  " " + markPrefix(marked) + lipgloss.NewStyle().Foreground(color).Bold(true).Render(strings.TrimSpace(node.Kind+" "+fold)) + " ",
 		width:  cardWidth,
 		height: cardHeight,
 	}.render([]string{

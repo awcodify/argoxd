@@ -281,3 +281,19 @@ func TestResourceViewFromTheConfigFileAndFlag(t *testing.T) {
 		t.Fatalf("a bad resourceView: error = %v, want one naming cards or table", err)
 	}
 }
+
+func TestStartViewFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "startView: appset\n")
+	if options, err := parseOptions(nil); err != nil || options.startView != "appset" {
+		t.Fatalf("startView = %q, %v", options.startView, err)
+	}
+	if options, _ := parseOptions([]string{"--start-view", "app store"}); options.startView != "app store" {
+		t.Fatalf("startView = %q, want the flag to win", options.startView)
+	}
+	for _, bad := range []string{"startView: dashboard\n", "startView: ctx\n", "startView: sort name\n"} {
+		isolateConfig(t, bad)
+		if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "start view") {
+			t.Fatalf("%q: error = %v, want one about the start view", bad, err)
+		}
+	}
+}

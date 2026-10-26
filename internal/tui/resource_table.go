@@ -141,8 +141,12 @@ func (m Model) renderResourceTable(width, height int) []string {
 		status:   map[int]bool{3: true, 4: true},
 		markable: true,
 	}
-	for _, item := range flatten(root, "") {
+	for position, item := range flatten(root, "") {
 		node := item.node
+		fold := foldMark(node, hidden[node.Reference()], position == 0)
+		if fold == "" {
+			fold = " "
+		}
 		var state []string
 		if node.RequiresPruning {
 			state = append(state, pruneGlyph+" to prune")
@@ -154,7 +158,7 @@ func (m Model) renderResourceTable(width, height int) []string {
 			state = append(state, "▸ "+strconv.Itoa(count)+" hidden")
 		}
 		t.rows = append(t.rows, []string{
-			node.Kind, strings.Repeat("  ", item.depth) + node.Name, node.Namespace, node.Health, node.Sync, strings.Join(state, "  "),
+			node.Kind, strings.Repeat("  ", item.depth) + fold + " " + node.Name, node.Namespace, node.Health, node.Sync, strings.Join(state, "  "),
 		})
 		t.marked = append(t.marked, m.markedCards[node.Reference()])
 	}

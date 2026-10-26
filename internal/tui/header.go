@@ -107,20 +107,26 @@ func (m Model) keyHints() []keyHint {
 	case historyViewMode:
 		return []keyHint{{"j/k", "Select"}, {"enter", "Roll back"}, {"esc", "Back"}, {"q", "Quit"}}
 	case applicationTreeView:
-		hints := []keyHint{
-			{"y", "Yank"}, {"Y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"}, {"i", "Sync details"},
-			{"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"}, {"R", "Refresh"}, {"D", "Delete"},
-			{"x", "Restart"}, {"X", "Delete pod"}, {"w", "Cards/Table"}, {"←→ z", "Fold"},
-			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"},
-			{"esc", "Back"}, {":", "Command"}, {"q", "Quit"},
+		// Five columns of five, each a group. Optional hints take the blank
+		// slot of a column, so showing or hiding one never reshuffles the rest.
+		toggle := keyHint{"w", "Table"}
+		if m.resourceTable {
+			toggle.action = "Cards"
+		}
+		terminate, open := keyHint{}, keyHint{}
+		if m.hasActiveOperation() {
+			terminate = keyHint{"T", "Terminate"}
 		}
 		if m.onChildApplication() {
-			hints = append([]keyHint{{"enter", "Open app"}}, hints...)
+			open = keyHint{"enter", "Open app"}
 		}
-		if m.hasActiveOperation() {
-			hints = append(hints, keyHint{"T", "Terminate"})
+		return []keyHint{
+			{"y", "Yank"}, {"Y", "YAML"}, {"d", "Diff"}, {"l", "Logs"}, {"e", "Events"},
+			{"i", "Sync details"}, {"space", "Mark"}, {"s", "Sync"}, {"h", "History"}, {"P", "Sync policy"},
+			{"R", "Refresh"}, {"D", "Delete"}, {"x", "Restart"}, {"X", "Delete pod"}, terminate,
+			{"/", "Search"}, {"H", "Health"}, {"S", "Sync status"}, {"K", "Kind"}, toggle,
+			{"z", "Fold"}, {"esc", "Back"}, {":", "Command"}, {"q", "Quit"}, open,
 		}
-		return hints
 	}
 
 	hints := []keyHint{{":", "Command"}, {"t", "Inventory"}}
@@ -162,11 +168,15 @@ func (m Model) canOpenApplicationInBrowser() bool {
 func renderHints(hints []keyHint) string {
 	keyWidth := 0
 	for _, hint := range hints {
-		keyWidth = max(keyWidth, len(hint.key))
+		keyWidth = max(keyWidth, lipgloss.Width(hint.key))
 	}
 	lines := make([]string, 0, len(hints))
 	for _, hint := range hints {
-		lines = append(lines, strings.Repeat(" ", keyWidth-len(hint.key))+keycap(hint.key, hint.action))
+		if hint.key == "" {
+			lines = append(lines, "") // a blank slot keeps its column's rows in place
+			continue
+		}
+		lines = append(lines, strings.Repeat(" ", keyWidth-lipgloss.Width(hint.key))+keycap(hint.key, hint.action))
 	}
 	return lipgloss.NewStyle().MarginRight(3).Render(strings.Join(lines, "\n"))
 }

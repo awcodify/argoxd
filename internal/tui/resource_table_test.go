@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/awcodify/argoxd/internal/explorer"
 )
 
@@ -54,18 +56,20 @@ func TestTheTableIndentsEachResourceUnderItsOwner(t *testing.T) {
 	model, _ := openDeep(t)
 	view := press(model, "w").View()
 
-	row := func(name string) string {
+	// The name starts after the KIND column; find where, per kind's row.
+	nameColumn := func(kind, name string) int {
 		for _, line := range strings.Split(view, "\n") {
-			if strings.Contains(line, name+" ") || strings.HasSuffix(strings.TrimRight(line, " │"), name) {
-				return line
+			if at := strings.Index(line, "│    "+kind); at >= 0 {
+				rest := line[at+len("│    "+kind):]
+				return ansi.StringWidth(rest[:strings.Index(rest, name)]) + len(kind)
 			}
 		}
-		return ""
+		t.Fatalf("no %s row:\n%s", kind, view)
+		return 0
 	}
-	indent := func(line, name string) int { return strings.Index(line, name) }
-	deployment, replicaSet, pod := row("web"), row("web-5d"), row("web-5d-x")
-	if indent(replicaSet, "web-5d") <= indent(deployment, "web") || indent(pod, "web-5d-x") <= indent(replicaSet, "web-5d") {
-		t.Fatalf("names are not indented by depth:\n%s", view)
+	deployment, replicaSet, pod := nameColumn("Deployment", "web"), nameColumn("ReplicaSet", "web-5d"), nameColumn("Pod", "web-5d-x")
+	if !(deployment < replicaSet && replicaSet < pod) {
+		t.Fatalf("name columns %d, %d, %d are not growing with depth:\n%s", deployment, replicaSet, pod, view)
 	}
 }
 
@@ -173,5 +177,100 @@ func TestCollapsedCardsAreForgottenWhenAnotherApplicationOpens(t *testing.T) {
 
 	if len(reopened.collapsed) != 0 {
 		t.Fatalf("collapsed = %v after reopening, want it cleared", reopened.collapsed)
+	}
+}
+
+func cardTitle(view, kind string) string {
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "╭─ "+kind) || strings.Contains(line, "┏━ "+kind) {
+			return line
+		}
+	}
+	return ""
+}
+
+func TestCardsThatCanFoldCarryAnIdentifier(t *testing.T) {
+	model, _ := openDeep(t)
+	view := model.View()
+
+	for _, kind := range []string{"Deployment", "ReplicaSet"} {
+		if title := cardTitle(view, kind); !strings.Contains(title, kind+" ▾") {
+			t.Errorf("%s has resources under it but no ▾ in its title: %q", kind, title)
+		}
+	}
+	for _, kind := range []string{"Pod", "Service"} {
+		if title := cardTitle(view, kind); strings.Contains(title, "▾") || strings.Contains(title, "▸") {
+			t.Errorf("%s has nothing to fold but carries a marker: %q", kind, title)
+		}
+	}
+	if root := cardTitle(view, "Application"); strings.Contains(root, "▾") {
+		t.Errorf("the Application's own card cannot be folded but carries a marker: %q", root)
+	}
+}
+
+func TestAFoldedCardChangesItsIdentifier(t *testing.T) {
+	model, _ := openDeep(t)
+
+	folded := press(press(model, "j"), "left").View()
+
+	if title := cardTitle(folded, "Deployment"); !strings.Contains(title, "Deployment ▸") || strings.Contains(title, "▾") {
+		t.Fatalf("a folded Deployment should show ▸: %q", title)
+	}
+	if strings.Contains(folded, "ReplicaSet") {
+		t.Fatalf("the folded Deployment still shows its ReplicaSet:\n%s", folded)
+	}
+}
+
+func TestTableRowsThatCanFoldCarryTheSameIdentifier(t *testing.T) {
+	model, _ := openDeep(t)
+	row := func(view, name string) string {
+		for _, line := range strings.Split(view, "\n") {
+			if strings.Contains(line, " "+name+" ") {
+				return line
+			}
+		}
+		return ""
+	}
+	table := press(model, "w").View()
+
+	if line := row(table, "web"); !strings.Contains(line, "▾ web") {
+		t.Errorf("the Deployment row has no ▾: %q", line)
+	}
+	if line := row(table, "web-5d-x"); strings.Contains(line, "▾") || strings.Contains(line, "▸") {
+		t.Errorf("a Pod row carries a marker: %q", line)
+	}
+	folded := press(press(press(model, "w"), "j"), "left").View()
+	if line := row(folded, "web"); !strings.Contains(line, "▸ web") {
+		t.Errorf("a folded row should show ▸: %q", line)
+	}
+}
+
+func TestHintColumnsAlignEvenWithWideKeyNames(t *testing.T) {
+	rendered := ansi.Strip(renderHints([]keyHint{{"←→", "Fold"}, {"z", "Everything"}, {"space", "Mark"}}))
+
+	var columns []int
+	for _, line := range strings.Split(rendered, "\n") {
+		for _, action := range []string{"Fold", "Everything", "Mark"} {
+			if at := strings.Index(line, action); at >= 0 {
+				columns = append(columns, ansi.StringWidth(line[:at]))
+			}
+		}
+	}
+	if len(columns) != 3 || columns[0] != columns[1] || columns[1] != columns[2] {
+		t.Fatalf("labels start at columns %v, want one column; hints:\n%s", columns, rendered)
+	}
+}
+
+func TestTheDependencyHintsNameTheViewTheyWillSwitchTo(t *testing.T) {
+	model, _ := openDeep(t)
+
+	if view := model.View(); !strings.Contains(view, "Table") || strings.Contains(view, "Cards/Table") {
+		t.Fatalf("the cards view should offer Table:\n%s", view)
+	}
+	if view := press(model, "w").View(); !strings.Contains(view, "Cards") || strings.Contains(view, "Cards/Table") {
+		t.Fatalf("the table view should offer Cards:\n%s", view)
+	}
+	if view := model.View(); strings.Contains(view, "←→ z") {
+		t.Fatalf("the fold hint is still the wide ←→ z keycap:\n%s", view)
 	}
 }

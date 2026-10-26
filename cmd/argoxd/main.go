@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/awcodify/argoxd/internal/argocd"
@@ -43,6 +45,7 @@ type options struct {
 	mouse       bool
 
 	resourceView string
+	startView    string
 }
 
 func main() {
@@ -64,7 +67,8 @@ func main() {
 		WithRefresh(options.refresh).
 		WithReadOnly(options.readOnly).
 		WithRequestTimeout(options.requestTimeout).
-		WithResourceView(options.resourceView)
+		WithResourceView(options.resourceView).
+		WithStartView(options.startView)
 	if field, ok := explorer.ParseSortField(options.sort); ok {
 		model = model.WithSort(field, options.sortReverse)
 	}
@@ -114,6 +118,12 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if options.startView != "" {
+		name, _, _ := strings.Cut(strings.TrimSpace(options.startView), " ")
+		if !slices.Contains(tui.StartViewCommands(), name) {
+			return options, fmt.Errorf("start view %q must be one of %s, optionally followed by a project", options.startView, strings.Join(tui.StartViewCommands(), ", "))
+		}
+	}
 	if options.resourceView != "cards" && options.resourceView != "table" {
 		return options, fmt.Errorf("resource view must be cards or table, got %q", options.resourceView)
 	}
@@ -139,6 +149,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
 	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
+	flags.StringVar(&options.startView, "start-view", options.startView, "View to open first, as a command without the colon, e.g. proj or \"app store\"")
 	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")
 	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")
 	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")

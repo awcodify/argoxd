@@ -69,6 +69,7 @@ type Model struct {
 	contextOptions   []string
 	updateCheck      func(context.Context) string
 	resourceTable    bool
+	startView        string
 	collapsed        map[explorer.ResourceReference]bool
 	updateVersion    string
 	namespaceOptions []string
@@ -130,6 +131,22 @@ func (m Model) WithSort(field explorer.SortField, reverse bool) Model {
 	return m
 }
 
+// WithStartView opens a view once the first load arrives, written as a command
+// without the colon, such as "proj" or "app store".
+func (m Model) WithStartView(view string) Model {
+	m.startView = strings.TrimSpace(view)
+	return m
+}
+
+// StartViewCommands are the commands that can name the view argoxd starts in.
+func StartViewCommands() []string {
+	var names []string
+	for _, command := range commands {
+		names = append(names, command.names...)
+	}
+	return names
+}
+
 // WithReadOnly prevents actions that change Argo CD or live resources.
 func (m Model) WithReadOnly(readOnly bool) Model {
 	m.readOnly = readOnly
@@ -174,6 +191,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.explorer.ReplaceSnapshot(message.snapshot)
 			m.pruneMarks()
+			if start := m.startView; start != "" {
+				// Open the start view once, after the first load: a project
+				// can only be named once the projects are known.
+				m.startView = ""
+				return m, m.runCommand(start)
+			}
 		}
 	case loadedTree:
 		m.loading = false
