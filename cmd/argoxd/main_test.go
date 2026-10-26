@@ -236,3 +236,16 @@ func TestHelpListsTheNewConnectionFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestSortFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "sort: health\nsortReverse: true\n")
+	options, err := parseOptions(nil)
+	if err != nil || options.sort != "health" || !options.sortReverse {
+		t.Fatalf("options = %+v, %v; want sort health, reversed", options, err)
+	}
+
+	isolateConfig(t, "sort: revision\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "name, health or sync") {
+		t.Fatalf("a bad sort field: error = %v, want a message listing the fields", err)
+	}
+}

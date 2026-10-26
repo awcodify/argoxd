@@ -37,6 +37,9 @@ type options struct {
 	clientCert     string
 	clientKey      string
 	requestTimeout time.Duration
+
+	sort        string
+	sortReverse bool
 }
 
 func main() {
@@ -58,6 +61,9 @@ func main() {
 		WithRefresh(options.refresh).
 		WithReadOnly(options.readOnly).
 		WithRequestTimeout(options.requestTimeout)
+	if field, ok := explorer.ParseSortField(options.sort); ok {
+		model = model.WithSort(field, options.sortReverse)
+	}
 	if options.checkUpdates && !options.demo {
 		current := releaseVersion(version, info)
 		checker := update.NewChecker()

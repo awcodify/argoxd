@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/awcodify/argoxd/internal/explorer"
 	"sigs.k8s.io/yaml"
 )
 
@@ -30,6 +31,9 @@ type fileConfig struct {
 	ClientCert     *string `json:"clientCert"`
 	ClientKey      *string `json:"clientKey"`
 	RequestTimeout *string `json:"requestTimeout"`
+
+	Sort        *string `json:"sort"`
+	SortReverse *bool   `json:"sortReverse"`
 }
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
@@ -108,6 +112,15 @@ func (c fileConfig) apply(defaults options) (options, error) {
 	}
 	if c.ClientKey != nil {
 		defaults.clientKey = *c.ClientKey
+	}
+	if c.Sort != nil {
+		if _, ok := explorer.ParseSortField(*c.Sort); !ok {
+			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
+		}
+		defaults.sort = *c.Sort
+	}
+	if c.SortReverse != nil {
+		defaults.sortReverse = *c.SortReverse
 	}
 	if c.RequestTimeout != nil {
 		timeout, err := time.ParseDuration(*c.RequestTimeout)

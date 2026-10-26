@@ -77,7 +77,15 @@ func (m Model) viewerTitle() string {
 
 // listTitle renders the frame title of a list, showing the active search and filter.
 func (m Model) listTitle(name, scope string) string {
-	return withSearch(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Search(), m.explorer.Filter())
+	title := withSearch(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Search(), m.explorer.Filter())
+	if field, reverse := m.explorer.Sort(); name == "applications" && field != explorer.SortDefault {
+		label := "sorted by " + string(field)
+		if reverse {
+			label += " (reverse)"
+		}
+		title = strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + accentStyle.Render(label) + " "
+	}
+	return title
 }
 
 // withSearch appends the active search and filter to a frame title, e.g. "· /pod · health:Degraded".

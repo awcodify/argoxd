@@ -122,6 +122,12 @@ func (m Model) WithRequestTimeout(timeout time.Duration) Model {
 	return m
 }
 
+// WithSort orders the Applications list from the start.
+func (m Model) WithSort(field explorer.SortField, reverse bool) Model {
+	m.explorer.SetSort(field, reverse)
+	return m
+}
+
 // WithReadOnly prevents actions that change Argo CD or live resources.
 func (m Model) WithReadOnly(readOnly bool) Model {
 	m.readOnly = readOnly

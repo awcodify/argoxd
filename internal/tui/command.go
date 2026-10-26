@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -28,6 +29,13 @@ var commands = []viewCommand{
 }
 
 var quitCommands = []string{"q", "quit"}
+
+const sortCommand = "sort"
+
+// sortFields are what the Applications list can be sorted by, as typed.
+var sortFields = []string{"name", "health", "sync"}
+
+const sortHelp = ":sort takes name, health or sync, and optionally reverse"
 
 var contextCommands = []string{"ctx", "context"}
 
@@ -95,6 +103,17 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 				}
 			}
 		}
+		if name == sortCommand {
+			field, _, _ := strings.Cut(argument, " ")
+			for _, candidate := range sortFields {
+				if strings.HasPrefix(candidate, strings.ToLower(field)) {
+					matches = append(matches, sortCommand+" "+candidate)
+				}
+			}
+			if _, rest, hasRest := strings.Cut(argument, " "); hasRest && strings.HasPrefix("reverse", rest) {
+				matches = append(matches, sortCommand+" "+strings.TrimSuffix(argument, rest)+"reverse")
+			}
+		}
 		for _, value := range filters[name] {
 			if strings.HasPrefix(strings.ToLower(value), strings.ToLower(argument)) {
 				matches = append(matches, name+" "+value)
@@ -110,6 +129,9 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 		}
 		if strings.HasPrefix("quit", input) {
 			matches = append(matches, "quit")
+		}
+		if strings.HasPrefix(sortCommand, input) {
+			matches = append(matches, sortCommand)
 		}
 		for _, command := range contextCommands {
 			if strings.HasPrefix(command, input) {
@@ -359,6 +381,10 @@ func (m *Model) runCommand(input string) tea.Cmd {
 		}
 		return m.switchNamespace(strings.TrimSpace(project))
 	}
+	if name == sortCommand {
+		m.runSortCommand(strings.TrimSpace(project))
+		return nil
+	}
 	if filter, found := findFilterCommand(name); found {
 		m.runFilterCommand(filter, strings.TrimSpace(project))
 		return nil
@@ -441,7 +467,7 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.source = switcher.WithContext(context)
 	m.sourceGeneration++
 	m.connection = "Kubeconfig context: " + context
-	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.resetExplorer()
 	m.closeTree()
 	m.marked = nil
 	m.contextOptions = nil
@@ -449,6 +475,41 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.err = nil
 	m.status = "Switching to kubeconfig context " + context
 	return m.load()
+}
+
+// runSortCommand orders the Applications list: ":sort health", ":sort name
+// reverse", or ":sort" alone for the order the source returned.
+func (m *Model) runSortCommand(arguments string) {
+	words := strings.Fields(arguments)
+	if len(words) > 2 || (len(words) == 2 && !strings.EqualFold(words[1], "reverse")) {
+		m.err = errors.New(sortHelp)
+		return
+	}
+	var input string
+	if len(words) > 0 {
+		input = words[0]
+	}
+	field, ok := explorer.ParseSortField(input)
+	if !ok {
+		m.err = errors.New(sortHelp)
+		return
+	}
+	reverse := len(words) == 2
+	m.explorer.SetSort(field, reverse)
+	m.err = nil
+	if field == explorer.SortDefault {
+		m.status = "Sorted in the order Argo CD returned"
+		return
+	}
+	m.status = "Sorted by " + string(field)
+}
+
+// resetExplorer empties the lists for another context or namespace, keeping
+// how the Applications are sorted.
+func (m *Model) resetExplorer() {
+	field, reverse := m.explorer.Sort()
+	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.explorer.SetSort(field, reverse)
 }
 
 // namespacesListed carries the cluster's namespaces, or the error from asking.
@@ -520,7 +581,7 @@ func (m *Model) finishNamespaceLookup(listed namespacesListed) tea.Cmd {
 	m.source = switcher.WithNamespace(listed.switchTo)
 	m.sourceGeneration++
 	m.namespace = listed.switchTo
-	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.resetExplorer()
 	m.closeTree()
 	m.marked = nil
 	m.namespaceOptions = nil

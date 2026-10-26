@@ -179,6 +179,9 @@ type Model struct {
 	owner  string
 	search string
 	filter Filter
+
+	sortField   SortField
+	sortReverse bool
 }
 
 // NewModel creates an explorer with Applications selected.
@@ -315,6 +318,7 @@ func (m Model) Applications() []Application {
 			matches = append(matches, application)
 		}
 	}
+	sortApplications(matches, m.sortField, m.sortReverse)
 	return matches
 }
 
