@@ -20,6 +20,10 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 - **Start view.** `startView` or `--start-view` opens a view first: `proj`, `cluster`, `appset`, `pulse`, or `app store` for one project.
 - **argocd CLI login.** With `--source api` and no server or token, argoxd reads them from `~/.config/argocd/config`, so `argocd login` once is enough. `--argocd-context` and `--argocd-config` choose another login or file. When the saved token has expired, the error says to run `argocd login`.
 
+- **Themes.** `:theme <name>`, `theme:` in the config file or `--theme` choose `default`, `light`, `high-contrast`, `colorblind` (blue for healthy, vermillion for degraded), `nord`, `dracula` or `terminal` (your terminal's own colors). The change is immediate and covers every color, including diffs and the status glyphs. `:theme` alone lists them.
+- **k9s.** `:k9s` opens k9s on the selected resource's namespace and kind, with the kubeconfig context argoxd uses, and returns to argoxd when you quit it. `--read-only` blocks it, because k9s can change things. `k9sCommand` sets its path.
+- **External diff viewer.** `x` in a diff opens it in the program set by `diffViewer`, such as `meld {left} {right}` or `code --diff {left} {right} --wait`, with the live and desired text as two temporary files that are removed afterwards.
+
 ### Changed
 
 - **Dependency view hints.** The key hints are five steady columns, so an optional hint no longer shifts the others. Their padding counted bytes instead of width, which a two-column key such as `←→` threw off.

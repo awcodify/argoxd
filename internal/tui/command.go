@@ -107,6 +107,13 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 				}
 			}
 		}
+		if name == themeCommand {
+			for _, candidate := range ThemeNames() {
+				if strings.HasPrefix(candidate, strings.ToLower(argument)) {
+					matches = append(matches, themeCommand+" "+candidate)
+				}
+			}
+		}
 		if name == sortCommand {
 			field, _, _ := strings.Cut(argument, " ")
 			for _, candidate := range sortFields {
@@ -139,6 +146,9 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 		}
 		if strings.HasPrefix(k9sCommandName, input) {
 			matches = append(matches, k9sCommandName)
+		}
+		if strings.HasPrefix(themeCommand, input) {
+			matches = append(matches, themeCommand)
 		}
 		for _, command := range contextCommands {
 			if strings.HasPrefix(command, input) {
@@ -424,6 +434,10 @@ func (m *Model) runCommand(input string) tea.Cmd {
 	}
 	if name == k9sCommandName {
 		return m.openK9s()
+	}
+	if name == themeCommand {
+		m.runThemeCommand(strings.TrimSpace(project))
+		return nil
 	}
 	if name == sortCommand {
 		m.runSortCommand(strings.TrimSpace(project))

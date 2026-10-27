@@ -53,6 +53,9 @@ mouse: false         # true scrolls with the wheel; the terminal then needs Shif
 resourceView: cards  # or table: how an Application's resources are first shown
 startView: proj      # open this view first, e.g. appset, pulse or "app store"
 argocdContext: staging   # which argocd CLI login to use for source: api
+theme: default       # default, light, high-contrast, colorblind, nord, dracula or terminal
+diffViewer: "meld {left} {right}"   # what x opens in a diff; both placeholders are needed
+k9sCommand: k9s      # path of k9s for :k9s
 caCert: /etc/ssl/corp-ca.pem         # for source: api
 clientCert: /etc/argoxd/client.crt   # for source: api, with clientKey
 clientKey: /etc/argoxd/client.key
@@ -79,6 +82,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--resource-view` | | `cards` |
 | `--start-view` | | Applications |
 | `--argocd-context`, `--argocd-config` | | the CLI's current login |
+| `--theme` | | `default` |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
@@ -97,6 +101,8 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Pulse** (`:pulse`): health and sync at a glance, and the Applications that need attention, worst first.
 - **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
 - **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
+- **Themes** (`:theme`): `default`, `light` for light terminals, `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors.
+- **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
 Some features need `--source api`: diffs, orphaned resources, and `o`.
@@ -114,6 +120,8 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | `:pulse`, `:overview` | Overview of what needs attention |
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
+| `:theme [name]` | Switch the colors; without a name it lists the themes |
+| `:k9s` | Open k9s on the selected resource's namespace and kind (needs k9s in your PATH; not in `--read-only`) |
 | `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first. Run it again with the same field to flip the direction, add `reverse` to force it, or use `:sort` alone to restore Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |
@@ -145,7 +153,7 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | Key | Action |
 | --- | --- |
 | `Y` | YAML of the Application, card or AppProject |
-| `d` | Diff (`--source api`) |
+| `d` | Diff (`--source api`); `x` there opens it in `diffViewer` |
 | `e` | Events, including those of a workload's Pods |
 | `i` | Last sync, resource by resource |
 | `h` | Deployment history; Enter rolls back |

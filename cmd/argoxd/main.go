@@ -48,6 +48,7 @@ type options struct {
 	startView    string
 
 	k9sCommand    string
+	theme         string
 	diffViewer    string
 	argocdContext string
 	argocdConfig  string
@@ -128,6 +129,11 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if options.theme != "" {
+		if err := tui.SetTheme(options.theme); err != nil {
+			return options, err
+		}
+	}
 	if options.startView != "" {
 		name, _, _ := strings.Cut(strings.TrimSpace(options.startView), " ")
 		if !slices.Contains(tui.StartViewCommands(), name) {
@@ -161,6 +167,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
 	flags.StringVar(&options.argocdContext, "argocd-context", options.argocdContext, "Context of the argocd CLI login to use for --source api when no server or token is given")
 	flags.StringVar(&options.argocdConfig, "argocd-config", options.argocdConfig, "Path of the argocd CLI config (default ~/.config/argocd/config)")
+	flags.StringVar(&options.theme, "theme", options.theme, "Color theme: "+strings.Join(tui.ThemeNames(), ", "))
 	flags.StringVar(&options.startView, "start-view", options.startView, "View to open first, as a command without the colon, e.g. proj or \"app store\"")
 	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")
 	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")

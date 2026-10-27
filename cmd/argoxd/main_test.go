@@ -311,3 +311,17 @@ func TestDiffViewerFromTheConfigFile(t *testing.T) {
 		t.Fatalf("diffViewer = %q, %v", options.diffViewer, err)
 	}
 }
+
+func TestThemeFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "theme: nord\n")
+	if options, err := parseOptions(nil); err != nil || options.theme != "nord" {
+		t.Fatalf("theme = %q, %v", options.theme, err)
+	}
+	if options, _ := parseOptions([]string{"--theme", "light"}); options.theme != "light" {
+		t.Fatalf("theme = %q, want the flag to win", options.theme)
+	}
+	isolateConfig(t, "theme: neon\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "nord") {
+		t.Fatalf("a bad theme: error = %v, want the available themes listed", err)
+	}
+}
