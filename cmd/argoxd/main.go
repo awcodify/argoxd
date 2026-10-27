@@ -49,6 +49,7 @@ type options struct {
 
 	k9sCommand    string
 	theme         string
+	eventsPane    bool
 	diffViewer    string
 	argocdContext string
 	argocdConfig  string
@@ -79,6 +80,7 @@ func main() {
 		WithRequestTimeout(options.requestTimeout).
 		WithResourceView(options.resourceView).
 		WithStartView(options.startView).
+		WithEventsPane(options.eventsPane).
 		WithExternalTools(tui.ExternalTools{K9s: options.k9sCommand, KubeContext: options.context, DiffViewer: options.diffViewer})
 	if field, ok := explorer.ParseSortField(options.sort); ok {
 		model = model.WithSort(field, options.sortReverse)
@@ -167,6 +169,7 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
 	flags.StringVar(&options.argocdContext, "argocd-context", options.argocdContext, "Context of the argocd CLI login to use for --source api when no server or token is given")
 	flags.StringVar(&options.argocdConfig, "argocd-config", options.argocdConfig, "Path of the argocd CLI config (default ~/.config/argocd/config)")
+	flags.BoolVar(&options.eventsPane, "events-pane", options.eventsPane, "Show the events of the selected resource under an Application's resources")
 	flags.StringVar(&options.theme, "theme", options.theme, "Color theme: "+strings.Join(tui.ThemeNames(), ", "))
 	flags.StringVar(&options.startView, "start-view", options.startView, "View to open first, as a command without the colon, e.g. proj or \"app store\"")
 	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")

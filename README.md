@@ -53,6 +53,7 @@ mouse: false         # true scrolls with the wheel; the terminal then needs Shif
 resourceView: cards  # or table: how an Application's resources are first shown
 startView: proj      # open this view first, e.g. appset, pulse or "app store"
 argocdContext: staging   # which argocd CLI login to use for source: api
+eventsPane: false    # true opens the events pane in every Application
 theme: default       # default, light, high-contrast, colorblind, nord, dracula or terminal
 diffViewer: "meld {left} {right}"   # what x opens in a diff; both placeholders are needed
 k9sCommand: k9s      # path of k9s for :k9s
@@ -83,6 +84,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--start-view` | | Applications |
 | `--argocd-context`, `--argocd-config` | | the CLI's current login |
 | `--theme` | | `default` |
+| `--events-pane` | | `false` |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
@@ -91,7 +93,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 
 - **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block. `:sort` orders it by name, health or sync.
 - **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions. `w` switches to a table of the same resources, and `←`/`→` fold a card (`z` folds them all). A `▾` marks a card that can fold and `▸` one that is folded.
-- **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
+- **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`). `E` keeps the selected resource's events in a pane under the cards, following the cursor and reloading on each refresh.
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
 - **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
 - **Marking**: Space marks Applications or cards; actions then run on all of them, one after another.
@@ -155,6 +157,7 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | `Y` | YAML of the Application, card or AppProject |
 | `d` | Diff (`--source api`); `x` there opens it in `diffViewer` |
 | `e` | Events, including those of a workload's Pods |
+| `E` | Toggle the events pane under an Application's resources |
 | `i` | Last sync, resource by resource |
 | `h` | Deployment history; Enter rolls back |
 | `l` | Logs; on a workload, all its Pods |

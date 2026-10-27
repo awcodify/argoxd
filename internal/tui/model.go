@@ -71,6 +71,11 @@ type Model struct {
 	contextOptions   []string
 	updateCheck      func(context.Context) string
 	resourceTable    bool
+	eventsPane       bool
+	paneFollowing    string
+	paneText         string
+	paneErr          error
+	paneLoaded       bool
 	tools            ExternalTools
 	launch           func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	startView        string
@@ -169,8 +174,22 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(commands...)
 }
 
-// Update handles TUI messages.
+// Update handles TUI messages, then lets the events pane follow wherever the
+// message left the selection.
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	updated, command := m.update(message)
+	next, ok := updated.(Model)
+	if !ok {
+		return updated, command
+	}
+	next, sync := next.syncEventsPane(message)
+	if sync == nil {
+		return next, command
+	}
+	return next, tea.Batch(command, sync)
+}
+
+func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
 		return m.updateKey(message)
@@ -179,6 +198,8 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("%s: %w", message.program, message.err)
 		}
 		m.status = ""
+	case paneEventsLoaded:
+		return m.showPaneEvents(message), nil
 	case namespacesListed:
 		return m, m.finishNamespaceLookup(message)
 	case updateAvailable:
@@ -330,6 +351,11 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w":
 		if m.view == applicationTreeView {
 			m.resourceTable = !m.resourceTable
+		}
+	case "E":
+		if m.view == applicationTreeView {
+			m.eventsPane = !m.eventsPane
+			m.paneFollowing, m.paneText, m.paneErr, m.paneLoaded = "", "", nil, false
 		}
 	case "esc":
 		if m.searching() {

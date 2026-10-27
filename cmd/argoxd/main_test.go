@@ -325,3 +325,17 @@ func TestThemeFromTheConfigFileAndFlag(t *testing.T) {
 		t.Fatalf("a bad theme: error = %v, want the available themes listed", err)
 	}
 }
+
+func TestEventsPaneFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.eventsPane {
+		t.Fatalf("eventsPane = %v, %v; want it off by default", options.eventsPane, err)
+	}
+	isolateConfig(t, "eventsPane: true\n")
+	if options, err := parseOptions(nil); err != nil || !options.eventsPane {
+		t.Fatalf("eventsPane = %v, %v; want it on from the config file", options.eventsPane, err)
+	}
+	if options, _ := parseOptions([]string{"--events-pane"}); !options.eventsPane {
+		t.Fatal("--events-pane did not turn it on")
+	}
+}

@@ -36,16 +36,23 @@ type card struct {
 // of cards, the details of the selected card beside it, and below them a
 // summary of the resources' statuses and the Application's conditions.
 func (m Model) renderDependencies(width, height int) []string {
+	summary := m.renderSummary(width)
+	pane := m.renderEventsPane(width, height-len(summary))
+	body := m.renderCards(width, max(0, height-len(summary)-len(pane)))
+	return append(append(body, pane...), summary...)
+}
+
+// renderCards draws the cards, or the table, in exactly height lines.
+func (m Model) renderCards(width, height int) []string {
 	if m.resourceTable {
-		summary := m.renderSummary(width)
-		lines := m.renderResourceTable(width-2, max(0, height-len(summary)))
+		lines := m.renderResourceTable(width-2, height)
 		for index := range lines {
 			lines[index] = " " + lines[index]
 		}
-		for len(lines) < height-len(summary) {
+		for len(lines) < height {
 			lines = append(lines, "")
 		}
-		return append(lines, summary...)
+		return lines[:min(len(lines), height)]
 	}
 	root, hidden := m.collapsedRoot()
 
@@ -54,8 +61,7 @@ func (m Model) renderDependencies(width, height int) []string {
 	for row := range tree {
 		tree[row] = " " + tree[row]
 	}
-	summary := m.renderSummary(width)
-	treeHeight := max(0, height-len(summary))
+	treeHeight := height
 	tree = tree[scrollOffset(m.treeCursor, cardHeight, treeHeight):]
 
 	var lines []string
@@ -75,11 +81,10 @@ func (m Model) renderDependencies(width, height int) []string {
 			lines = append(lines, padRight(left, treeWidth)+" "+right)
 		}
 	}
-	// The summary stays at the bottom, whatever the number of cards.
 	for len(lines) < treeHeight {
 		lines = append(lines, "")
 	}
-	return append(lines, summary...)
+	return lines
 }
 
 // renderSummary frames the count of resources by status and the first
