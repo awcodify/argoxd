@@ -103,11 +103,38 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Pulse** (`:pulse`): health and sync at a glance, and the Applications that need attention, worst first.
 - **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
 - **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
-- **Themes** (`:theme`): `default`, `light` for light terminals, `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors.
+- **Themes** (`:theme`): `default`, `light` for light terminals, `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors. [Define your own](#custom-themes) in the config file.
 - **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
 Some features need `--source api`: diffs, orphaned resources, and `o`.
+
+## Custom themes
+
+Define a theme under `themes:` in the config file. It starts from a built-in theme (`base`, the default when left out) and changes only the colors you list; then choose it with `theme: sunset` or `:theme sunset`, like any other.
+
+```yaml
+theme: sunset
+themes:
+  sunset:
+    base: nord
+    accent: "#ff5500"    # quote hex colors, or YAML reads the # as a comment
+    healthy: "#3ddc97"
+    danger: 197          # an ANSI color number, 0 to 255
+```
+
+A color is `#rrggbb`, `#rgb` or an ANSI number. The names are:
+
+| Name | What it colors |
+| --- | --- |
+| `accent` | the selection, keys and titles; the fill of the update badge |
+| `healthy`, `info`, `warning`, `danger`, `suspended` | Healthy and Synced, Progressing, OutOfSync, Degraded, Suspended |
+| `text`, `bright`, `muted` | ordinary text, names and the selected row, labels |
+| `border`, `surface` | frames, and the background of the selected row and key caps |
+| `addedText`, `addedBackground`, `removedText`, `removedBackground` | the bands of a diff |
+| `selection`, `badgeText` | selected lines in a viewer, and text on the accent color |
+
+Mistakes are reported when argoxd starts, with the theme and color named. Built-in names cannot be reused.
 
 ## Commands
 

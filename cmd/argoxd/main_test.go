@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/awcodify/argoxd/internal/tui"
+	"slices"
 	"time"
 )
 
@@ -337,5 +340,65 @@ func TestEventsPaneFromTheConfigFileAndFlag(t *testing.T) {
 	}
 	if options, _ := parseOptions([]string{"--events-pane"}); !options.eventsPane {
 		t.Fatal("--events-pane did not turn it on")
+	}
+}
+
+func TestCustomThemesFromTheConfigFile(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "theme: sunset\nthemes:\n  sunset:\n    base: nord\n    accent: \"#ff5500\"\n    healthy: \"#0f0\"\n")
+
+	options, err := parseOptions(nil)
+
+	if err != nil || options.theme != "sunset" {
+		t.Fatalf("theme = %q, %v; want the custom theme chosen", options.theme, err)
+	}
+	if !slices.Contains(tui.ThemeNames(), "sunset") {
+		t.Fatalf("themes = %v, want sunset among them", tui.ThemeNames())
+	}
+}
+
+func TestACustomThemeMistakeIsReportedWithItsPlace(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	for contents, want := range map[string]string{
+		"themes:\n  mine:\n    accent: red\n":                "themes.mine",
+		"themes:\n  mine:\n    base: neon\n":                 "themes.mine",
+		"themes:\n  nord:\n    accent: \"#fff\"\n":           "themes.nord",
+		"themes:\n  mine:\n    colour: \"#fff\"\n":           "colour",
+		"theme: missing\nthemes:\n  mine:\n    base: nord\n": "missing",
+	} {
+		isolateConfig(t, contents)
+		if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("config %q: error = %v, want one mentioning %q", contents, err, want)
+		}
+		tui.ForgetCustomThemes()
+	}
+}
+
+func TestUnquotedAnsiNumbersAreAcceptedInThemes(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "theme: warm\nthemes:\n  warm:\n    accent: 208\n    muted: 8\n")
+
+	if _, err := parseOptions(nil); err != nil {
+		t.Fatalf("an unquoted ANSI number was refused: %v", err)
+	}
+}
+
+func TestAnUnquotedHexColorIsExplainedBecauseYAMLReadsItAsAComment(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "themes:\n  warm:\n    accent: #ff5500\n")
+
+	_, err := parseOptions(nil)
+
+	if err == nil || !strings.Contains(err.Error(), "themes.warm.accent") || !strings.Contains(err.Error(), "quote") {
+		t.Fatalf("error = %v, want it to say the hex color needs quotes", err)
+	}
+}
+
+func TestAThemeColorThatIsNotTextOrANumberIsRefused(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "themes:\n  warm:\n    accent: [1, 2]\n")
+
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "themes.warm.accent") {
+		t.Fatalf("error = %v, want the bad value located", err)
 	}
 }

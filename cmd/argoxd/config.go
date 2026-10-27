@@ -39,13 +39,22 @@ type fileConfig struct {
 	ResourceView *string `json:"resourceView"`
 	StartView    *string `json:"startView"`
 
-	K9sCommand    *string `json:"k9sCommand"`
-	Theme         *string `json:"theme"`
-	EventsPane    *bool   `json:"eventsPane"`
-	DiffViewer    *string `json:"diffViewer"`
-	ArgoCDContext *string `json:"argocdContext"`
-	ArgoCDConfig  *string `json:"argocdConfig"`
+	K9sCommand *string `json:"k9sCommand"`
+	Theme      *string `json:"theme"`
+	EventsPane *bool   `json:"eventsPane"`
+	// Themes defines themes of your own: a name, then optionally a base theme
+	// and the colors to change.
+	Themes        map[string]customTheme `json:"themes"`
+	DiffViewer    *string                `json:"diffViewer"`
+	ArgoCDContext *string                `json:"argocdContext"`
+	ArgoCDConfig  *string                `json:"argocdConfig"`
 }
+
+// customTheme is one theme defined in the config file: "base" names the theme
+// it starts from and every other key is a color, such as accent or danger. The
+// values are read as whatever YAML made of them, so that an unquoted number and
+// an unquoted hex color, which YAML turns into a comment, can be explained.
+type customTheme map[string]any
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
 // $XDG_CONFIG_HOME/argoxd/config.yaml, else ~/.config/argoxd/config.yaml.
@@ -129,6 +138,9 @@ func (c fileConfig) apply(defaults options) (options, error) {
 			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
 		}
 		defaults.sort = *c.Sort
+	}
+	if c.Themes != nil {
+		defaults.themes = c.Themes
 	}
 	if c.EventsPane != nil {
 		defaults.eventsPane = *c.EventsPane

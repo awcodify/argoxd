@@ -50,6 +50,7 @@ type options struct {
 	k9sCommand    string
 	theme         string
 	eventsPane    bool
+	themes        map[string]customTheme
 	diffViewer    string
 	argocdContext string
 	argocdConfig  string
@@ -131,6 +132,9 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if err := registerThemes(options.themes); err != nil {
+		return options, err
+	}
 	if options.theme != "" {
 		if err := tui.SetTheme(options.theme); err != nil {
 			return options, err
