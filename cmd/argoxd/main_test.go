@@ -402,3 +402,13 @@ func TestAThemeColorThatIsNotTextOrANumberIsRefused(t *testing.T) {
 		t.Fatalf("error = %v, want the bad value located", err)
 	}
 }
+
+func TestShowKeysIsAFlagNotAConfigSetting(t *testing.T) {
+	isolateConfig(t, "")
+	if options, _ := parseOptions(nil); options.showKeys {
+		t.Fatal("showKeys is on by default")
+	}
+	if options, _ := parseOptions([]string{"--show-keys"}); !options.showKeys {
+		t.Fatal("--show-keys did not turn it on")
+	}
+}

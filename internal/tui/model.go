@@ -85,6 +85,10 @@ type Model struct {
 	updateVersion    string
 	namespaceOptions []string
 	status           string
+	// Key press tracking for demo visibility
+	showKeys bool
+	keyShown string
+	keyPress int
 }
 
 type viewMode int
@@ -194,7 +198,17 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
-		return m.updateKey(message)
+		if !m.showKeys {
+			return m.updateKey(message)
+		}
+		noted, fade := m.notePressedKey(message)
+		updated, command := noted.updateKey(message)
+		return updated, tea.Batch(command, fade)
+	case keyBadgeExpired:
+		if message.press == m.keyPress {
+			m.keyShown = ""
+		}
+		return m, nil
 	case externalDone:
 		if message.err != nil {
 			m.err = fmt.Errorf("%s: %w", message.program, message.err)
@@ -583,7 +597,7 @@ func (m Model) View() string {
 		width:  m.width,
 		height: m.bodyHeight() + 2,
 	}.render(lines)
-	return paintBackground(strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n"), m.width, m.height)
+	return paintBackground(m.withKeyOverlay(strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n")), m.width, m.height)
 }
 
 // bodyHeight is the number of lines available inside the main frame.

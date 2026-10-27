@@ -85,6 +85,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--argocd-context`, `--argocd-config` | | the CLI's current login |
 | `--theme` | | `default` |
 | `--events-pane` | | `false` |
+| `--show-keys` | | `false` |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
@@ -287,6 +288,8 @@ make test   # go vet and go test
 make build  # dist/argoxd
 make demo   # re-record demo/demo.gif; needs vhs
 ```
+
+Record your own with `argoxd --show-keys`: the key you pressed appears in a dimmed band across the middle of the screen, so the video shows what is being typed even when the action is quiet.
 
 Pushing a tag such as `v0.4.1` publishes release binaries and the Homebrew cask with GoReleaser.
 

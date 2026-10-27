@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -58,6 +59,15 @@ var (
 	// updateBadgeStyle fills the update notice so it stands out from the muted
 	// header text around it.
 	updateBadgeStyle lipgloss.Style
+	// keyBadgeStyle is the block that shows a pressed key: bold on the accent
+	// color, with room around it, so it reads in a small recording.
+	keyBadgeStyle lipgloss.Style
+	// keyScrim is the sheet the key caption floats on. A terminal cannot blend
+	// a translucent color with what is behind it, so the sheet is drawn dark
+	// and the text it covers is dimmed instead: the interface still shows
+	// through, as if under tinted glass. On a light theme the sheet is light,
+	// so the caption reads as a dimmed pane rather than a black band.
+	keyScrim lipgloss.Color
 )
 
 func init() { _ = setTheme("default") }
@@ -86,6 +96,26 @@ func applyTheme(t theme) {
 	diffRemovedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.removedFG)).Background(lipgloss.Color(t.removedBG))
 	visualSelectedStyle = lipgloss.NewStyle().Foreground(colorBright).Background(lipgloss.Color(t.selection))
 	updateBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.badgeText)).Background(colorAccent).Bold(true).Padding(0, 1)
+	keyBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.badgeText)).Background(colorAccent).Bold(true).Padding(0, 2)
+	keyScrim = lipgloss.Color("#05070A")
+	if isLightColor(t.background) {
+		keyScrim = lipgloss.Color(t.surface)
+	}
+}
+
+// isLightColor reports whether a #rrggbb color is brighter than mid grey. A
+// theme with a light background needs a light sheet; a theme with no background
+// of its own, or one written as an ANSI number, keeps the dark sheet.
+func isLightColor(color string) bool {
+	if len(color) != 7 || color[0] != '#' {
+		return false
+	}
+	value, err := strconv.ParseUint(color[1:], 16, 32)
+	if err != nil {
+		return false
+	}
+	red, green, blue := (value>>16)&0xff, (value>>8)&0xff, value&0xff
+	return (299*red+587*green+114*blue)/1000 > 128
 }
 
 // status describes how an Argo CD health or sync status is drawn. A higher
