@@ -95,9 +95,11 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block. `:sort` orders it by name, health or sync.
 - **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions. `w` switches to a table of the same resources, and `←`/`→` fold a card (`z` folds them all). A `▾` marks a card that can fold and `▸` one that is folded.
 - **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`). `E` keeps the selected resource's events in a pane under the cards, following the cursor and reloading on each refresh; `[` and `]` scroll it through older and newer events, as does the mouse wheel over it with `--mouse`. `e` opens the full list instead.
+
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
 - **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
 - **Marking**: Space marks Applications or cards; actions then run on all of them, one after another.
+
 - **Prune and orphans**: `✂ to prune` for resources a pruning sync would delete, `◌ orphaned` for resources no Application manages.
 - **App of apps**: Enter on a child Application opens it; Esc returns to the parent.
 - **ApplicationSets** (`:appset`) with their generators, status and generated Applications.
@@ -109,6 +111,13 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
 Some features need `--source api`: diffs, orphaned resources, and `o`.
+
+## More demos
+
+| | |
+| --- | --- |
+| **Resources**: the dependency view, events pane and sync details<br>[![argoxd resources](demo/resources.gif)](demo/resources.gif) | **Batch sync**: mark several Applications and sync them together<br>[![argoxd batch sync](demo/batch-sync.gif)](demo/batch-sync.gif) |
+| **Inspect**: live YAML, diff against Git and Pod logs<br>[![argoxd inspect](demo/inspect.gif)](demo/inspect.gif) | **Themes**: the `:theme` picker previewing each theme<br>[![argoxd themes](demo/themes.gif)](demo/themes.gif) |
 
 ## Custom themes
 
@@ -286,7 +295,7 @@ Requests that take longer than `requestTimeout` (15 seconds by default) are aban
 ```sh
 make test   # go vet and go test
 make build  # dist/argoxd
-make demo   # re-record demo/demo.gif; needs vhs
+make demo   # re-record demo GIFs (demo, themes, resources, batch-sync, inspect); needs vhs
 ```
 
 Record your own with `argoxd --show-keys`: the key you pressed appears in a dimmed band across the middle of the screen, so the video shows what is being typed even when the action is quiet.
