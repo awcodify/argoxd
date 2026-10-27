@@ -12,11 +12,29 @@ import (
 )
 
 const (
-	// eventsPaneHeight is the pane's height with its border.
-	eventsPaneHeight = 9
-	// minCardsHeight is what the cards need before the pane may take room.
-	minCardsHeight = 12
+	// maxEventsPaneHeight and minEventsPaneHeight are the pane's height with its
+	// border: it takes what the cards can spare, between these two.
+	maxEventsPaneHeight = 9
+	minEventsPaneHeight = 5
+	// minCardsHeight is what the cards must keep, enough for the selected card
+	// and one more; the table needs only a header and a few rows.
+	minCardsHeight = 8
+	minTableHeight = 6
 )
+
+// eventsPaneHeight is how tall the pane is when there are free lines for it
+// and the cards, or 0 when it would leave the cards too little.
+func (m Model) eventsPaneHeight(free int) int {
+	needed := minCardsHeight
+	if m.resourceTable {
+		needed = minTableHeight
+	}
+	height := min(maxEventsPaneHeight, free-needed)
+	if height < minEventsPaneHeight {
+		return 0
+	}
+	return height
+}
 
 // paneEventsLoaded is the events of the card the pane was following.
 type paneEventsLoaded struct {
@@ -109,10 +127,11 @@ func (m Model) showPaneEvents(message paneEventsLoaded) Model {
 // renderEventsPane frames the newest events of the selected card, or nothing
 // when the pane is off or the terminal is too short to share.
 func (m Model) renderEventsPane(width, height int) []string {
-	if !m.eventsPane || m.paneFollowing == "" || height-eventsPaneHeight < minCardsHeight {
+	paneHeight := m.eventsPaneHeight(height)
+	if !m.eventsPane || m.paneFollowing == "" || paneHeight == 0 {
 		return nil
 	}
-	rows := eventsPaneHeight - 2
+	rows := paneHeight - 2
 	var content []string
 	switch {
 	case m.paneErr != nil:
@@ -142,7 +161,7 @@ func (m Model) renderEventsPane(width, height int) []string {
 		color:  colorBorder,
 		title:  " " + accentStyle.Render("events · "+m.paneSubject()) + " ",
 		width:  max(0, width-2),
-		height: eventsPaneHeight,
+		height: paneHeight,
 	}.render(content)
 	lines := strings.Split(framed, "\n")
 	for row := range lines {

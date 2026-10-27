@@ -185,3 +185,78 @@ func TestTheHintsOfferTheEventsPaneAndStillFitFiveRows(t *testing.T) {
 		}
 	}
 }
+
+func paneDrawn(model Model) bool { return strings.Contains(model.View(), "events ·") }
+
+func TestThePaneFitsOnTheTerminalsPeopleActuallyUse(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "j", "E") // a Deployment
+
+	for _, height := range []int{40, 34, 30} {
+		sized := resize(model, 140, height)
+		view := sized.View()
+		if !paneDrawn(sized) || !strings.Contains(view, "summary") || !strings.Contains(view, "┏━ Deployment") {
+			t.Errorf("at %d rows the pane, the summary and the selected card should all show:\n%s", height, view)
+		}
+		if lines := len(strings.Split(view, "\n")); lines > height {
+			t.Errorf("at %d rows the screen is %d lines tall", height, lines)
+		}
+	}
+}
+
+func TestThePaneShrinksBeforeItDisappears(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "j", "E")
+
+	rows := func(height int) int {
+		count := 0
+		in := false
+		for _, line := range strings.Split(resize(model, 140, height).View(), "\n") {
+			if strings.Contains(line, "events ·") {
+				in = true
+			}
+			if in {
+				count++
+				if strings.Contains(line, "╰") {
+					break
+				}
+			}
+		}
+		return count
+	}
+	if tall, short := rows(44), rows(26); tall <= short || short < 5 {
+		t.Fatalf("pane height is %d on 44 rows and %d on 26; want it to shrink but stay usable", tall, short)
+	}
+}
+
+func TestOnAVeryShortTerminalThePaneIsDroppedAndTheCardsKeepTheRoom(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "j", "E")
+
+	short := resize(model, 140, 20)
+
+	if paneDrawn(short) || !strings.Contains(short.View(), "┏━ Deployment") {
+		t.Fatalf("a 20-row terminal should keep the cards and drop the pane:\n%s", short.View())
+	}
+}
+
+func TestTheTableNeedsLessRoomThanCardsSoItKeepsThePaneLonger(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "w", "j", "E")
+
+	if view := resize(model, 140, 26).View(); !strings.Contains(view, "events ·") || !strings.Contains(view, "Deployment") {
+		t.Fatalf("the table with its pane should fit on 26 rows:\n%s", view)
+	}
+}
+
+func TestRestartAsksAboutTheDeploymentWhileThePaneIsOpen(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "j", "E", "x")
+
+	if view := model.View(); !strings.Contains(view, "Restart Deployment/web?") {
+		t.Fatalf("the dialog is missing with the pane open:\n%s", view)
+	}
+	if cancelled := keyed(model, "n"); !strings.Contains(cancelled.View(), "events · Deployment/web") {
+		t.Fatalf("the pane did not come back after cancelling:\n%s", cancelled.View())
+	}
+}
