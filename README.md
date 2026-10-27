@@ -103,7 +103,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Pulse** (`:pulse`): health and sync at a glance, and the Applications that need attention, worst first.
 - **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
 - **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
-- **Themes** (`:theme`): `default`, `light` for light terminals, `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors. [Define your own](#custom-themes) in the config file.
+- **Themes** (`:theme` opens a picker that previews each one as you move; Enter keeps it, Esc brings back the old one): `default`, `light` (paints its own light background, so it reads on any terminal), `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors. [Define your own](#custom-themes) in the config file.
 - **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
@@ -123,7 +123,7 @@ themes:
     danger: 197          # an ANSI color number, 0 to 255
 ```
 
-A color is `#rrggbb`, `#rgb` or an ANSI number. The names are:
+A color is `#rrggbb`, `#rgb` or an ANSI number. There are 18 names:
 
 | Name | What it colors |
 | --- | --- |
@@ -133,6 +133,7 @@ A color is `#rrggbb`, `#rgb` or an ANSI number. The names are:
 | `border`, `surface` | frames, and the background of the selected row and key caps |
 | `addedText`, `addedBackground`, `removedText`, `removedBackground` | the bands of a diff |
 | `selection`, `badgeText` | selected lines in a viewer, and text on the accent color |
+| `background` | the whole screen. Leave it out to keep your terminal's own; `none` clears one a base theme sets. `light`, `nord` and `dracula` set theirs |
 
 Mistakes are reported when argoxd starts, with the theme and color named. Built-in names cannot be reused.
 
@@ -149,7 +150,7 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | `:pulse`, `:overview` | Overview of what needs attention |
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
-| `:theme [name]` | Switch the colors; without a name it lists the themes |
+| `:theme [name]` | Switch the colors; without a name a picker previews each theme as you move through them (Tab, arrows or typing), Enter keeps the one shown and Esc brings back the old one |
 | `:k9s` | Open k9s on the selected resource's namespace and kind (needs k9s in your PATH; not in `--read-only`) |
 | `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first. Run it again with the same field to flip the direction, add `reverse` to force it, or use `:sort` alone to restore Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |

@@ -21,6 +21,8 @@ var (
 	colorBright  lipgloss.Color
 	colorBorder  lipgloss.Color
 	colorSurface lipgloss.Color
+	// themeBackground fills the screen; empty keeps the terminal's own.
+	themeBackground lipgloss.Color
 )
 
 // pruneGlyph flags a resource that a sync with prune would delete, and
@@ -66,6 +68,7 @@ func applyTheme(t theme) {
 	colorAmber, colorRose, colorViolet = lipgloss.Color(t.warning), lipgloss.Color(t.danger), lipgloss.Color(t.suspended)
 	colorSlate, colorText, colorBright = lipgloss.Color(t.muted), lipgloss.Color(t.text), lipgloss.Color(t.bright)
 	colorBorder, colorSurface = lipgloss.Color(t.border), lipgloss.Color(t.surface)
+	themeBackground = lipgloss.Color(t.background)
 
 	accentStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
 	brightStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)

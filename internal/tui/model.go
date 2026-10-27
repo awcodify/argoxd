@@ -77,6 +77,7 @@ type Model struct {
 	paneErr          error
 	paneLoaded       bool
 	paneOffset       int
+	themeBefore      string
 	tools            ExternalTools
 	launch           func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	startView        string
@@ -582,7 +583,7 @@ func (m Model) View() string {
 		width:  m.width,
 		height: m.bodyHeight() + 2,
 	}.render(lines)
-	return strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n")
+	return paintBackground(strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n"), m.width, m.height)
 }
 
 // bodyHeight is the number of lines available inside the main frame.

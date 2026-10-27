@@ -28,6 +28,8 @@ var colorKeys = map[string]func(*theme) *string{
 	"removedBackground": func(t *theme) *string { return &t.removedBG },
 	"selection":         func(t *theme) *string { return &t.selection },
 	"badgeText":         func(t *theme) *string { return &t.badgeText },
+	// "none" gives the terminal's own background.
+	"background": func(t *theme) *string { return &t.background },
 }
 
 // ThemeColorKeys lists the colors a custom theme can set, sorted.
@@ -94,6 +96,10 @@ func RegisterTheme(name, base string, colors map[string]string) error {
 		field, known := colorKeys[key]
 		if !known {
 			return fmt.Errorf("%q is not a theme color; the colors are %s", key, strings.Join(ThemeColorKeys(), ", "))
+		}
+		if key == "background" && strings.EqualFold(strings.TrimSpace(colors[key]), "none") {
+			custom.background = ""
+			continue
 		}
 		value, valid := normalizeColor(colors[key])
 		if !valid {

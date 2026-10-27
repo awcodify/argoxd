@@ -224,6 +224,9 @@ func (m Model) suggestions() []string {
 	if m.prompt.field == namespaceField {
 		return matchOptions(m.prompt.input, m.namespaceOptions)
 	}
+	if m.prompt.field == themeField {
+		return matchOptions(m.prompt.input, ThemeNames())
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
@@ -293,6 +296,16 @@ func (m Model) selectedSuggestion() string {
 }
 
 func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	wasThemePicker := m.prompt.active && m.prompt.field == themeField
+	updated, command := m.updatePromptKey(message)
+	if next, ok := updated.(Model); ok {
+		next.settleThemePicker(wasThemePicker)
+		return next, command
+	}
+	return updated, command
+}
+
+func (m Model) updatePromptKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.prompt.search {
 		return m.updateSearch(message)
 	}
@@ -316,6 +329,9 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.switchContext(input)
 			case namespaceField:
 				return m, m.switchNamespace(input)
+			case themeField:
+				m.confirmTheme(input)
+				return m, nil
 			}
 			m.runFilter(field, input)
 			return m, nil

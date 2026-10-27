@@ -2,7 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // theme is a complete set of colors, written as #rrggbb, or as ANSI numbers
@@ -23,6 +27,10 @@ type theme struct {
 	selection                              string
 	// badgeText is drawn on the accent color.
 	badgeText string
+	// background fills the whole screen. Empty keeps the terminal's own, which
+	// suits themes made for it; the light theme sets one, because its dark text
+	// is unreadable on a dark terminal.
+	background string
 }
 
 var themes = []theme{
@@ -35,6 +43,7 @@ var themes = []theme{
 		name: "light", accent: "#C2410C", healthy: "#047857", info: "#0369A1", warning: "#B45309", danger: "#BE123C", suspended: "#6D28D9",
 		muted: "#64748B", text: "#334155", bright: "#0F172A", border: "#94A3B8", surface: "#E2E8F0",
 		addedFG: "#14532D", addedBG: "#BBF7D0", removedFG: "#7F1D1D", removedBG: "#FECDD3", selection: "#BFDBFE", badgeText: "#FFFFFF",
+		background: "#F8FAFC",
 	},
 	{
 		name: "high-contrast", accent: "#FFB000", healthy: "#00FF7F", info: "#00BFFF", warning: "#FFFF00", danger: "#FF5555", suspended: "#D7A6FF",
@@ -52,11 +61,13 @@ var themes = []theme{
 		name: "nord", accent: "#D08770", healthy: "#A3BE8C", info: "#88C0D0", warning: "#EBCB8B", danger: "#BF616A", suspended: "#B48EAD",
 		muted: "#7B88A1", text: "#D8DEE9", bright: "#ECEFF4", border: "#4C566A", surface: "#3B4252",
 		addedFG: "#E5F0DD", addedBG: "#2F4A3A", removedFG: "#F3DADD", removedBG: "#4F2F35", selection: "#434C5E", badgeText: "#2E3440",
+		background: "#2E3440",
 	},
 	{
 		name: "dracula", accent: "#FF79C6", healthy: "#50FA7B", info: "#8BE9FD", warning: "#F1FA8C", danger: "#FF5555", suspended: "#BD93F9",
 		muted: "#6272A4", text: "#F8F8F2", bright: "#FFFFFF", border: "#44475A", surface: "#343746",
 		addedFG: "#D7FFE0", addedBG: "#1F4A2E", removedFG: "#FFD7D7", removedBG: "#5A2230", selection: "#44475A", badgeText: "#282A36",
+		background: "#282A36",
 	},
 	{
 		// The terminal's own 16 colors, so argoxd follows whatever scheme it runs in.
@@ -101,14 +112,16 @@ func setTheme(name string) error {
 // SetTheme chooses the theme before the interface starts.
 func SetTheme(name string) error { return setTheme(name) }
 
-// themeCommand is ":theme": with a name it switches, without one it says which
-// theme is in use and which others there are.
+// themeCommand is ":theme": with a name it switches, without one it opens a
+// picker that previews each theme as you move through them.
 const themeCommand = "theme"
+
+// themeField is the prompt field of the theme picker.
+const themeField = "theme"
 
 func (m *Model) runThemeCommand(name string) {
 	if name == "" {
-		m.err = nil
-		m.status = "Theme " + currentTheme + "; others: " + strings.Join(without(ThemeNames(), currentTheme), ", ")
+		m.openThemePicker()
 		return
 	}
 	if err := setTheme(name); err != nil {
@@ -127,4 +140,65 @@ func without(names []string, drop string) []string {
 		}
 	}
 	return kept
+}
+
+// openThemePicker opens the theme bar on the theme in use. Every theme it moves
+// to is painted at once; Enter keeps it and Esc brings back the original.
+func (m *Model) openThemePicker() {
+	m.err = nil
+	m.themeBefore = currentTheme
+	m.prompt = prompt{active: true, field: themeField, selection: max(0, slices.Index(ThemeNames(), currentTheme))}
+}
+
+// previewTheme paints the highlighted theme. Nothing matching leaves the last one.
+func (m *Model) previewTheme() {
+	if choice := m.selectedSuggestion(); choice != "" {
+		_ = setTheme(choice)
+	}
+}
+
+// confirmTheme keeps the theme the picker ended on.
+func (m *Model) confirmTheme(choice string) {
+	m.themeBefore = ""
+	if choice == "" {
+		choice = currentTheme
+	}
+	m.runThemeCommand(choice)
+}
+
+// settleThemePicker runs after every key of a prompt: it previews while the
+// theme bar is open, and puts the original theme back if the bar closed without
+// a choice (Esc, or Backspace on empty input).
+func (m *Model) settleThemePicker(wasOpen bool) {
+	switch {
+	case m.prompt.active && m.prompt.field == themeField:
+		m.previewTheme()
+	case wasOpen && m.themeBefore != "":
+		_ = setTheme(m.themeBefore)
+		m.themeBefore = ""
+	}
+}
+
+// paintBackground fills every cell of the screen with the theme's background:
+// each line is padded to the full width, the screen to its full height, and the
+// background is set again after every style reset, which would otherwise end
+// it in the middle of a line. A theme without a background, or a terminal
+// without color, leaves the view as it is.
+func paintBackground(view string, width, height int) string {
+	if themeBackground == "" {
+		return view
+	}
+	prefix, _, found := strings.Cut(lipgloss.NewStyle().Background(themeBackground).Render("x"), "x")
+	if !found || prefix == "" {
+		return view
+	}
+	lines := strings.Split(view, "\n")
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	for index, line := range lines {
+		padding := max(0, width-ansi.StringWidth(line))
+		lines[index] = prefix + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix) + strings.Repeat(" ", padding) + "\x1b[0m"
+	}
+	return strings.Join(lines, "\n")
 }

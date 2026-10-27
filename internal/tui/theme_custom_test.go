@@ -149,13 +149,13 @@ func TestEveryColorKeyCanBeSet(t *testing.T) {
 		"danger": custom.danger, "suspended": custom.suspended, "muted": custom.muted, "text": custom.text,
 		"bright": custom.bright, "border": custom.border, "surface": custom.surface, "addedText": custom.addedFG,
 		"addedBackground": custom.addedBG, "removedText": custom.removedFG, "removedBackground": custom.removedBG,
-		"selection": custom.selection, "badgeText": custom.badgeText,
+		"selection": custom.selection, "badgeText": custom.badgeText, "background": custom.background,
 	} {
 		if value != "#010203" {
 			t.Errorf("%s was not set: %q", field, value)
 		}
 	}
-	if len(ThemeColorKeys()) != 17 {
-		t.Errorf("ThemeColorKeys() = %v, want 17 keys", ThemeColorKeys())
+	if len(ThemeColorKeys()) != 18 {
+		t.Errorf("ThemeColorKeys() = %v, want 18 keys", ThemeColorKeys())
 	}
 }

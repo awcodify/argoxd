@@ -139,9 +139,6 @@ func TestThemeCommandSwitchesAndSaysSo(t *testing.T) {
 	if bad := command(model, ":theme neon"); bad.err == nil || !strings.Contains(bad.err.Error(), "nord") || currentTheme != "dracula" {
 		t.Fatalf("a bad theme: err = %v, theme = %q; want it refused and the real names listed", bad.err, currentTheme)
 	}
-	if shown := command(model, ":theme"); !strings.Contains(shown.status, "dracula") || !strings.Contains(shown.status, "nord") {
-		t.Fatalf(":theme alone said %q, want the current theme and the others", shown.status)
-	}
 }
 
 func TestThemeNamesAreSuggestedAndCycleWithTab(t *testing.T) {
