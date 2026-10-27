@@ -11,13 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Changed diff lines are drawn as full-width tinted bands, like a code review.
-var (
-	diffAddedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#BBF7D0")).Background(lipgloss.Color("#12372A"))
-	diffRemovedStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("#FECDD3")).Background(lipgloss.Color("#4A1D27"))
-	visualSelectedStyle = lipgloss.NewStyle().Foreground(colorBright).Background(lipgloss.Color("#1E3A5F"))
-)
-
 // yamlKey matches the key of a YAML line, including any list marker before it.
 var yamlKey = regexp.MustCompile(`^(\s*(?:- )?)([^\s:#][^:#]*):(\s|$)`)
 
@@ -95,6 +88,8 @@ func (m Model) updateViewer(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.yank()
 	case "o":
 		m.openApplicationInBrowser()
+	case "x":
+		return m, m.openDiffViewer()
 	case "down", "j":
 		if m.viewer.visual {
 			m.viewer.cursor = min(len(m.viewer.shown())-1, m.viewer.cursor+1)
@@ -179,13 +174,16 @@ func (v textView) render(width, height int) []string {
 }
 
 // podColors are the colors a workload log gives its Pods, one per name.
-var podColors = []lipgloss.Color{colorSky, colorTeal, colorAmber, colorViolet, colorRose, colorAccent}
+func podColors() []lipgloss.Color {
+	return []lipgloss.Color{colorSky, colorTeal, colorAmber, colorViolet, colorRose, colorAccent}
+}
 
 // podStyle gives a Pod the same color every time it is drawn.
 func podStyle(pod string) lipgloss.Style {
 	sum := fnv.New32a()
 	_, _ = sum.Write([]byte(pod))
-	return lipgloss.NewStyle().Foreground(podColors[sum.Sum32()%uint32(len(podColors))])
+	colors := podColors()
+	return lipgloss.NewStyle().Foreground(colors[sum.Sum32()%uint32(len(colors))])
 }
 
 func (v textView) highlight(line string, width int) string {

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/awcodify/argoxd/internal/argocd"
@@ -32,6 +33,28 @@ type options struct {
 	version    bool
 
 	checkUpdates bool
+
+	caCert         string
+	clientCert     string
+	clientKey      string
+	requestTimeout time.Duration
+
+	sort        string
+	sortReverse bool
+	mouse       bool
+
+	resourceView string
+	startView    string
+
+	k9sCommand    string
+	theme         string
+	eventsPane    bool
+	showKeys      bool
+	themes        map[string]customTheme
+	diffViewer    string
+	argocdContext string
+	argocdConfig  string
+	tokenFromCLI  bool
 }
 
 func main() {
@@ -44,6 +67,9 @@ func main() {
 		fmt.Println(versionString(version, info))
 		return
 	}
+	if options, err = withArgoCDLogin(options); err != nil {
+		log.Fatal(err)
+	}
 	source, err := buildSource(options)
 	if err != nil {
 		log.Fatal(err)
@@ -51,13 +77,26 @@ func main() {
 
 	model := tui.New(source, connectionDescription(options), options.namespace, explorer.Snapshot{}).
 		WithRefresh(options.refresh).
-		WithReadOnly(options.readOnly)
+		WithReadOnly(options.readOnly).
+		WithRequestTimeout(options.requestTimeout).
+		WithResourceView(options.resourceView).
+		WithStartView(options.startView).
+		WithEventsPane(options.eventsPane).
+		WithShowKeys(options.showKeys).
+		WithExternalTools(tui.ExternalTools{K9s: options.k9sCommand, Kubeconfig: options.kubeconfig, KubeContext: options.context, DiffViewer: options.diffViewer})
+	if field, ok := explorer.ParseSortField(options.sort); ok {
+		model = model.WithSort(field, options.sortReverse)
+	}
 	if options.checkUpdates && !options.demo {
 		current := releaseVersion(version, info)
 		checker := update.NewChecker()
 		model = model.WithUpdateCheck(func(ctx context.Context) string { return checker.Available(ctx, current) })
 	}
-	if _, err := tea.NewProgram(model, tea.WithAltScreen()).Run(); err != nil {
+	program := []tea.ProgramOption{tea.WithAltScreen()}
+	if options.mouse {
+		program = append(program, tea.WithMouseCellMotion())
+	}
+	if _, err := tea.NewProgram(model, program...).Run(); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -73,6 +112,9 @@ func parseOptions(arguments []string) (options, error) {
 		refresh:   5 * time.Second,
 
 		checkUpdates: true,
+
+		requestTimeout: 15 * time.Second,
+		resourceView:   "cards",
 	}
 	config, err := loadConfig(configPath())
 	if err != nil {
@@ -91,6 +133,26 @@ func parseOptions(arguments []string) (options, error) {
 
 	flags := newFlagSet(&options)
 	_ = flags.Parse(arguments) // ExitOnError exits on invalid flags.
+	if err := registerThemes(options.themes); err != nil {
+		return options, err
+	}
+	if options.theme != "" {
+		if err := tui.SetTheme(options.theme); err != nil {
+			return options, err
+		}
+	}
+	if err := tui.ValidateStartView(options.startView); err != nil {
+		return options, err
+	}
+	if options.sortReverse && options.sort == "" {
+		return options, errors.New("sortReverse needs sort: set sort to name, health or sync")
+	}
+	if options.resourceView != "cards" && options.resourceView != "table" {
+		return options, fmt.Errorf("resource view must be cards or table, got %q", options.resourceView)
+	}
+	if options.requestTimeout <= 0 {
+		return options, fmt.Errorf("request timeout must be positive, got %s", options.requestTimeout)
+	}
 	return options, nil
 }
 
@@ -106,6 +168,18 @@ func newFlagSet(options *options) *flag.FlagSet {
 	flags.StringVar(&options.token, "auth-token", options.token, "Argo CD API token")
 	flags.BoolVar(&options.insecure, "insecure", options.insecure, "Skip TLS certificate verification for API connections")
 	flags.BoolVar(&options.insecure, "k", options.insecure, "Shorthand for --insecure")
+	flags.StringVar(&options.caCert, "ca-cert", options.caCert, "PEM file of extra certificate authorities to trust for --source api")
+	flags.StringVar(&options.clientCert, "client-cert", options.clientCert, "PEM client certificate for --source api, if the server asks for one")
+	flags.StringVar(&options.clientKey, "client-key", options.clientKey, "PEM private key of the client certificate")
+	flags.DurationVar(&options.requestTimeout, "request-timeout", options.requestTimeout, "How long a request to Argo CD or Kubernetes may take")
+	flags.StringVar(&options.argocdContext, "argocd-context", options.argocdContext, "Context of the argocd CLI login to use for --source api when no server or token is given")
+	flags.StringVar(&options.argocdConfig, "argocd-config", options.argocdConfig, "Path of the argocd CLI config (default ~/.config/argocd/config)")
+	flags.BoolVar(&options.showKeys, "show-keys", false, "Caption each key pressed in a band across the middle of the screen, for recording demos")
+	flags.BoolVar(&options.eventsPane, "events-pane", options.eventsPane, "Show the events of the selected resource under an Application's resources")
+	flags.StringVar(&options.theme, "theme", options.theme, "Color theme: "+strings.Join(tui.ThemeNames(), ", "))
+	flags.StringVar(&options.startView, "start-view", options.startView, "View to open first, as a command without the colon, e.g. proj or \"app store\"")
+	flags.StringVar(&options.resourceView, "resource-view", options.resourceView, "How an Application's resources are first shown: cards or table")
+	flags.BoolVar(&options.mouse, "mouse", options.mouse, "Scroll with the mouse wheel; the terminal then needs Shift to select text")
 	flags.StringVar(&options.kubeconfig, "kubeconfig", options.kubeconfig, "Path to kubeconfig (uses default loading rules when empty)")
 	flags.StringVar(&options.context, "context", options.context, "Kubeconfig context (uses current context when empty)")
 	flags.StringVar(&options.context, "c", options.context, "Shorthand for --context")
@@ -158,7 +232,11 @@ func buildSource(options options) (argocd.Source, error) {
 		if options.server == "" {
 			return nil, errors.New("--server or ARGOCD_SERVER is required when --source=api")
 		}
-		return argocd.NewAPISource(options.server, options.token, options.insecure), nil
+		return argocd.NewConfiguredAPISource(options.server, options.token, argocd.APIOptions{
+			Insecure: options.insecure, CACertFile: options.caCert,
+			ClientCertFile: options.clientCert, ClientKeyFile: options.clientKey, Timeout: options.requestTimeout,
+			TokenFromCLI: options.tokenFromCLI,
+		})
 	default:
 		return nil, fmt.Errorf("unsupported --source %q; use kubeconfig or api", options.source)
 	}

@@ -12,14 +12,6 @@ import (
 
 const updateCheckTimeout = 3 * time.Second
 
-// updateBadgeStyle fills the notice with the accent color so it stands out
-// from the muted header text around it.
-var updateBadgeStyle = lipgloss.NewStyle().
-	Foreground(lipgloss.Color("#0D1117")).
-	Background(colorAccent).
-	Bold(true).
-	Padding(0, 1)
-
 // renderUpdateBadge is the one-line notice that a newer release exists.
 func renderUpdateBadge(version string) string {
 	return updateBadgeStyle.Render("↑ " + version + " available")

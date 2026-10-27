@@ -59,7 +59,7 @@
       "name": "How does argoxd connect to Argo CD?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "By default, argoxd uses the active kubeconfig context and looks for Argo CD in the argocd namespace. It can also connect directly to the Argo CD API with --source api, an API server URL, and a token."
+        "text": "By default, argoxd uses the active kubeconfig context and looks for Argo CD in the argocd namespace. It can also connect directly to the Argo CD API with --source api: pass a server URL and token, or reuse the login already saved by argocd login. A custom CA and client certificates are supported when the server needs them."
       }
     },
     {
@@ -81,7 +81,8 @@
     {"@type": "Question", "name": "Is it safe to point argoxd at production?", "acceptedAnswer": {"@type": "Answer", "text": "Yes, with care. Every action shows what it will touch and waits for confirmation, --read-only blocks all of them, and argoxd can only do what your own kubeconfig user or Argo CD token is allowed to do. Nothing is installed in the cluster."}},
     {"@type": "Question", "name": "What permissions does argoxd need?", "acceptedAnswer": {"@type": "Answer", "text": "To browse, it needs to list Argo CD's Applications, AppProjects and cluster Secrets. Logs, events and workloads need the matching read access, and each action needs its own write permission. The README lists them all and includes a ready-made read-only Role."}},
     {"@type": "Question", "name": "Does argoxd work with several Argo CD instances?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. :ctx switches the kubeconfig context and :ns switches the namespace Argo CD runs in, both without restarting. Marks are cleared on every switch, so an action never carries over to another instance."}},
-    {"@type": "Question", "name": "Can I use argoxd without access to the cluster?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. With --source api, a server URL and a token, argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI."}}
+    {"@type": "Question", "name": "Can I change how argoxd looks?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. :theme switches between built-in themes such as light, high-contrast, colorblind, nord and dracula, and you can define your own in the config file. :sort orders Applications, the mouse wheel is opt-in with --mouse, and the events pane can open by default."}},
+    {"@type": "Question", "name": "Can I use argoxd without access to the cluster?", "acceptedAnswer": {"@type": "Answer", "text": "Yes. With --source api and a server URL and token, or the login saved by argocd login, argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI."}}
   ]
 }
 </script>
@@ -428,11 +429,11 @@
         </div>
         <div class="card">
           <h3><span class="icon">⎈</span>Every cluster, every instance</h3>
-          <p>Connect with your kubeconfig, or to the Argo CD API with <code>--source api</code> and a token. Hop between clusters with <code>:ctx</code> and between Argo CD instances with <code>:ns</code>, without restarting.</p>
+          <p>Connect with your kubeconfig, or to the Argo CD API with <code>--source api</code> and a token — or reuse the login already saved by <code>argocd login</code>, with a custom CA and client certificates when the server needs them. Hop between clusters with <code>:ctx</code> and between Argo CD instances with <code>:ns</code>, without restarting.</p>
         </div>
         <div class="card">
           <h3><span class="icon">▣</span>Resource cards</h3>
-          <p>Deployments → ReplicaSets → Pods nested under their owners. Open live YAML (<code>Y</code>), yank names or text (<code>y</code>), diff against desired state (<code>d</code>), Pod logs (<code>l</code>) and events (<code>e</code>).</p>
+          <p>Deployments → ReplicaSets → Pods nested under their owners. Switch to a table with <code>w</code>, fold cards with <code>←</code>/<code>→</code> or <code>z</code>, and keep the selected card's events in a pane with <code>E</code>. Open live YAML (<code>Y</code>), yank names or text (<code>y</code>), diff against desired state (<code>d</code>), Pod logs (<code>l</code>) and events (<code>e</code>).</p>
         </div>
         <div class="card">
           <h3><span class="icon">●</span>Safe bulk actions</h3>
@@ -453,6 +454,14 @@
         <div class="card">
           <h3><span class="icon">✂</span>Prune &amp; orphan insight</h3>
           <p>See which resources a sync with prune would delete and which ones no Application manages. Check conditions, sync details (<code>i</code>) and history, then roll back with <code>h</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">✧</span>Make it yours</h3>
+          <p>Pick a theme with <code>:theme</code> — light, high-contrast, colorblind, nord, dracula or your terminal's own colors — or define your own in the config file. Sort Applications with <code>:sort</code>, start in the view you use most, and turn on the mouse wheel with <code>--mouse</code>.</p>
+        </div>
+        <div class="card">
+          <h3><span class="icon">⌘</span>Bring your own tools</h3>
+          <p><code>:k9s</code> opens k9s on the selected resource's namespace and kind, with the same kubeconfig and context. In a diff, <code>x</code> hands it to <code>meld</code>, <code>code --diff</code> or whatever <code>diffViewer</code> names.</p>
         </div>
       </div>
     </section>
@@ -488,12 +497,15 @@
           <tr><td class="keys"><span class="keycap">Space</span></td><td>Mark Applications or resource cards; bulk actions apply to everything marked</td></tr>
           <tr><td class="keys"><span class="keycap">y</span> <span class="keycap">v</span></td><td>Yank item name or open viewer text · visual line selection</td></tr>
           <tr><td class="keys"><span class="keycap">Y</span> <span class="keycap">d</span> <span class="keycap">l</span> <span class="keycap">e</span></td><td>YAML manifest · diff · logs · events of the selected card or app</td></tr>
+          <tr><td class="keys"><span class="keycap">w</span></td><td>Switch an Application's resources between cards and a table</td></tr>
+          <tr><td class="keys"><span class="keycap">←</span> <span class="keycap">→</span> <span class="keycap">z</span></td><td>Fold the selected card · unfold it · fold or unfold every card</td></tr>
+          <tr><td class="keys"><span class="keycap">E</span> <span class="keycap">[</span> <span class="keycap">]</span></td><td>Events pane under the cards · scroll it through older and newer events</td></tr>
           <tr><td class="keys"><span class="keycap">s</span> <span class="keycap">R</span> <span class="keycap">D</span> <span class="keycap">T</span></td><td>Sync · refresh · delete · terminate operation <span class="muted">(always asks first)</span></td></tr>
           <tr><td class="keys"><span class="keycap">o</span></td><td>Open selected Application in the Argo CD web UI <span class="muted">(--source api)</span></td></tr>
-          <tr><td class="keys"><span class="keycap">x</span> <span class="keycap">X</span></td><td>Rolling-restart a workload · delete a Pod</td></tr>
+          <tr><td class="keys"><span class="keycap">x</span> <span class="keycap">X</span></td><td>Rolling-restart a workload (in a diff, opens your viewer) · delete a Pod</td></tr>
           <tr><td class="keys"><span class="keycap">h</span> <span class="keycap">i</span> <span class="keycap">P</span></td><td>Deployment history &amp; rollback · sync details · sync policy</td></tr>
           <tr><td class="keys"><span class="keycap">H</span> <span class="keycap">S</span> <span class="keycap">K</span></td><td>Filter by health · sync status · resource kind, with suggestions</td></tr>
-          <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar (e.g. <code>:ctx</code>, <code>:ns</code> to switch context or namespace) · search as you type</td></tr>
+          <tr><td class="keys"><span class="keycap">:</span> <span class="keycap">/</span></td><td>Command bar (e.g. <code>:ctx</code>, <code>:ns</code>, <code>:sort</code>, <code>:theme</code>, <code>:k9s</code>) · search as you type</td></tr>
           <tr><td class="keys"><span class="keycap">Esc</span></td><td>Back, or clear search and filters</td></tr>
         </table>
       </div>
@@ -532,7 +544,7 @@
         </article>
         <article class="faq-item">
           <h3>How does argoxd connect to Argo CD?</h3>
-          <p>By default, it uses your active kubeconfig context and looks for Argo CD in the <code>argocd</code> namespace. You can instead use the Argo CD API with <code>--source api</code>, a server URL, and a token.</p>
+          <p>By default, it uses your active kubeconfig context and looks for Argo CD in the <code>argocd</code> namespace. You can instead use the Argo CD API with <code>--source api</code>: pass a server URL and token, or reuse the login already saved by <code>argocd login</code>. A custom CA and client certificates are supported when the server needs them.</p>
         </article>
         <article class="faq-item">
           <h3>Can I try argoxd without a Kubernetes cluster or Argo CD?</h3>
@@ -555,8 +567,12 @@
           <p>Yes. <code>:ctx</code> switches the kubeconfig context and <code>:ns</code> switches the namespace Argo CD runs in, both without restarting. Marks are cleared on every switch, so an action never carries over to another instance.</p>
         </article>
         <article class="faq-item">
+          <h3>Can I change how argoxd looks?</h3>
+          <p>Yes. <code>:theme</code> switches between built-in themes such as light, high-contrast, colorblind, nord and dracula, and you can define your own in the config file. <code>:sort</code> orders Applications, the mouse wheel is opt-in with <code>--mouse</code>, and the events pane can open by default.</p>
+        </article>
+        <article class="faq-item">
           <h3>Can I use argoxd without access to the cluster?</h3>
-          <p>Yes. With <code>--source api</code>, a server URL and a token, argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI.</p>
+          <p>Yes. With <code>--source api</code> and a server URL and token — or the login saved by <code>argocd login</code> — argoxd talks only to the Argo CD API. That mode also adds diffs, orphaned resources and opening apps in the web UI.</p>
         </article>
       </div>
     </section>

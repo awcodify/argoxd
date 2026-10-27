@@ -179,11 +179,30 @@ type Model struct {
 	owner  string
 	search string
 	filter Filter
+
+	sortField   SortField
+	sortReverse bool
+
+	// applications is the Applications list after the project, search and
+	// filter, sorted. The setters that change any of those rebuild it, so a
+	// redraw reads it instead of copying and sorting the whole list again.
+	applications []Application
+	appsBuilt    bool
 }
 
 // NewModel creates an explorer with Applications selected.
 func NewModel(snapshot Snapshot) Model {
-	return Model{snapshot: snapshot, screen: ApplicationsScreen}
+	model := Model{snapshot: snapshot, screen: ApplicationsScreen}
+	model.refreshApplications()
+	return model
+}
+
+// refreshApplications rebuilds the cached Applications list. Every setter that
+// changes the snapshot, the project, the owner, the search, the filter or the
+// sort calls it.
+func (m *Model) refreshApplications() {
+	m.applications = m.matchingApplications()
+	m.appsBuilt = true
 }
 
 // Screen returns the selected explorer screen.
@@ -202,6 +221,7 @@ func (m *Model) SetScreen(screen Screen) {
 	m.search = ""
 	m.filter = Filter{}
 	m.cursor = 0
+	m.refreshApplications()
 }
 
 // MoveDown selects the next row when one exists.
@@ -247,6 +267,7 @@ func (m Model) Project() string {
 func (m *Model) SetProject(project string) {
 	m.project, m.owner = project, ""
 	m.cursor = 0
+	m.refreshApplications()
 }
 
 // Owner returns the ApplicationSet whose Applications are shown; empty means any.
@@ -259,6 +280,7 @@ func (m Model) Owner() string {
 func (m *Model) SetOwner(owner string) {
 	m.project, m.owner = "", owner
 	m.cursor = 0
+	m.refreshApplications()
 }
 
 // ApplicationSets returns the ApplicationSets that match the search.
@@ -293,6 +315,7 @@ func (m Model) Search() string {
 func (m *Model) SetSearch(text string) {
 	m.search = text
 	m.cursor = 0
+	m.refreshApplications()
 }
 
 // Filter returns the status filter applied to Applications.
@@ -304,10 +327,23 @@ func (m Model) Filter() Filter {
 func (m *Model) SetFilter(filter Filter) {
 	m.filter = filter
 	m.cursor = 0
+	m.refreshApplications()
 }
 
-// Applications returns the Applications in the selected project that match the search and filter.
+// Applications returns the Applications in the selected project that match the
+// search and filter, in the selected order. The result belongs to the Model:
+// callers must not change it.
 func (m Model) Applications() []Application {
+	if !m.appsBuilt {
+		// A Model that was not made by NewModel has no cached list; compute one
+		// for this call rather than returning nothing.
+		return m.matchingApplications()
+	}
+	return m.applications
+}
+
+// matchingApplications filters the snapshot and puts the result in the selected order.
+func (m Model) matchingApplications() []Application {
 	var matches []Application
 	for _, application := range m.snapshot.Applications {
 		if (m.project == "" || application.Project == m.project) && (m.owner == "" || application.Owner == m.owner) && m.matchesSearch(application.Name) &&
@@ -315,6 +351,7 @@ func (m Model) Applications() []Application {
 			matches = append(matches, application)
 		}
 	}
+	sortApplications(matches, m.sortField, m.sortReverse)
 	return matches
 }
 
@@ -394,6 +431,7 @@ func (m Model) Snapshot() Snapshot {
 func (m *Model) ReplaceSnapshot(snapshot Snapshot) {
 	selected := m.SelectedName()
 	m.snapshot = snapshot
+	m.refreshApplications()
 	for index, name := range m.rowNames() {
 		if name == selected {
 			m.cursor = index

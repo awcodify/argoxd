@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/awcodify/argoxd/internal/explorer"
 	"sigs.k8s.io/yaml"
 )
 
@@ -25,7 +26,35 @@ type fileConfig struct {
 	ReadOnly   *bool   `json:"readOnly"`
 
 	CheckUpdates *bool `json:"checkUpdates"`
+
+	CACert         *string `json:"caCert"`
+	ClientCert     *string `json:"clientCert"`
+	ClientKey      *string `json:"clientKey"`
+	RequestTimeout *string `json:"requestTimeout"`
+
+	Sort        *string `json:"sort"`
+	SortReverse *bool   `json:"sortReverse"`
+	Mouse       *bool   `json:"mouse"`
+
+	ResourceView *string `json:"resourceView"`
+	StartView    *string `json:"startView"`
+
+	K9sCommand *string `json:"k9sCommand"`
+	Theme      *string `json:"theme"`
+	EventsPane *bool   `json:"eventsPane"`
+	// Themes defines themes of your own: a name, then optionally a base theme
+	// and the colors to change.
+	Themes        map[string]customTheme `json:"themes"`
+	DiffViewer    *string                `json:"diffViewer"`
+	ArgoCDContext *string                `json:"argocdContext"`
+	ArgoCDConfig  *string                `json:"argocdConfig"`
 }
+
+// customTheme is one theme defined in the config file: "base" names the theme
+// it starts from and every other key is a color, such as accent or danger. The
+// values are read as whatever YAML made of them, so that an unquoted number and
+// an unquoted hex color, which YAML turns into a comment, can be explained.
+type customTheme map[string]any
 
 // configPath returns the config file location: $ARGOXD_CONFIG, else
 // $XDG_CONFIG_HOME/argoxd/config.yaml, else ~/.config/argoxd/config.yaml.
@@ -94,6 +123,61 @@ func (c fileConfig) apply(defaults options) (options, error) {
 	}
 	if c.CheckUpdates != nil {
 		defaults.checkUpdates = *c.CheckUpdates
+	}
+	if c.CACert != nil {
+		defaults.caCert = *c.CACert
+	}
+	if c.ClientCert != nil {
+		defaults.clientCert = *c.ClientCert
+	}
+	if c.ClientKey != nil {
+		defaults.clientKey = *c.ClientKey
+	}
+	if c.Sort != nil {
+		if _, ok := explorer.ParseSortField(*c.Sort); !ok {
+			return defaults, fmt.Errorf("sort: %q is not one of name, health or sync", *c.Sort)
+		}
+		defaults.sort = *c.Sort
+	}
+	if c.Themes != nil {
+		defaults.themes = c.Themes
+	}
+	if c.EventsPane != nil {
+		defaults.eventsPane = *c.EventsPane
+	}
+	if c.Theme != nil {
+		defaults.theme = *c.Theme
+	}
+	if c.DiffViewer != nil {
+		defaults.diffViewer = *c.DiffViewer
+	}
+	if c.K9sCommand != nil {
+		defaults.k9sCommand = *c.K9sCommand
+	}
+	if c.ArgoCDContext != nil {
+		defaults.argocdContext = *c.ArgoCDContext
+	}
+	if c.ArgoCDConfig != nil {
+		defaults.argocdConfig = *c.ArgoCDConfig
+	}
+	if c.StartView != nil {
+		defaults.startView = *c.StartView
+	}
+	if c.ResourceView != nil {
+		defaults.resourceView = *c.ResourceView
+	}
+	if c.Mouse != nil {
+		defaults.mouse = *c.Mouse
+	}
+	if c.SortReverse != nil {
+		defaults.sortReverse = *c.SortReverse
+	}
+	if c.RequestTimeout != nil {
+		timeout, err := time.ParseDuration(*c.RequestTimeout)
+		if err != nil {
+			return defaults, fmt.Errorf("requestTimeout: %w", err)
+		}
+		defaults.requestTimeout = timeout
 	}
 	return defaults, nil
 }

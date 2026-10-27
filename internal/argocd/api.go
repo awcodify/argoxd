@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -20,19 +23,93 @@ type APISource struct {
 	baseURL string
 	token   string
 	client  *http.Client
+	// loginHint is added to an authentication error.
+	loginHint string
 }
 
-// NewAPISource creates an Argo CD API source.
-func NewAPISource(server, token string, insecure bool) *APISource {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: insecure} //nolint:gosec // Explicit opt-in through --insecure.
-	transport.ResponseHeaderTimeout = 15 * time.Second
+// defaultAPITimeout is how long a request to Argo CD may take.
+const defaultAPITimeout = 15 * time.Second
 
-	return &APISource{
+// APIOptions are the connection settings of an Argo CD API source beyond its
+// server and token. Zero values mean the defaults.
+type APIOptions struct {
+	// Insecure skips verification of the server's certificate.
+	Insecure bool
+	// CACertFile is a PEM file of extra certificate authorities to trust, for a
+	// server whose certificate an internal CA signed.
+	CACertFile string
+	// ClientCertFile and ClientKeyFile are a PEM client certificate and its key,
+	// for a server that asks for mutual TLS. Both or neither.
+	ClientCertFile string
+	ClientKeyFile  string
+	// Timeout limits each request; zero means 15 seconds.
+	Timeout time.Duration
+	// TokenFromCLI marks a token read from the argocd CLI's saved login, so a
+	// refusal can suggest logging in again.
+	TokenFromCLI bool
+}
+
+// NewAPISource creates an Argo CD API source with the default settings.
+func NewAPISource(server, token string, insecure bool) *APISource {
+	source, _ := NewConfiguredAPISource(server, token, APIOptions{Insecure: insecure})
+	return source
+}
+
+// NewConfiguredAPISource creates an Argo CD API source. It fails when a
+// certificate file cannot be read, so a typo is reported at startup.
+func NewConfiguredAPISource(server, token string, options APIOptions) (*APISource, error) {
+	tlsConfig, err := options.tlsConfig()
+	if err != nil {
+		return nil, err
+	}
+	timeout := options.Timeout
+	if timeout <= 0 {
+		timeout = defaultAPITimeout
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = tlsConfig
+	transport.ResponseHeaderTimeout = timeout
+
+	source := &APISource{
 		baseURL: strings.TrimRight(server, "/"),
 		token:   token,
-		client:  &http.Client{Transport: transport, Timeout: 15 * time.Second},
+		client:  &http.Client{Transport: transport, Timeout: timeout},
 	}
+	if options.TokenFromCLI {
+		source.loginHint = "token expired? run: argocd login"
+	}
+	return source, nil
+}
+
+func (o APIOptions) tlsConfig() (*tls.Config, error) {
+	config := &tls.Config{InsecureSkipVerify: o.Insecure} //nolint:gosec // Explicit opt-in through --insecure.
+	if o.CACertFile != "" {
+		data, err := os.ReadFile(o.CACertFile)
+		if err != nil {
+			return nil, fmt.Errorf("read CA certificate: %w", err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(data) {
+			return nil, fmt.Errorf("CA certificate %s has no certificates in PEM format", o.CACertFile)
+		}
+		config.RootCAs = pool
+	}
+	switch {
+	case o.ClientCertFile != "" && o.ClientKeyFile == "":
+		return nil, errors.New("a client certificate needs a client key")
+	case o.ClientKeyFile != "" && o.ClientCertFile == "":
+		return nil, errors.New("a client key needs a client certificate")
+	case o.ClientCertFile != "":
+		certificate, err := tls.LoadX509KeyPair(o.ClientCertFile, o.ClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load client certificate: %w", err)
+		}
+		config.Certificates = []tls.Certificate{certificate}
+	}
+	return config, nil
 }
 
 // Load returns the Applications, Projects, and clusters visible to the API token.
@@ -254,6 +331,15 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 	return nil
 }
 
+// withHint puts advice for this status in front of an error message, where a
+// narrow terminal still shows it.
+func (s *APISource) withHint(status int, message string) string {
+	if status == http.StatusUnauthorized && s.loginHint != "" {
+		return s.loginHint + " (" + message + ")"
+	}
+	return message
+}
+
 // do sends a request and returns the response of a successful call. The
 // caller must close the response body.
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
@@ -290,7 +376,7 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
 		return nil, &httpStatusError{
-			message: fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body)),
+			message: s.withHint(response.StatusCode, fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))),
 			code:    response.StatusCode,
 		}
 	}

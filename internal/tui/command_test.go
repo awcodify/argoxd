@@ -55,7 +55,7 @@ func TestSuggestionsCompleteFilterCommandsAndTheirValues(t *testing.T) {
 		"health d": {"health Degraded"},
 		"health ":  {"health Healthy", "health Progressing", "health Degraded", "health Suspended", "health Missing", "health Unknown"},
 		"sync OUT": {"sync OutOfSync"},
-		"k":        nil,
+		"k":        {"k9s"}, // kind is not offered here, but k9s starts with k too
 		"kind Pod": nil,
 	} {
 		got := suggestions(input, nil, filters)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -77,7 +78,15 @@ func (m Model) viewerTitle() string {
 
 // listTitle renders the frame title of a list, showing the active search and filter.
 func (m Model) listTitle(name, scope string) string {
-	return withSearch(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Search(), m.explorer.Filter())
+	title := withSearch(viewTitle(name, scope, m.explorer.RowCount()), m.explorer.Search(), m.explorer.Filter())
+	if field, reverse := m.explorer.Sort(); name == "applications" && field != explorer.SortDefault {
+		label := "sorted by " + string(field)
+		if reverse {
+			label += " (reverse)"
+		}
+		title = strings.TrimSuffix(title, " ") + mutedStyle.Render(" · ") + accentStyle.Render(label) + " "
+	}
+	return title
 }
 
 // withSearch appends the active search and filter to a frame title, e.g. "· /pod · health:Degraded".
@@ -99,6 +108,14 @@ func (m Model) applicationsTable() table {
 	result := table{
 		columns: []string{"NAME", "PROJECT", "SYNC", "HEALTH", "REVISION", "DESTINATION", "LAST SYNC"},
 		status:  map[int]bool{2: true, 3: true},
+	}
+	if field, reverse := m.explorer.Sort(); field != explorer.SortDefault {
+		arrow := " ▲"
+		if reverse {
+			arrow = " ▼"
+		}
+		column := map[explorer.SortField]int{explorer.SortName: 0, explorer.SortSync: 2, explorer.SortHealth: 3}[field]
+		result.columns[column] += arrow
 	}
 	for _, application := range m.explorer.Applications() {
 		name := application.Name
@@ -233,14 +250,20 @@ func (m Model) renderCrumbs() string {
 func (m Model) renderFlash() string {
 	switch {
 	case m.err != nil:
-		return " " + errorStyle.Render("✗ "+m.err.Error())
+		return " " + errorStyle.Render(m.fitFlash("✗ "+m.err.Error()))
 	case m.loading:
 		return " " + infoStyle.Render("◐ Refreshing…")
 	case m.status != "":
-		return " " + infoStyle.Render("● "+m.status)
+		return " " + infoStyle.Render(m.fitFlash("● "+m.status))
 	default:
 		return ""
 	}
+}
+
+// fitFlash cuts a message to the screen width with an ellipsis, so a long
+// error ends visibly instead of being clipped by the terminal.
+func (m Model) fitFlash(text string) string {
+	return ansi.Truncate(text, max(1, m.width-2), "…")
 }
 
 // renderPrompt draws the command line: the input, the selected suggestion as

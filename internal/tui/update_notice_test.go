@@ -2,8 +2,11 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
@@ -103,12 +106,52 @@ func lastLine(view string) string {
 }
 
 func TestUpdateBadgeIsFilledWithTheAccentColor(t *testing.T) {
+	useTheme(t, "default")
 	badge := renderUpdateBadge("0.4.2")
 
 	if strings.Contains(badge, "\n") || !strings.Contains(badge, "↑ 0.4.2 available") {
 		t.Fatalf("badge = %q, want one line naming the version", badge)
 	}
-	if want := updateBadgeStyle.Render("x"); want == "x" {
-		t.Skip("the test terminal has no color profile, so styles render as plain text")
+	// useTheme forces the true-color profile, so a background is drawn as
+	// "48;2;r;g;b". The badge must carry the accent's, not just its text.
+	accent, _ := lookupTheme("default")
+	value, err := strconv.ParseUint(strings.TrimPrefix(accent.accent, "#"), 16, 32)
+	if err != nil {
+		t.Fatalf("accent %q: %v", accent.accent, err)
+	}
+	want := fmt.Sprintf("48;2;%d;%d;%d", value>>16, (value>>8)&0xff, value&0xff)
+	if !strings.Contains(badge, want) {
+		t.Fatalf("badge = %q, want the accent %s as its background (%s)", badge, accent.accent, want)
+	}
+}
+
+func TestWithRequestTimeoutSetsHowLongSourceCallsMayTake(t *testing.T) {
+	model := New(&fakeSource{}, "test", "argocd", explorer.Snapshot{})
+	if model.requestTimeout != defaultRequestTimeout {
+		t.Fatalf("requestTimeout = %v, want the default", model.requestTimeout)
+	}
+
+	if model = model.WithRequestTimeout(45 * time.Second); model.requestTimeout != 45*time.Second {
+		t.Fatalf("requestTimeout = %v, want 45s", model.requestTimeout)
+	}
+	if model = model.WithRequestTimeout(0); model.requestTimeout != 45*time.Second {
+		t.Fatalf("a zero timeout replaced the setting: %v", model.requestTimeout)
+	}
+}
+
+func TestALongErrorIsCutToTheScreenWidthWithAnEllipsis(t *testing.T) {
+	model, _ := sortModel()
+	model.err = fmt.Errorf("%s", strings.Repeat("a long failure message ", 20))
+
+	for _, width := range []int{140, 80, 40} {
+		line := lastLine(resize(model, width, 30).View())
+		if lipgloss.Width(line) > width || !strings.HasSuffix(strings.TrimRight(line, " "), "…") {
+			t.Errorf("width %d: the status line is %d wide and ends %q; want it cut with …", width, lipgloss.Width(line), line[max(0, len(line)-12):])
+		}
+	}
+	short := resize(model, 140, 30)
+	short.err = fmt.Errorf("short")
+	if line := lastLine(short.View()); strings.Contains(line, "…") {
+		t.Errorf("a short error was cut: %q", line)
 	}
 }

@@ -24,7 +24,11 @@ argoxd -c production -n argocd    # another context and namespace
 argoxd --source api -s https://argocd.example.com --auth-token "$TOKEN"
 ```
 
-With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags. Use `-k` (`--insecure`) only for a development instance with an untrusted certificate.
+With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags.
+
+If you have already run `argocd login`, `--source api` needs no server or token: argoxd reads them from the CLI's login in `~/.config/argocd/config` (use `--argocd-context` for a context other than the current one, or `--argocd-config` for another file). Anything you pass yourself wins. A logged-in `--insecure` server still needs `-k`, and when the saved token has expired argoxd says to run `argocd login` again.
+
+If your Argo CD uses a certificate from an internal CA, trust it with `--ca-cert corp-ca.pem` instead of `-k` (`--insecure`), which skips verification and is only for development. If the server asks for a client certificate, add `--client-cert client.crt --client-key client.key`. These three apply to `--source api`.
 
 In the demo, `cart` is blocked by a sync window and has drift, `search` has a running operation to terminate, and `:proj` → `Y` on `store` shows a full AppProject. Actions change the sample data in memory only.
 
@@ -42,6 +46,20 @@ insecure: false
 refresh: 5s          # 0s turns auto-refresh off
 readOnly: false      # block every action that changes something
 checkUpdates: true   # false stops the daily check for a newer release
+requestTimeout: 15s  # raise it for installs with thousands of Applications
+sort: health         # name, health (worst first) or sync (out of sync first)
+sortReverse: false
+mouse: false         # true scrolls with the wheel; the terminal then needs Shift to select text
+resourceView: cards  # or table: how an Application's resources are first shown
+startView: proj      # open this view first, e.g. appset, pulse or "app store"
+argocdContext: staging   # which argocd CLI login to use for source: api
+eventsPane: false    # true opens the events pane in every Application
+theme: default       # default, light, high-contrast, colorblind, nord, dracula or terminal
+diffViewer: "meld {left} {right}"   # what x opens in a diff; both placeholders are needed
+k9sCommand: k9s      # path of k9s for :k9s
+caCert: /etc/ssl/corp-ca.pem         # for source: api
+clientCert: /etc/argoxd/client.crt   # for source: api, with clientKey
+clientKey: /etc/argoxd/client.key
 ```
 
 argoxd checks GitHub for a newer release at most once a day, in the background, and quietly does nothing if it cannot connect. Development builds and `--demo` skip the check. To turn it off, set `checkUpdates: false` or the environment variable `ARGOXD_NO_UPDATE_CHECK=1`.
@@ -57,16 +75,26 @@ Flags beat environment variables, which beat the config file. The API token is n
 | `--server` | `-s` | `$ARGOCD_SERVER` |
 | `--auth-token` | | `$ARGOCD_AUTH_TOKEN` |
 | `--insecure` | `-k` | `false` |
+| `--ca-cert` | | none |
+| `--client-cert`, `--client-key` | | none |
+| `--request-timeout` | | `15s` |
 | `--refresh` | `-r` | `5s` |
+| `--mouse` | | `false` |
+| `--resource-view` | | `cards` |
+| `--start-view` | | Applications |
+| `--argocd-context`, `--argocd-config` | | the CLI's current login |
+| `--theme` | | `default` |
+| `--events-pane` | | `false` |
+| `--show-keys` | | `false` |
 | `--read-only` | | `false` |
 | `--demo` | | `false` |
 | `--version` | | |
 
 ## Features
 
-- **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block.
-- **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions.
-- **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`).
+- **Applications list** with Argo CD's health and sync glyphs (`♥ ✓ ◐ ⟳ ✗`), `⚠` for conditions and `⊘` for a sync-window block. `:sort` orders it by name, health or sync.
+- **Dependency view** (Enter): the Application's resources as cards nested under their owners (Deployment → ReplicaSet → Pod), with a status summary and the first three conditions. `w` switches to a table of the same resources, and `←`/`→` fold a card (`z` folds them all). A `▾` marks a card that can fold and `▸` one that is folded.
+- **Inspect**: live YAML (`Y`), diff against Git (`d`), logs (`l`), events (`e`) and the last sync, resource by resource (`i`). `E` keeps the selected resource's events in a pane under the cards, following the cursor and reloading on each refresh; `[` and `]` scroll it through older and newer events, as does the mouse wheel over it with `--mouse`. `e` opens the full list instead.
 - **Logs**: follow (`f`), pick the container (`c`) or Pod (`p`), and read up to 30 Pods of a workload at once.
 - **Actions**: sync, selective sync, refresh, rollback, sync policy, terminate, delete, rolling restart and Pod delete. Each one asks first.
 - **Marking**: Space marks Applications or cards; actions then run on all of them, one after another.
@@ -76,13 +104,43 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Pulse** (`:pulse`): health and sync at a glance, and the Applications that need attention, worst first.
 - **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
 - **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
+- **Themes** (`:theme` opens a picker that previews each one as you move; Enter keeps it, Esc brings back the old one): `default`, `light` (paints its own light background, so it reads on any terminal), `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors. [Define your own](#custom-themes) in the config file.
+- **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, using argoxd's `--kubeconfig` file and `--context` where you gave one, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
 Some features need `--source api`: diffs, orphaned resources, and `o`.
 
+## Custom themes
+
+Define a theme under `themes:` in the config file. It starts from a built-in theme (`base`, the default when left out) and changes only the colors you list; then choose it with `theme: sunset` or `:theme sunset`, like any other.
+
+```yaml
+theme: sunset
+themes:
+  sunset:
+    base: nord
+    accent: "#ff5500"    # quote hex colors, or YAML reads the # as a comment
+    healthy: "#3ddc97"
+    danger: 197          # an ANSI color number, 0 to 255
+```
+
+A color is `#rrggbb`, `#rgb` or an ANSI number. There are 18 names:
+
+| Name | What it colors |
+| --- | --- |
+| `accent` | the selection, keys and titles; the fill of the update badge |
+| `healthy`, `info`, `warning`, `danger`, `suspended` | Healthy and Synced, Progressing, OutOfSync, Degraded, Suspended |
+| `text`, `bright`, `muted` | ordinary text, names and the selected row, labels |
+| `border`, `surface` | frames, and the background of the selected row and key caps |
+| `addedText`, `addedBackground`, `removedText`, `removedBackground` | the bands of a diff |
+| `selection`, `badgeText` | selected lines in a viewer, and text on the accent color |
+| `background` | the whole screen. Leave it out to keep your terminal's own; `none` clears one a base theme sets. `light`, `nord` and `dracula` set theirs |
+
+Mistakes are reported when argoxd starts, with the theme and color named. Built-in names cannot be reused.
+
 ## Commands
 
-Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter runs, Esc closes.
+Press `:` to open the command bar. It suggests as you type: Tab fills in the highlighted suggestion and, pressed again, moves to the next; ↑ and ↓ move through them too. Enter runs, Esc closes. A whole command can be pasted into the bar, with or without the leading `:`.
 
 | Command | Opens |
 | --- | --- |
@@ -93,6 +151,9 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | `:pulse`, `:overview` | Overview of what needs attention |
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
+| `:theme [name]` | Switch the colors; without a name a picker previews each theme as you move through them (Tab, arrows or typing), Enter keeps the one shown and Esc brings back the old one |
+| `:k9s` | Open k9s on the selected resource's namespace and kind, with argoxd's kubeconfig and context (needs k9s in your PATH; not in `--read-only`) |
+| `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first. Run it again with the same field to flip the direction, add `reverse` to force it, or use `:sort` alone to restore Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |
 | `:q` | Quit |
@@ -113,6 +174,8 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | `/` | Search by name, or by `kind/name` on cards; in logs and events, keep matching lines |
 | `H` `S` `K` | Filter by health, sync status or kind |
 | `t` | Inventory tree (Space or ←/→ expands) |
+| `w` | Switch the resources between cards and a table |
+| `←` `→` `z` | Fold or unfold the selected card; `z` folds or unfolds them all |
 | `r` | Reload now |
 | `q` | Quit |
 
@@ -121,8 +184,9 @@ Press `:` to open the command bar. It suggests as you type; Tab accepts, Enter r
 | Key | Action |
 | --- | --- |
 | `Y` | YAML of the Application, card or AppProject |
-| `d` | Diff (`--source api`) |
+| `d` | Diff (`--source api`); `x` there opens it in `diffViewer` |
 | `e` | Events, including those of a workload's Pods |
+| `E` | Toggle the events pane under an Application's resources; `[` `]` scroll it |
 | `i` | Last sync, resource by resource |
 | `h` | Deployment history; Enter rolls back |
 | `l` | Logs; on a workload, all its Pods |
@@ -215,7 +279,7 @@ roleRef:
 
 Run argoxd with `--read-only` alongside it, so actions are refused up front instead of failing on RBAC. Kubernetes cannot limit `list` to labelled Secrets, so this Role can read every Secret in `argocd`. Where that matters, use `--source api` with a read-only token.
 
-Requests that take longer than 15 seconds are abandoned and reported as errors.
+Requests that take longer than `requestTimeout` (15 seconds by default) are abandoned and reported as errors.
 
 ## Development
 
@@ -224,6 +288,8 @@ make test   # go vet and go test
 make build  # dist/argoxd
 make demo   # re-record demo/demo.gif; needs vhs
 ```
+
+Record your own with `argoxd --show-keys`: the key you pressed appears in a dimmed band across the middle of the screen, so the video shows what is being typed even when the action is quiet.
 
 Pushing a tag such as `v0.4.1` publishes release binaries and the Homebrew cask with GoReleaser.
 

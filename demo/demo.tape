@@ -1,5 +1,9 @@
 # Records demo/demo.gif from the built-in sample data: `make demo`.
 # Requires vhs (https://github.com/charmbracelet/vhs): brew install vhs
+#
+# --show-keys captions each key in a band across the middle of the screen, so
+# the recording shows what is being pressed. The pauses are meant to feel like
+# a person reading the screen, then deciding what to do next.
 
 Output demo/demo.gif
 
@@ -10,138 +14,105 @@ Set FontSize 14
 Set Width 1500
 Set Height 850
 Set Padding 12
-Set TypingSpeed 80ms
+Set Framerate 25
+Set TypingSpeed 140ms
 
-Type "argoxd --demo"
+# Ignore any config file of the person recording, so the demo always looks the same.
+Env ARGOXD_CONFIG "/dev/null"
+
+Sleep 1s
+Type "argoxd --demo --show-keys"
+Sleep 900ms
 Enter
-Sleep 2s
+Sleep 3s
+
+# Worst first: sort by health. The column header shows the sort.
+Type ":sort health"
+Sleep 900ms
+Enter
+Sleep 4s
 
 # The overview: what is healthy, what is not, and what needs attention.
 Type ":pulse"
+Sleep 800ms
 Enter
-Sleep 3.5s
+Sleep 5s
 
 # Open the worst Application. Its conditions are listed above the cards.
+Sleep 800ms
 Enter
+Sleep 5s
+
+# The same resources as a table, then back to cards.
+Type "w"
+Sleep 4.5s
+Type "w"
+Sleep 2.5s
+
+# Keep the selected resource's events in a pane that follows the cursor.
+Sleep 800ms
+Type "E"
 Sleep 3s
+Down@600ms 2
+Sleep 2.2s
+Down@600ms 3
+Sleep 3.5s
+
+# Fold everything down to the top-level resources, then open it up again.
+Type "z"
+Sleep 3.5s
+Type "z"
+Sleep 2.5s
 
 # Why did its last sync fail?
+Sleep 600ms
 Type "i"
-Sleep 3s
+Sleep 5s
 Escape
-Sleep 500ms
-
-# Walk down to a failing Pod. Its events show why it keeps restarting.
-Down 5
-Sleep 1s
-Type "e"
-Sleep 3s
-Escape
-Sleep 500ms
+Sleep 1.5s
 
 # Read its logs, then go back to the overview.
 Type "l"
-Sleep 3s
+Sleep 5s
 Escape
-Sleep 500ms
+Sleep 1.2s
 Escape
-Sleep 1s
-
-# Let this Application sync by itself, and heal drift.
-Type "P"
-Sleep 1.5s
-Type "a"
-Sleep 700ms
-Type "h"
-Sleep 1.5s
-Enter
 Sleep 2s
 
-# Back to the Applications list, filtered by health.
-Type ":app"
-Enter
-Sleep 1.5s
-Type "H"
-Sleep 600ms
-Type "Degraded"
-Sleep 600ms
-Enter
-Sleep 1.5s
-Escape
-Sleep 1s
-
-# Mark the OutOfSync Applications and sync them together.
-Type "S"
-Sleep 600ms
-Type "OutOfSync"
-Sleep 600ms
-Enter
-Sleep 1.5s
-Space
-Sleep 500ms
-Space
-Sleep 1s
-Type "s"
-Sleep 2s
+# Try themes: the screen repaints as you move, Esc brings the original back.
+Type ":theme"
+Sleep 800ms
 Enter
 Sleep 2.5s
+Tab
+Sleep 2.5s
+Tab
+Sleep 2.5s
+Tab
+Sleep 2.5s
+Tab
+Sleep 2.5s
+Escape
+Sleep 2.5s
 
-# Inspect the Application itself, its aggregate drift, and the denied sync window.
-Type ":app store"
+# Mark the OutOfSync Applications and sync them together.
+Type ":app"
+Sleep 700ms
 Enter
-Sleep 1.5s
-Type "Y"
-Sleep 3s
-Escape
-Sleep 500ms
-Type "d"
-Sleep 3s
-Escape
-Sleep 500ms
-Type "i"
-Sleep 3s
-Escape
-Sleep 500ms
-
-# A normal refresh is the default; choose hard refresh explicitly in its prompt.
-Type "R"
-Sleep 1s
-Type "h"
-Sleep 1s
-Enter
-Sleep 1.5s
-
-# Select the in-progress search sync, copy its name, then terminate it.
-Down 2
-Sleep 1s
-Type "y"
-Sleep 1s
-Type "T"
-Sleep 1s
-Type "y"
 Sleep 2s
-
-# Inspect the matching AppProject's repositories, roles, and sync-window policy.
-Type ":proj"
-Enter
-Sleep 1.5s
-Type "/store"
+Type "S"
 Sleep 1s
+Type "OutOfSync"
+Sleep 900ms
 Enter
-Sleep 500ms
-Type "Y"
-Sleep 3s
-Escape
-Sleep 500ms
-
-Type "q"
-Sleep 500ms
-
-# Safe mode makes the same demo data inspect-only.
-Type "argoxd --demo --read-only"
-Enter
+Sleep 2.5s
+Space
+Sleep 1.2s
+Down
+Sleep 900ms
+Space
 Sleep 2s
 Type "s"
-Sleep 2s
-Type "q"
-Sleep 500ms
+Sleep 4s
+Enter
+Sleep 4s

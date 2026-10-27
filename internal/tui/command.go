@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -28,6 +29,13 @@ var commands = []viewCommand{
 }
 
 var quitCommands = []string{"q", "quit"}
+
+const sortCommand = "sort"
+
+// sortFields are what the Applications list can be sorted by, as typed.
+var sortFields = []string{"name", "health", "sync"}
+
+const sortHelp = ":sort takes name, health or sync, and optionally reverse"
 
 var contextCommands = []string{"ctx", "context"}
 
@@ -68,6 +76,10 @@ type prompt struct {
 	field     string
 	input     string
 	selection int
+	// base is what was typed before Tab started filling in suggestions. While
+	// it is set the suggestions come from it, so Tab and the arrows keep
+	// moving through the same list instead of narrowing to the one chosen.
+	base string
 }
 
 func findCommand(name string) (viewCommand, bool) {
@@ -95,6 +107,24 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 				}
 			}
 		}
+		if name == themeCommand {
+			for _, candidate := range ThemeNames() {
+				if strings.HasPrefix(candidate, strings.ToLower(argument)) {
+					matches = append(matches, themeCommand+" "+candidate)
+				}
+			}
+		}
+		if name == sortCommand {
+			field, _, _ := strings.Cut(argument, " ")
+			for _, candidate := range sortFields {
+				if strings.HasPrefix(candidate, strings.ToLower(field)) {
+					matches = append(matches, sortCommand+" "+candidate)
+				}
+			}
+			if _, rest, hasRest := strings.Cut(argument, " "); hasRest && strings.HasPrefix("reverse", rest) {
+				matches = append(matches, sortCommand+" "+strings.TrimSuffix(argument, rest)+"reverse")
+			}
+		}
 		for _, value := range filters[name] {
 			if strings.HasPrefix(strings.ToLower(value), strings.ToLower(argument)) {
 				matches = append(matches, name+" "+value)
@@ -110,6 +140,15 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 		}
 		if strings.HasPrefix("quit", input) {
 			matches = append(matches, "quit")
+		}
+		if strings.HasPrefix(sortCommand, input) {
+			matches = append(matches, sortCommand)
+		}
+		if strings.HasPrefix(k9sCommandName, input) {
+			matches = append(matches, k9sCommandName)
+		}
+		if strings.HasPrefix(themeCommand, input) {
+			matches = append(matches, themeCommand)
 		}
 		for _, command := range contextCommands {
 			if strings.HasPrefix(command, input) {
@@ -135,7 +174,17 @@ func suggestions(input string, projects []string, filters map[string][]string) [
 func (p prompt) typed(input string) prompt {
 	p.input = input
 	p.selection = 0
+	p.base = ""
 	return p
+}
+
+// typedInput is the text suggestions are made from: what the user typed, even
+// while Tab has filled in one of them.
+func (p prompt) typedInput() string {
+	if p.base != "" {
+		return p.base
+	}
+	return p.input
 }
 
 // valueSuggestions lists the choices of a filter field that start with the
@@ -175,10 +224,13 @@ func (m Model) suggestions() []string {
 	if m.prompt.field == namespaceField {
 		return matchOptions(m.prompt.input, m.namespaceOptions)
 	}
+	if m.prompt.field == themeField {
+		return matchOptions(m.prompt.input, ThemeNames())
+	}
 	if m.prompt.field != "" {
 		return valueSuggestions(m.prompt.field, m.prompt.input, m.filterKinds())
 	}
-	if name, context, hasContext := strings.Cut(m.prompt.input, " "); hasContext && slices.Contains(contextCommands, name) {
+	if name, context, hasContext := strings.Cut(m.prompt.typedInput(), " "); hasContext && slices.Contains(contextCommands, name) {
 		var matches []string
 		for _, candidate := range m.contextOptions {
 			if strings.HasPrefix(candidate, context) {
@@ -191,7 +243,25 @@ func (m Model) suggestions() []string {
 	for _, project := range m.explorer.Snapshot().Projects {
 		projects = append(projects, project.Name)
 	}
-	return suggestions(m.prompt.input, projects, m.availableFilters())
+	return suggestions(m.prompt.typedInput(), projects, m.availableFilters())
+}
+
+// completeCommand fills the command bar with a suggestion. The first Tab takes
+// the highlighted one; after that Tab and Down move on, Up and Shift+Tab go
+// back, and all of them wrap around the same list.
+func (m *Model) completeCommand(step int) {
+	matches := m.suggestions()
+	if len(matches) == 0 {
+		return
+	}
+	index := m.prompt.selection % len(matches)
+	if m.prompt.base != "" {
+		index = (index + step + len(matches)) % len(matches)
+	} else {
+		m.prompt.base = m.prompt.input
+	}
+	m.prompt.selection = index
+	m.prompt.input = matches[index]
 }
 
 // canFilterBy reports whether the active view has a filter on the field. Only
@@ -226,6 +296,16 @@ func (m Model) selectedSuggestion() string {
 }
 
 func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	wasThemePicker := m.prompt.active && m.prompt.field == themeField
+	updated, command := m.updatePromptKey(message)
+	if next, ok := updated.(Model); ok {
+		next.settleThemePicker(wasThemePicker)
+		return next, command
+	}
+	return updated, command
+}
+
+func (m Model) updatePromptKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.prompt.search {
 		return m.updateSearch(message)
 	}
@@ -249,6 +329,9 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.switchContext(input)
 			case namespaceField:
 				return m, m.switchNamespace(input)
+			case themeField:
+				m.confirmTheme(input)
+				return m, nil
 			}
 			m.runFilter(field, input)
 			return m, nil
@@ -257,13 +340,19 @@ func (m Model) updatePrompt(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyTab, tea.KeyRight:
 		if m.prompt.field != "" {
 			m.prompt.selection++
-		} else if suggestion := m.selectedSuggestion(); suggestion != "" {
-			m.prompt = m.prompt.typed(suggestion)
+		} else {
+			m.completeCommand(1)
 		}
 	case tea.KeyDown:
-		m.prompt.selection++
+		if m.prompt.field == "" && m.prompt.base != "" {
+			m.completeCommand(1)
+		} else {
+			m.prompt.selection++
+		}
 	case tea.KeyUp, tea.KeyShiftTab:
-		if count := len(m.suggestions()); count > 0 {
+		if m.prompt.field == "" && m.prompt.base != "" {
+			m.completeCommand(-1)
+		} else if count := len(m.suggestions()); count > 0 {
 			m.prompt.selection = (m.prompt.selection + count - 1) % count
 		}
 	case tea.KeyBackspace:
@@ -359,6 +448,17 @@ func (m *Model) runCommand(input string) tea.Cmd {
 		}
 		return m.switchNamespace(strings.TrimSpace(project))
 	}
+	if name == k9sCommandName {
+		return m.openK9s()
+	}
+	if name == themeCommand {
+		m.runThemeCommand(strings.TrimSpace(project))
+		return nil
+	}
+	if name == sortCommand {
+		m.runSortCommand(strings.TrimSpace(project))
+		return nil
+	}
 	if filter, found := findFilterCommand(name); found {
 		m.runFilterCommand(filter, strings.TrimSpace(project))
 		return nil
@@ -441,7 +541,7 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.source = switcher.WithContext(context)
 	m.sourceGeneration++
 	m.connection = "Kubeconfig context: " + context
-	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.resetExplorer()
 	m.closeTree()
 	m.marked = nil
 	m.contextOptions = nil
@@ -449,6 +549,50 @@ func (m *Model) switchContext(context string) tea.Cmd {
 	m.err = nil
 	m.status = "Switching to kubeconfig context " + context
 	return m.load()
+}
+
+// runSortCommand orders the Applications list: ":sort health", ":sort name
+// reverse", or ":sort" alone for the order the source returned.
+func (m *Model) runSortCommand(arguments string) {
+	words := strings.Fields(arguments)
+	if len(words) > 2 || (len(words) == 2 && !strings.EqualFold(words[1], "reverse")) {
+		m.err = errors.New(sortHelp)
+		return
+	}
+	var input string
+	if len(words) > 0 {
+		input = words[0]
+	}
+	field, ok := explorer.ParseSortField(input)
+	if !ok {
+		m.err = errors.New(sortHelp)
+		return
+	}
+	// An explicit "reverse" always reverses. Without it, sorting by the field
+	// that is already in use flips the direction, and a new field starts in its
+	// normal direction.
+	reverse := len(words) == 2
+	if current, currentReverse := m.explorer.Sort(); len(words) == 1 && field != explorer.SortDefault && current == field {
+		reverse = !currentReverse
+	}
+	m.explorer.SetSort(field, reverse)
+	m.err = nil
+	if field == explorer.SortDefault {
+		m.status = "Sorted in the order Argo CD returned"
+		return
+	}
+	m.status = "Sorted by " + string(field)
+	if reverse {
+		m.status += " (reverse)"
+	}
+}
+
+// resetExplorer empties the lists for another context or namespace, keeping
+// how the Applications are sorted.
+func (m *Model) resetExplorer() {
+	field, reverse := m.explorer.Sort()
+	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.explorer.SetSort(field, reverse)
 }
 
 // namespacesListed carries the cluster's namespaces, or the error from asking.
@@ -520,7 +664,7 @@ func (m *Model) finishNamespaceLookup(listed namespacesListed) tea.Cmd {
 	m.source = switcher.WithNamespace(listed.switchTo)
 	m.sourceGeneration++
 	m.namespace = listed.switchTo
-	m.explorer = explorer.NewModel(explorer.Snapshot{})
+	m.resetExplorer()
 	m.closeTree()
 	m.marked = nil
 	m.namespaceOptions = nil

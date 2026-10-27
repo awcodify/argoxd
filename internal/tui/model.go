@@ -3,6 +3,8 @@ package tui
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -68,9 +70,25 @@ type Model struct {
 	logPods          []string
 	contextOptions   []string
 	updateCheck      func(context.Context) string
+	resourceTable    bool
+	eventsPane       bool
+	paneFollowing    string
+	paneText         string
+	paneErr          error
+	paneLoaded       bool
+	paneOffset       int
+	themeBefore      string
+	tools            ExternalTools
+	launch           func(*exec.Cmd, tea.ExecCallback) tea.Cmd
+	startView        string
+	collapsed        map[explorer.ResourceReference]bool
 	updateVersion    string
 	namespaceOptions []string
 	status           string
+	// Key press tracking for demo visibility
+	showKeys bool
+	keyShown string
+	keyPress int
 }
 
 type viewMode int
@@ -113,6 +131,55 @@ func (m Model) WithRefresh(interval time.Duration) Model {
 	return m
 }
 
+// WithRequestTimeout sets how long a call to the source may take before it is
+// abandoned. A zero or negative value keeps the current timeout.
+func (m Model) WithRequestTimeout(timeout time.Duration) Model {
+	if timeout > 0 {
+		m.requestTimeout = timeout
+	}
+	return m
+}
+
+// WithSort orders the Applications list from the start.
+func (m Model) WithSort(field explorer.SortField, reverse bool) Model {
+	m.explorer.SetSort(field, reverse)
+	return m
+}
+
+// WithStartView opens a view once the first load arrives, written as a command
+// without the colon, such as "proj" or "app store".
+func (m Model) WithStartView(view string) Model {
+	m.startView = strings.TrimSpace(view)
+	return m
+}
+
+// StartViewCommands are the commands that can name the view argoxd starts in.
+func StartViewCommands() []string {
+	var names []string
+	for _, command := range commands {
+		names = append(names, command.names...)
+	}
+	return names
+}
+
+// ValidateStartView reports whether view names a command argoxd can open once
+// the first load arrives, and whether that command takes the project after it.
+func ValidateStartView(view string) error {
+	view = strings.TrimSpace(view)
+	if view == "" {
+		return nil
+	}
+	name, argument, hasArgument := strings.Cut(view, " ")
+	command, found := findCommand(name)
+	if !found {
+		return fmt.Errorf("start view %q must be one of %s, optionally followed by a project", view, strings.Join(StartViewCommands(), ", "))
+	}
+	if hasArgument && strings.TrimSpace(argument) != "" && !command.takesProject {
+		return fmt.Errorf("start view %q: %s does not take a project", view, name)
+	}
+	return nil
+}
+
 // WithReadOnly prevents actions that change Argo CD or live resources.
 func (m Model) WithReadOnly(readOnly bool) Model {
 	m.readOnly = readOnly
@@ -131,15 +198,51 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(commands...)
 }
 
-// Update handles TUI messages.
+// Update handles TUI messages, then lets the events pane follow wherever the
+// message left the selection.
 func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
+	updated, command := m.update(message)
+	next, ok := updated.(Model)
+	if !ok {
+		return updated, command
+	}
+	next, sync := next.syncEventsPane(message)
+	if sync == nil {
+		return next, command
+	}
+	return next, tea.Batch(command, sync)
+}
+
+func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
-		return m.updateKey(message)
+		if len(message.Runes) > 1 {
+			return m.updateRuneBatch(message)
+		}
+		if !m.showKeys {
+			return m.updateKey(message)
+		}
+		noted, fade := m.notePressedKey(message)
+		updated, command := noted.updateKey(message)
+		return updated, tea.Batch(command, fade)
+	case keyBadgeExpired:
+		if message.press == m.keyPress {
+			m.keyShown = ""
+		}
+		return m, nil
+	case externalDone:
+		if message.err != nil {
+			m.err = fmt.Errorf("%s: %w", message.program, message.err)
+		}
+		m.status = ""
+	case paneEventsLoaded:
+		return m.showPaneEvents(message), nil
 	case namespacesListed:
 		return m, m.finishNamespaceLookup(message)
 	case updateAvailable:
 		m.updateVersion = message.version
+	case tea.MouseMsg:
+		return m.updateMouse(message)
 	case tea.WindowSizeMsg:
 		m.width = message.Width
 		m.height = message.Height
@@ -155,6 +258,12 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.err == nil {
 			m.explorer.ReplaceSnapshot(message.snapshot)
 			m.pruneMarks()
+			if start := m.startView; start != "" {
+				// Open the start view once, after the first load: a project
+				// can only be named once the projects are known.
+				m.startView = ""
+				return m, m.runCommand(start)
+			}
 		}
 	case loadedTree:
 		m.loading = false
@@ -203,6 +312,33 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// updateRuneBatch handles a key message that carries several runes, which Bubble
+// Tea produces for fast typing and for a paste. The runes are replayed as
+// separate presses, so none is lost: a pasted command opens the command bar and
+// fills it in. A paste is text rather than keystrokes, so outside a prompt it
+// only does that when it starts with ':'; anything else pasted is ignored and
+// cannot trigger a single-key action.
+func (m Model) updateRuneBatch(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if message.Paste && !m.prompt.active {
+		if m.confirm.active() || m.view == textViewMode || m.view == historyViewMode || message.Runes[0] != ':' {
+			return m, nil
+		}
+	}
+	updated := tea.Model(m)
+	var commands []tea.Cmd
+	for _, r := range message.Runes {
+		// A paste can carry newlines and other control characters; typed input
+		// cannot, because the terminal parser stops at them.
+		if message.Paste && (r < ' ' || r == 0x7f) {
+			continue
+		}
+		var command tea.Cmd
+		updated, command = updated.(Model).update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		commands = append(commands, command)
+	}
+	return updated, tea.Batch(commands...)
 }
 
 // updateKey routes a key to the dialog or prompt that has focus, or else to the active view.
@@ -263,7 +399,37 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleMark()
 	case "right", "left":
+		if m.view == applicationTreeView {
+			if key == "left" {
+				m.collapseSelected()
+			} else {
+				m.expandSelected()
+			}
+			break
+		}
 		m.toggleTreeItem()
+	case "z":
+		if m.view == applicationTreeView {
+			m.toggleFoldAll()
+		}
+	case "w":
+		if m.view == applicationTreeView {
+			m.resourceTable = !m.resourceTable
+		}
+	case "E":
+		if m.view == applicationTreeView {
+			m.eventsPane = !m.eventsPane
+			m.paneFollowing, m.paneText, m.paneErr, m.paneLoaded, m.paneOffset = "", "", nil, false, 0
+		}
+	case "[", "]":
+		if m.view == applicationTreeView {
+			page := max(1, m.currentPaneHeight()-4)
+			if key == "[" {
+				m.scrollPane(page)
+			} else {
+				m.scrollPane(-page)
+			}
+		}
 	case "esc":
 		if m.searching() {
 			m.clearSearchAndFilter()
@@ -479,7 +645,7 @@ func (m Model) View() string {
 		width:  m.width,
 		height: m.bodyHeight() + 2,
 	}.render(lines)
-	return strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n")
+	return paintBackground(m.withKeyOverlay(strings.Join(append(sections, main, m.withUpdateBadge(m.renderCrumbs()), m.renderFlash()), "\n")), m.width, m.height)
 }
 
 // bodyHeight is the number of lines available inside the main frame.
@@ -512,6 +678,7 @@ func (m *Model) closeTree() {
 	m.treeSearch = ""
 	m.treeFilter = explorer.Filter{}
 	m.markedCards = nil
+	m.collapsed = nil
 }
 
 // searchAndFilter returns the search text and status filter of the active view:

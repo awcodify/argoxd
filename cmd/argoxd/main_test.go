@@ -5,9 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/awcodify/argoxd/internal/tui"
 )
 
 // isolateConfig points argoxd at a config file in a temp dir and clears the
@@ -173,5 +176,250 @@ func TestUpdateChecksCanBeSwitchedOff(t *testing.T) {
 	t.Setenv("ARGOXD_NO_UPDATE_CHECK", "1")
 	if options, err = parseOptions(nil); err != nil || options.checkUpdates {
 		t.Fatalf("checkUpdates = %v, %v; want off from ARGOXD_NO_UPDATE_CHECK", options.checkUpdates, err)
+	}
+}
+
+func TestConnectionFlagsAndConfigKeysForTLSAndTimeout(t *testing.T) {
+	isolateConfig(t, "caCert: /etc/ssl/corp-ca.pem\nclientCert: /etc/argoxd/client.crt\nclientKey: /etc/argoxd/client.key\nrequestTimeout: 45s\n")
+
+	options, err := parseOptions(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.caCert != "/etc/ssl/corp-ca.pem" || options.clientCert != "/etc/argoxd/client.crt" || options.clientKey != "/etc/argoxd/client.key" || options.requestTimeout != 45*time.Second {
+		t.Fatalf("options = %+v, want the config file's values", options)
+	}
+
+	options, err = parseOptions([]string{"--ca-cert", "ca.pem", "--client-cert", "c.crt", "--client-key", "c.key", "--request-timeout", "2m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if options.caCert != "ca.pem" || options.clientCert != "c.crt" || options.clientKey != "c.key" || options.requestTimeout != 2*time.Minute {
+		t.Fatalf("options = %+v, want the flags to win over the config file", options)
+	}
+}
+
+func TestRequestTimeoutDefaultsToFifteenSecondsAndRejectsNonsense(t *testing.T) {
+	isolateConfig(t, "")
+	options, err := parseOptions(nil)
+	if err != nil || options.requestTimeout != 15*time.Second {
+		t.Fatalf("requestTimeout = %v, %v; want 15s", options.requestTimeout, err)
+	}
+
+	for _, contents := range []string{"requestTimeout: soon\n", "requestTimeout: 0s\n", "requestTimeout: -5s\n"} {
+		isolateConfig(t, contents)
+		if _, err := parseOptions(nil); err == nil {
+			t.Fatalf("parseOptions() accepted config %q", contents)
+		}
+	}
+}
+
+func TestBuildSourcePassesTLSOptionsToTheAPISource(t *testing.T) {
+	if _, err := buildSource(options{source: "api", server: "https://argocd.example.com", caCert: "/no/such/ca.pem"}); err == nil || !strings.Contains(err.Error(), "/no/such/ca.pem") {
+		t.Fatalf("buildSource() error = %v, want the unreadable CA file named", err)
+	}
+	if _, err := buildSource(options{source: "api", server: "https://argocd.example.com", clientCert: "c.crt"}); err == nil || !strings.Contains(err.Error(), "client key") {
+		t.Fatalf("buildSource() error = %v, want a missing client key reported", err)
+	}
+	if _, err := buildSource(options{source: "kubeconfig", caCert: "/no/such/ca.pem"}); err != nil {
+		t.Fatalf("a CA file set for another source must not fail the kubeconfig source: %v", err)
+	}
+}
+
+func TestHelpListsTheNewConnectionFlags(t *testing.T) {
+	var buffer bytes.Buffer
+	flags := newFlagSet(&options{namespace: "argocd"})
+	flags.SetOutput(&buffer)
+
+	flags.Usage()
+
+	for _, flag := range []string{"--ca-cert", "--client-cert", "--client-key", "--request-timeout"} {
+		if !strings.Contains(buffer.String(), flag) {
+			t.Errorf("help does not list %s:\n%s", flag, buffer.String())
+		}
+	}
+}
+
+func TestSortFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "sort: health\nsortReverse: true\n")
+	options, err := parseOptions(nil)
+	if err != nil || options.sort != "health" || !options.sortReverse {
+		t.Fatalf("options = %+v, %v; want sort health, reversed", options, err)
+	}
+
+	isolateConfig(t, "sort: revision\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "name, health or sync") {
+		t.Fatalf("a bad sort field: error = %v, want a message listing the fields", err)
+	}
+
+	isolateConfig(t, "sortReverse: true\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "sortReverse needs sort") {
+		t.Fatalf("sortReverse without sort: error = %v, want it refused", err)
+	}
+}
+
+func TestMouseIsOffUnlessAskedFor(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.mouse {
+		t.Fatalf("mouse = %v, %v; want off by default so the terminal can still select text", options.mouse, err)
+	}
+	if options, _ := parseOptions([]string{"--mouse"}); !options.mouse {
+		t.Fatal("--mouse did not turn it on")
+	}
+	isolateConfig(t, "mouse: true\n")
+	if options, err := parseOptions(nil); err != nil || !options.mouse {
+		t.Fatalf("mouse = %v, %v; want it on from the config file", options.mouse, err)
+	}
+}
+
+func TestResourceViewFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.resourceView != "cards" {
+		t.Fatalf("resourceView = %q, %v; want cards by default", options.resourceView, err)
+	}
+	isolateConfig(t, "resourceView: table\n")
+	if options, err := parseOptions(nil); err != nil || options.resourceView != "table" {
+		t.Fatalf("resourceView = %q, %v; want table from the config file", options.resourceView, err)
+	}
+	if options, _ := parseOptions([]string{"--resource-view", "cards"}); options.resourceView != "cards" {
+		t.Fatalf("resourceView = %q, want the flag to win", options.resourceView)
+	}
+	isolateConfig(t, "resourceView: grid\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "cards or table") {
+		t.Fatalf("a bad resourceView: error = %v, want one naming cards or table", err)
+	}
+}
+
+func TestStartViewFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "startView: appset\n")
+	if options, err := parseOptions(nil); err != nil || options.startView != "appset" {
+		t.Fatalf("startView = %q, %v", options.startView, err)
+	}
+	if options, _ := parseOptions([]string{"--start-view", "app store"}); options.startView != "app store" {
+		t.Fatalf("startView = %q, want the flag to win", options.startView)
+	}
+	for _, bad := range []string{"startView: dashboard\n", "startView: ctx\n", "startView: sort name\n"} {
+		isolateConfig(t, bad)
+		if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "start view") {
+			t.Fatalf("%q: error = %v, want one about the start view", bad, err)
+		}
+	}
+	// A view that takes no project is rejected at startup instead of after the
+	// first load, when it would already have shown the Applications list.
+	isolateConfig(t, "startView: pulse store\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "does not take a project") {
+		t.Fatalf("startView with a project on pulse: error = %v, want it refused at startup", err)
+	}
+}
+
+func TestK9sCommandFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "k9sCommand: /opt/bin/k9s\n")
+	if options, err := parseOptions(nil); err != nil || options.k9sCommand != "/opt/bin/k9s" {
+		t.Fatalf("k9sCommand = %q, %v", options.k9sCommand, err)
+	}
+}
+
+func TestDiffViewerFromTheConfigFile(t *testing.T) {
+	isolateConfig(t, "diffViewer: meld {left} {right}\n")
+	if options, err := parseOptions(nil); err != nil || options.diffViewer != "meld {left} {right}" {
+		t.Fatalf("diffViewer = %q, %v", options.diffViewer, err)
+	}
+}
+
+func TestThemeFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "theme: nord\n")
+	if options, err := parseOptions(nil); err != nil || options.theme != "nord" {
+		t.Fatalf("theme = %q, %v", options.theme, err)
+	}
+	if options, _ := parseOptions([]string{"--theme", "light"}); options.theme != "light" {
+		t.Fatalf("theme = %q, want the flag to win", options.theme)
+	}
+	isolateConfig(t, "theme: neon\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "nord") {
+		t.Fatalf("a bad theme: error = %v, want the available themes listed", err)
+	}
+}
+
+func TestEventsPaneFromTheConfigFileAndFlag(t *testing.T) {
+	isolateConfig(t, "")
+	if options, err := parseOptions(nil); err != nil || options.eventsPane {
+		t.Fatalf("eventsPane = %v, %v; want it off by default", options.eventsPane, err)
+	}
+	isolateConfig(t, "eventsPane: true\n")
+	if options, err := parseOptions(nil); err != nil || !options.eventsPane {
+		t.Fatalf("eventsPane = %v, %v; want it on from the config file", options.eventsPane, err)
+	}
+	if options, _ := parseOptions([]string{"--events-pane"}); !options.eventsPane {
+		t.Fatal("--events-pane did not turn it on")
+	}
+}
+
+func TestCustomThemesFromTheConfigFile(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "theme: sunset\nthemes:\n  sunset:\n    base: nord\n    accent: \"#ff5500\"\n    healthy: \"#0f0\"\n")
+
+	options, err := parseOptions(nil)
+
+	if err != nil || options.theme != "sunset" {
+		t.Fatalf("theme = %q, %v; want the custom theme chosen", options.theme, err)
+	}
+	if !slices.Contains(tui.ThemeNames(), "sunset") {
+		t.Fatalf("themes = %v, want sunset among them", tui.ThemeNames())
+	}
+}
+
+func TestACustomThemeMistakeIsReportedWithItsPlace(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	for contents, want := range map[string]string{
+		"themes:\n  mine:\n    accent: red\n":                "themes.mine",
+		"themes:\n  mine:\n    base: neon\n":                 "themes.mine",
+		"themes:\n  nord:\n    accent: \"#fff\"\n":           "themes.nord",
+		"themes:\n  mine:\n    colour: \"#fff\"\n":           "colour",
+		"theme: missing\nthemes:\n  mine:\n    base: nord\n": "missing",
+	} {
+		isolateConfig(t, contents)
+		if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("config %q: error = %v, want one mentioning %q", contents, err, want)
+		}
+		tui.ForgetCustomThemes()
+	}
+}
+
+func TestUnquotedAnsiNumbersAreAcceptedInThemes(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "theme: warm\nthemes:\n  warm:\n    accent: 208\n    muted: 8\n")
+
+	if _, err := parseOptions(nil); err != nil {
+		t.Fatalf("an unquoted ANSI number was refused: %v", err)
+	}
+}
+
+func TestAnUnquotedHexColorIsExplainedBecauseYAMLReadsItAsAComment(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "themes:\n  warm:\n    accent: #ff5500\n")
+
+	_, err := parseOptions(nil)
+
+	if err == nil || !strings.Contains(err.Error(), "themes.warm.accent") || !strings.Contains(err.Error(), "quote") {
+		t.Fatalf("error = %v, want it to say the hex color needs quotes", err)
+	}
+}
+
+func TestAThemeColorThatIsNotTextOrANumberIsRefused(t *testing.T) {
+	t.Cleanup(tui.ForgetCustomThemes)
+	isolateConfig(t, "themes:\n  warm:\n    accent: [1, 2]\n")
+
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "themes.warm.accent") {
+		t.Fatalf("error = %v, want the bad value located", err)
+	}
+}
+
+func TestShowKeysIsAFlagNotAConfigSetting(t *testing.T) {
+	isolateConfig(t, "")
+	if options, _ := parseOptions(nil); options.showKeys {
+		t.Fatal("showKeys is on by default")
+	}
+	if options, _ := parseOptions([]string{"--show-keys"}); !options.showKeys {
+		t.Fatal("--show-keys did not turn it on")
 	}
 }

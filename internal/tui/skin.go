@@ -2,24 +2,28 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
-// The palette borrows Argo CD's brand orange and its status colors.
+// The colors and styles below are set by setTheme, which init calls with the
+// default theme: its palette borrows Argo CD's brand orange and status colors.
 var (
-	colorAccent  = lipgloss.Color("#EF7B4D")
-	colorTeal    = lipgloss.Color("#18BE94")
-	colorSky     = lipgloss.Color("#0DADEA")
-	colorAmber   = lipgloss.Color("#F4C030")
-	colorRose    = lipgloss.Color("#E96D76")
-	colorViolet  = lipgloss.Color("#A78BFA")
-	colorSlate   = lipgloss.Color("#64748B")
-	colorText    = lipgloss.Color("#CBD5E1")
-	colorBright  = lipgloss.Color("#F8FAFC")
-	colorBorder  = lipgloss.Color("#475569")
-	colorSurface = lipgloss.Color("#1E293B")
+	colorAccent  lipgloss.Color
+	colorTeal    lipgloss.Color
+	colorSky     lipgloss.Color
+	colorAmber   lipgloss.Color
+	colorRose    lipgloss.Color
+	colorViolet  lipgloss.Color
+	colorSlate   lipgloss.Color
+	colorText    lipgloss.Color
+	colorBright  lipgloss.Color
+	colorBorder  lipgloss.Color
+	colorSurface lipgloss.Color
+	// themeBackground fills the screen; empty keeps the terminal's own.
+	themeBackground lipgloss.Color
 )
 
 // pruneGlyph flags a resource that a sync with prune would delete, and
@@ -36,18 +40,83 @@ const conditionGlyph = "⚠"
 const syncWindowGlyph = "⊘"
 
 var (
-	accentStyle  = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
-	brightStyle  = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
-	textStyle    = lipgloss.NewStyle().Foreground(colorText)
-	mutedStyle   = lipgloss.NewStyle().Foreground(colorSlate)
-	keycapStyle  = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Bold(true).Padding(0, 1)
-	columnStyle  = lipgloss.NewStyle().Foreground(colorSlate).Bold(true)
-	errorStyle   = lipgloss.NewStyle().Foreground(colorRose).Bold(true)
-	warningStyle = lipgloss.NewStyle().Foreground(colorAmber)
-	infoStyle    = lipgloss.NewStyle().Foreground(colorSky)
-	selectedBar  = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Render("▌")
-	selectedText = lipgloss.NewStyle().Foreground(colorBright).Background(colorSurface).Bold(true)
+	accentStyle  lipgloss.Style
+	brightStyle  lipgloss.Style
+	textStyle    lipgloss.Style
+	mutedStyle   lipgloss.Style
+	keycapStyle  lipgloss.Style
+	columnStyle  lipgloss.Style
+	errorStyle   lipgloss.Style
+	warningStyle lipgloss.Style
+	infoStyle    lipgloss.Style
+	selectedBar  string
+	selectedText lipgloss.Style
+
+	// Changed diff lines are drawn as full-width tinted bands, like a code review.
+	diffAddedStyle      lipgloss.Style
+	diffRemovedStyle    lipgloss.Style
+	visualSelectedStyle lipgloss.Style
+	// updateBadgeStyle fills the update notice so it stands out from the muted
+	// header text around it.
+	updateBadgeStyle lipgloss.Style
+	// keyBadgeStyle is the block that shows a pressed key: bold on the accent
+	// color, with room around it, so it reads in a small recording.
+	keyBadgeStyle lipgloss.Style
+	// keyScrim is the sheet the key caption floats on. A terminal cannot blend
+	// a translucent color with what is behind it, so the sheet is drawn dark
+	// and the text it covers is dimmed instead: the interface still shows
+	// through, as if under tinted glass. On a light theme the sheet is light,
+	// so the caption reads as a dimmed pane rather than a black band.
+	keyScrim lipgloss.Color
 )
+
+func init() { _ = setTheme("default") }
+
+// applyTheme sets the colors and rebuilds every style made from them.
+func applyTheme(t theme) {
+	colorAccent, colorTeal, colorSky = lipgloss.Color(t.accent), lipgloss.Color(t.healthy), lipgloss.Color(t.info)
+	colorAmber, colorRose, colorViolet = lipgloss.Color(t.warning), lipgloss.Color(t.danger), lipgloss.Color(t.suspended)
+	colorSlate, colorText, colorBright = lipgloss.Color(t.muted), lipgloss.Color(t.text), lipgloss.Color(t.bright)
+	colorBorder, colorSurface = lipgloss.Color(t.border), lipgloss.Color(t.surface)
+	themeBackground = lipgloss.Color(t.background)
+
+	accentStyle = lipgloss.NewStyle().Foreground(colorAccent).Bold(true)
+	brightStyle = lipgloss.NewStyle().Foreground(colorBright).Bold(true)
+	textStyle = lipgloss.NewStyle().Foreground(colorText)
+	mutedStyle = lipgloss.NewStyle().Foreground(colorSlate)
+	keycapStyle = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Bold(true).Padding(0, 1)
+	columnStyle = lipgloss.NewStyle().Foreground(colorSlate).Bold(true)
+	errorStyle = lipgloss.NewStyle().Foreground(colorRose).Bold(true)
+	warningStyle = lipgloss.NewStyle().Foreground(colorAmber)
+	infoStyle = lipgloss.NewStyle().Foreground(colorSky)
+	selectedBar = lipgloss.NewStyle().Foreground(colorAccent).Background(colorSurface).Render("▌")
+	selectedText = lipgloss.NewStyle().Foreground(colorBright).Background(colorSurface).Bold(true)
+
+	diffAddedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.addedFG)).Background(lipgloss.Color(t.addedBG))
+	diffRemovedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.removedFG)).Background(lipgloss.Color(t.removedBG))
+	visualSelectedStyle = lipgloss.NewStyle().Foreground(colorBright).Background(lipgloss.Color(t.selection))
+	updateBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.badgeText)).Background(colorAccent).Bold(true).Padding(0, 1)
+	keyBadgeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(t.badgeText)).Background(colorAccent).Bold(true).Padding(0, 2)
+	keyScrim = lipgloss.Color("#05070A")
+	if isLightColor(t.background) {
+		keyScrim = lipgloss.Color(t.surface)
+	}
+}
+
+// isLightColor reports whether a #rrggbb color is brighter than mid grey. A
+// theme with a light background needs a light sheet; a theme with no background
+// of its own, or one written as an ANSI number, keeps the dark sheet.
+func isLightColor(color string) bool {
+	if len(color) != 7 || color[0] != '#' {
+		return false
+	}
+	value, err := strconv.ParseUint(color[1:], 16, 32)
+	if err != nil {
+		return false
+	}
+	red, green, blue := (value>>16)&0xff, (value>>8)&0xff, value&0xff
+	return (299*red+587*green+114*blue)/1000 > 128
+}
 
 // status describes how an Argo CD health or sync status is drawn. A higher
 // severity wins when several statuses share one color, such as a table row.
