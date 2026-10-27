@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -125,5 +126,22 @@ func TestWithRequestTimeoutSetsHowLongSourceCallsMayTake(t *testing.T) {
 	}
 	if model = model.WithRequestTimeout(0); model.requestTimeout != 45*time.Second {
 		t.Fatalf("a zero timeout replaced the setting: %v", model.requestTimeout)
+	}
+}
+
+func TestALongErrorIsCutToTheScreenWidthWithAnEllipsis(t *testing.T) {
+	model, _ := sortModel()
+	model.err = fmt.Errorf("%s", strings.Repeat("a long failure message ", 20))
+
+	for _, width := range []int{140, 80, 40} {
+		line := lastLine(resize(model, width, 30).View())
+		if lipgloss.Width(line) > width || !strings.HasSuffix(strings.TrimRight(line, " "), "…") {
+			t.Errorf("width %d: the status line is %d wide and ends %q; want it cut with …", width, lipgloss.Width(line), line[max(0, len(line)-12):])
+		}
+	}
+	short := resize(model, 140, 30)
+	short.err = fmt.Errorf("short")
+	if line := lastLine(short.View()); strings.Contains(line, "…") {
+		t.Errorf("a short error was cut: %q", line)
 	}
 }

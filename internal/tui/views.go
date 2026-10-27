@@ -8,6 +8,7 @@ import (
 
 	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 const (
@@ -249,14 +250,20 @@ func (m Model) renderCrumbs() string {
 func (m Model) renderFlash() string {
 	switch {
 	case m.err != nil:
-		return " " + errorStyle.Render("✗ "+m.err.Error())
+		return " " + errorStyle.Render(m.fitFlash("✗ "+m.err.Error()))
 	case m.loading:
 		return " " + infoStyle.Render("◐ Refreshing…")
 	case m.status != "":
-		return " " + infoStyle.Render("● "+m.status)
+		return " " + infoStyle.Render(m.fitFlash("● "+m.status))
 	default:
 		return ""
 	}
+}
+
+// fitFlash cuts a message to the screen width with an ellipsis, so a long
+// error ends visibly instead of being clipped by the terminal.
+func (m Model) fitFlash(text string) string {
+	return ansi.Truncate(text, max(1, m.width-2), "…")
 }
 
 // renderPrompt draws the command line: the input, the selected suggestion as

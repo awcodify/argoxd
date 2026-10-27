@@ -76,7 +76,7 @@ func NewConfiguredAPISource(server, token string, options APIOptions) (*APISourc
 		client:  &http.Client{Transport: transport, Timeout: timeout},
 	}
 	if options.TokenFromCLI {
-		source.loginHint = "; your argocd CLI login may have expired, run: argocd login"
+		source.loginHint = "token expired? run: argocd login"
 	}
 	return source, nil
 }
@@ -333,12 +333,13 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 
 // do sends a request and returns the response of a successful call. The
 // caller must close the response body.
-// hintFor is advice to add to an error with this status.
-func (s *APISource) hintFor(status int) string {
-	if status == http.StatusUnauthorized {
-		return s.loginHint
+// withHint puts advice for this status in front of an error message, where a
+// narrow terminal still shows it.
+func (s *APISource) withHint(status int, message string) string {
+	if status == http.StatusUnauthorized && s.loginHint != "" {
+		return s.loginHint + " (" + message + ")"
 	}
-	return ""
+	return message
 }
 
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
@@ -375,7 +376,7 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
 		return nil, &httpStatusError{
-			message: fmt.Sprintf("%s returned %s%s%s", endpoint.Path, response.Status, errorMessage(response.Body), s.hintFor(response.StatusCode)),
+			message: s.withHint(response.StatusCode, fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))),
 			code:    response.StatusCode,
 		}
 	}

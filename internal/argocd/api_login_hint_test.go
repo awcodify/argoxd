@@ -24,3 +24,22 @@ func TestExpiredLoginErrorsPointAtArgoCDLoginWhenTheTokenCameFromTheCLI(t *testi
 		t.Fatalf("a token the user gave: error = %v, want no argocd login advice", err)
 	}
 }
+
+func TestTheLoginAdviceComesBeforeTheServersLongDetail(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"invalid session: token is malformed: could not JSON decode header: invalid character 'e' looking for beginning of value","code":16,"message":"invalid session: token is malformed: could not JSON decode header: invalid character 'e' looking for beginning of value"}`))
+	}))
+	defer server.Close()
+	source, _ := NewConfiguredAPISource(server.URL, "old", APIOptions{TokenFromCLI: true})
+
+	_, err := source.Load(context.Background())
+
+	if err == nil {
+		t.Fatal("Load() = nil, want an error")
+	}
+	advice, detail := strings.Index(err.Error(), "argocd login"), strings.Index(err.Error(), "malformed")
+	if advice < 0 || detail < 0 || advice > detail || advice > 40 {
+		t.Fatalf("error = %q; want the advice (at %d) before the detail (at %d) and near the front", err.Error(), advice, detail)
+	}
+}
