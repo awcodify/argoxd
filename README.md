@@ -140,7 +140,7 @@ Mistakes are reported when argoxd starts, with the theme and color named. Built-
 
 ## Commands
 
-Press `:` to open the command bar. It suggests as you type: Tab fills in the highlighted suggestion and, pressed again, moves to the next; ↑ and ↓ move through them too. Enter runs, Esc closes.
+Press `:` to open the command bar. It suggests as you type: Tab fills in the highlighted suggestion and, pressed again, moves to the next; ↑ and ↓ move through them too. Enter runs, Esc closes. A whole command can be pasted into the bar, with or without the leading `:`.
 
 | Command | Opens |
 | --- | --- |

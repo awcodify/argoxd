@@ -320,7 +320,8 @@ func TestLowercaseDDoesNotDeleteFromTheList(t *testing.T) {
 func key(value string) tea.KeyMsg {
 	special := map[string]tea.KeyType{
 		"esc": tea.KeyEsc, "enter": tea.KeyEnter, "tab": tea.KeyTab, "shift+tab": tea.KeyShiftTab,
-		"up": tea.KeyUp, "down": tea.KeyDown, "backspace": tea.KeyBackspace, " ": tea.KeySpace,
+		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight,
+		"backspace": tea.KeyBackspace, " ": tea.KeySpace,
 	}
 	if keyType, found := special[value]; found {
 		return tea.KeyMsg{Type: keyType}

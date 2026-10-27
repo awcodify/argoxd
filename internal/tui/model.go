@@ -216,6 +216,9 @@ func (m Model) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.KeyMsg:
+		if len(message.Runes) > 1 {
+			return m.updateRuneBatch(message)
+		}
 		if !m.showKeys {
 			return m.updateKey(message)
 		}
@@ -309,6 +312,33 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// updateRuneBatch handles a key message that carries several runes, which Bubble
+// Tea produces for fast typing and for a paste. The runes are replayed as
+// separate presses, so none is lost: a pasted command opens the command bar and
+// fills it in. A paste is text rather than keystrokes, so outside a prompt it
+// only does that when it starts with ':'; anything else pasted is ignored and
+// cannot trigger a single-key action.
+func (m Model) updateRuneBatch(message tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if message.Paste && !m.prompt.active {
+		if m.confirm.active() || m.view == textViewMode || m.view == historyViewMode || message.Runes[0] != ':' {
+			return m, nil
+		}
+	}
+	updated := tea.Model(m)
+	var commands []tea.Cmd
+	for _, r := range message.Runes {
+		// A paste can carry newlines and other control characters; typed input
+		// cannot, because the terminal parser stops at them.
+		if message.Paste && (r < ' ' || r == 0x7f) {
+			continue
+		}
+		var command tea.Cmd
+		updated, command = updated.(Model).update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		commands = append(commands, command)
+	}
+	return updated, tea.Batch(commands...)
 }
 
 // updateKey routes a key to the dialog or prompt that has focus, or else to the active view.

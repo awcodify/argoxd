@@ -23,6 +23,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 ### Fixed
 
 - **Tab in the command bar.** After Tab filled in a suggestion for a command with an argument, such as `:sort `, `:health `, `:app ` or `:ctx `, the other suggestions disappeared and Tab did nothing more. Tab and the arrow keys now keep moving through the same list, and Shift+Tab goes back.
+- **Pasted commands and fast typing.** Text delivered in one burst, as a paste or when typing quickly, was dropped: a `:command` pasted into the bar did nothing and its space could mark a row instead. A pasted command now opens the command bar with it filled in, fast-typed keys are handled one at a time, and pasted text that is not a command is ignored unless a prompt is waiting for it.
 
 ### Changed
 
