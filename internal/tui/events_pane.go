@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/awcodify/argoxd/internal/argocd"
@@ -94,7 +95,7 @@ func (m Model) syncEventsPane(message tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if target != m.paneFollowing {
-		m.paneText, m.paneErr = "", nil
+		m.paneText, m.paneErr, m.paneOffset = "", nil, 0
 	}
 	m.paneFollowing = target
 	application := m.resourceTree.Application
@@ -144,10 +145,11 @@ func (m Model) renderEventsPane(width, height int) []string {
 		lines := strings.Split(strings.TrimRight(m.paneText, "\n"), "\n")
 		header, events := lines[0], lines[1:]
 		content = []string{" " + columnStyle.Render(ansi.Truncate(header, width-4, "…"))}
-		// The newest events are last; show as many as fit, newest at the bottom.
-		if len(events) > rows-1 {
-			events = events[len(events)-(rows-1):]
-		}
+		// The newest events are last. Show as many as fit, ending paneOffset
+		// events before the newest.
+		offset := min(m.paneOffset, max(0, len(events)-(rows-1)))
+		end := len(events) - offset
+		events = events[max(0, end-(rows-1)):end]
 		for _, line := range events {
 			style := textStyle
 			if strings.Contains(line, "Warning") {
@@ -159,7 +161,7 @@ func (m Model) renderEventsPane(width, height int) []string {
 	framed := box{
 		border: lipgloss.RoundedBorder(),
 		color:  colorBorder,
-		title:  " " + accentStyle.Render("events · "+m.paneSubject()) + " ",
+		title:  " " + accentStyle.Render("events · "+m.paneSubject()) + m.paneScrollNote(paneHeight-3) + " ",
 		width:  max(0, width-2),
 		height: paneHeight,
 	}.render(content)
@@ -168,4 +170,70 @@ func (m Model) renderEventsPane(width, height int) []string {
 		lines[row] = " " + lines[row]
 	}
 	return lines
+}
+
+// paneEventCount is how many events the pane has, not counting its header line.
+func (m Model) paneEventCount() int {
+	if strings.TrimSpace(m.paneText) == "" {
+		return 0
+	}
+	return len(strings.Split(strings.TrimRight(m.paneText, "\n"), "\n")) - 1
+}
+
+// maxPaneOffset is how far the pane can scroll back, given how many events it
+// has room for.
+func (m Model) maxPaneOffset() int {
+	rows := m.currentPaneHeight() - 3
+	return max(0, m.paneEventCount()-rows)
+}
+
+// currentPaneHeight is the pane's height on the present screen, 0 when it is not drawn.
+func (m Model) currentPaneHeight() int {
+	return m.eventsPaneHeight(m.bodyHeight() - len(m.renderSummary(m.width-2)))
+}
+
+// paneScrollNote says how many events are off screen, so a pane that looks
+// complete is not mistaken for one.
+func (m Model) paneScrollNote(rows int) string {
+	count := m.paneEventCount()
+	offset := min(m.paneOffset, max(0, count-rows))
+	older, newer := count-rows-offset, offset
+	var parts []string
+	if older > 0 {
+		parts = append(parts, "↑ "+strconv.Itoa(older)+" older")
+	}
+	if newer > 0 {
+		parts = append(parts, "↓ "+strconv.Itoa(newer)+" newer")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return mutedStyle.Render(" · " + strings.Join(parts, " · ") + " · [ ] scroll")
+}
+
+// scrollPane moves the pane back (positive) or forward (negative) through the
+// events, within what there is.
+func (m *Model) scrollPane(lines int) {
+	if !m.eventsPane || m.paneFollowing == "" {
+		return
+	}
+	m.paneOffset = max(0, min(m.maxPaneOffset(), m.paneOffset+lines))
+}
+
+// paneRows gives the screen rows the pane covers, counting from the top of the
+// terminal, or false when it is not drawn.
+func (m Model) paneRows() (top, bottom int, ok bool) {
+	if !m.eventsPane || m.paneFollowing == "" {
+		return 0, 0, false
+	}
+	height := m.currentPaneHeight()
+	if height == 0 {
+		return 0, 0, false
+	}
+	contentTop := headerHeight + 1
+	if m.prompt.active {
+		contentTop += promptHeight
+	}
+	top = contentTop + m.bodyHeight() - len(m.renderSummary(m.width-2)) - height
+	return top, top + height - 1, true
 }

@@ -25,7 +25,7 @@ All notable changes to argoxd are listed here. The format follows [Keep a Change
 - **k9s.** `:k9s` opens k9s on the selected resource's namespace and kind, with the kubeconfig context argoxd uses, and returns to argoxd when you quit it. `--read-only` blocks it, because k9s can change things. `k9sCommand` sets its path.
 - **External diff viewer.** `x` in a diff opens it in the program set by `diffViewer`, such as `meld {left} {right}` or `code --diff {left} {right} --wait`, with the live and desired text as two temporary files that are removed afterwards.
 
-- **Events pane.** `E` in an Application's dependency view opens a pane under the cards with the events of the selected card, or of the Application on its own card. It follows the cursor, reloads on every refresh, keeps the old events on screen until the new ones arrive, and steps aside on a short terminal. `eventsPane: true` or `--events-pane` opens it by default. It needs `list` on `events`, like `e`.
+- **Events pane.** `E` in an Application's dependency view opens a pane under the cards with the events of the selected card, or of the Application on its own card. It follows the cursor, reloads on every refresh, keeps the old events on screen until the new ones arrive, and shrinks to fit a short terminal. `[` and `]` scroll it through older and newer events, and so does the mouse wheel over it with `--mouse`; the title says how many events are off screen. `eventsPane: true` or `--events-pane` opens it by default. It needs `list` on `events`, like `e`.
 
 ### Changed
 

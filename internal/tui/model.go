@@ -76,6 +76,7 @@ type Model struct {
 	paneText         string
 	paneErr          error
 	paneLoaded       bool
+	paneOffset       int
 	tools            ExternalTools
 	launch           func(*exec.Cmd, tea.ExecCallback) tea.Cmd
 	startView        string
@@ -355,7 +356,16 @@ func (m Model) updateKey(message tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "E":
 		if m.view == applicationTreeView {
 			m.eventsPane = !m.eventsPane
-			m.paneFollowing, m.paneText, m.paneErr, m.paneLoaded = "", "", nil, false
+			m.paneFollowing, m.paneText, m.paneErr, m.paneLoaded, m.paneOffset = "", "", nil, false, 0
+		}
+	case "[", "]":
+		if m.view == applicationTreeView {
+			page := max(1, m.currentPaneHeight()-4)
+			if key == "[" {
+				m.scrollPane(page)
+			} else {
+				m.scrollPane(-page)
+			}
 		}
 	case "esc":
 		if m.searching() {
