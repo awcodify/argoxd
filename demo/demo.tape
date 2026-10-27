@@ -24,95 +24,95 @@ Sleep 1s
 Type "argoxd --demo --show-keys"
 Sleep 900ms
 Enter
-Sleep 3s
+Sleep 2.5s
 
 # Worst first: sort by health. The column header shows the sort.
 Type ":sort health"
 Sleep 900ms
 Enter
-Sleep 4s
+Sleep 2.5s
 
 # The overview: what is healthy, what is not, and what needs attention.
 Type ":pulse"
 Sleep 800ms
 Enter
-Sleep 5s
+Sleep 2.8s
 
 # Open the worst Application. Its conditions are listed above the cards.
 Sleep 800ms
 Enter
-Sleep 5s
+Sleep 2.5s
 
 # The same resources as a table, then back to cards.
 Type "w"
-Sleep 4.5s
-Type "w"
 Sleep 2.5s
+Type "w"
+Sleep 2s
 
 # Keep the selected resource's events in a pane that follows the cursor.
 Sleep 800ms
 Type "E"
-Sleep 3s
-Down@600ms 2
 Sleep 2.2s
+Down@600ms 2
+Sleep 1.8s
 Down@600ms 3
-Sleep 3.5s
+Sleep 2.2s
 
 # Fold everything down to the top-level resources, then open it up again.
 Type "z"
-Sleep 3.5s
+Sleep 2.2s
 Type "z"
-Sleep 2.5s
+Sleep 1.8s
 
 # Why did its last sync fail?
 Sleep 600ms
 Type "i"
-Sleep 5s
+Sleep 2.5s
 Escape
-Sleep 1.5s
+Sleep 1.2s
 
 # Read its logs, then go back to the overview.
 Type "l"
-Sleep 5s
+Sleep 2.5s
 Escape
-Sleep 1.2s
+Sleep 1s
 Escape
-Sleep 2s
+Sleep 1.5s
 
 # Try themes: the screen repaints as you move, Esc brings the original back.
 Type ":theme"
 Sleep 800ms
 Enter
-Sleep 2.5s
+Sleep 2s
 Tab
-Sleep 2.5s
+Sleep 1.8s
 Tab
-Sleep 2.5s
+Sleep 1.8s
 Tab
-Sleep 2.5s
+Sleep 1.8s
 Tab
-Sleep 2.5s
+Sleep 1.8s
 Escape
-Sleep 2.5s
+Sleep 1.8s
 
 # Mark the OutOfSync Applications and sync them together.
 Type ":app"
 Sleep 700ms
 Enter
-Sleep 2s
+Sleep 1.5s
 Type "S"
 Sleep 1s
 Type "OutOfSync"
 Sleep 900ms
 Enter
-Sleep 2.5s
-Space
-Sleep 1.2s
-Down
-Sleep 900ms
-Space
 Sleep 2s
+Space
+Sleep 1s
+Down
+Sleep 800ms
+Space
+Sleep 1.5s
 Type "s"
-Sleep 4s
+Sleep 2.5s
 Enter
-Sleep 4s
+Sleep 3s
