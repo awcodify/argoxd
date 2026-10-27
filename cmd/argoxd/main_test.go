@@ -5,12 +5,12 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/awcodify/argoxd/internal/tui"
-	"slices"
-	"time"
 )
 
 // isolateConfig points argoxd at a config file in a temp dir and clears the
@@ -251,6 +251,11 @@ func TestSortFromTheConfigFile(t *testing.T) {
 	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "name, health or sync") {
 		t.Fatalf("a bad sort field: error = %v, want a message listing the fields", err)
 	}
+
+	isolateConfig(t, "sortReverse: true\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "sortReverse needs sort") {
+		t.Fatalf("sortReverse without sort: error = %v, want it refused", err)
+	}
 }
 
 func TestMouseIsOffUnlessAskedFor(t *testing.T) {
@@ -298,6 +303,12 @@ func TestStartViewFromTheConfigFileAndFlag(t *testing.T) {
 		if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "start view") {
 			t.Fatalf("%q: error = %v, want one about the start view", bad, err)
 		}
+	}
+	// A view that takes no project is rejected at startup instead of after the
+	// first load, when it would already have shown the Applications list.
+	isolateConfig(t, "startView: pulse store\n")
+	if _, err := parseOptions(nil); err == nil || !strings.Contains(err.Error(), "does not take a project") {
+		t.Fatalf("startView with a project on pulse: error = %v, want it refused at startup", err)
 	}
 }
 

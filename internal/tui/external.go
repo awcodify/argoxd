@@ -15,6 +15,8 @@ import (
 type ExternalTools struct {
 	// K9s is the k9s command; empty means "k9s".
 	K9s string
+	// Kubeconfig is the kubeconfig file argoxd reads; empty uses k9s's default.
+	Kubeconfig string
 	// KubeContext is the kubeconfig context k9s opens on; empty uses the current one.
 	KubeContext string
 	// DiffViewer is a command that compares two files, written with {left}
@@ -42,9 +44,9 @@ type externalDone struct {
 
 const k9sCommandName = "k9s"
 
-// openK9s runs k9s on the kubeconfig context, opened on the selected card's
-// namespace and kind when the dependency view has one selected. k9s can change
-// resources, so read-only mode does not start it.
+// openK9s runs k9s on argoxd's kubeconfig and context, opened on the selected
+// card's namespace and kind when the dependency view has one selected. k9s can
+// change resources, so read-only mode does not start it.
 func (m *Model) openK9s() tea.Cmd {
 	if m.blockReadOnly() {
 		return nil
@@ -59,6 +61,9 @@ func (m *Model) openK9s() tea.Cmd {
 		return nil
 	}
 	args := []string{}
+	if m.tools.Kubeconfig != "" {
+		args = append(args, "--kubeconfig", m.tools.Kubeconfig)
+	}
 	if m.tools.KubeContext != "" {
 		args = append(args, "--context", m.tools.KubeContext)
 	}

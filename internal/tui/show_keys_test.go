@@ -7,7 +7,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -329,5 +328,3 @@ func TestTheBandTakesItsToneFromTheTheme(t *testing.T) {
 		t.Fatalf("the dark theme's sheet is %s, want a dark one", keyScrim)
 	}
 }
-
-var _ = explorer.Snapshot{}

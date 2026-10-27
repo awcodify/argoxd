@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/awcodify/argoxd/internal/explorer"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -121,5 +120,3 @@ func TestADiffViewerTemplateNeedsBothFiles(t *testing.T) {
 		t.Fatalf("started %v, err = %v; want a message that {left} and {right} are both needed", recorded.args, model.err)
 	}
 }
-
-var _ = explorer.Snapshot{}

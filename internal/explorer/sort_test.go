@@ -98,3 +98,41 @@ func TestParseSortField(t *testing.T) {
 		t.Error("ParseSortField accepted revision")
 	}
 }
+
+func TestApplicationsAreRebuiltOnlyWhenTheirInputsChange(t *testing.T) {
+	model := NewModel(sortSnapshot())
+	first := model.Applications()
+	if len(first) == 0 {
+		t.Fatal("setup: no applications")
+	}
+
+	// A redraw reads the cached list instead of filtering and sorting again.
+	if second := model.Applications(); &first[0] != &second[0] {
+		t.Fatal("Applications() rebuilt the list when nothing had changed")
+	}
+	model.SetProject("store")
+	if got := applicationNames(model); !slices.Equal(got, []string{"gamma", "alpha", "beta", "epsilon"}) {
+		t.Fatalf("after :project the list = %v, want the project's Applications", got)
+	}
+	model.SetSearch("a")
+	if got := applicationNames(model); !slices.Equal(got, []string{"gamma", "alpha", "beta"}) {
+		t.Fatalf("after searching, the list = %v", got)
+	}
+	model.SetSort(SortName, false)
+	if got := applicationNames(model); !slices.Equal(got, []string{"alpha", "beta", "gamma"}) {
+		t.Fatalf("after sorting, the list = %v", got)
+	}
+}
+
+func TestACopiedModelKeepsItsOwnApplicationsList(t *testing.T) {
+	model := NewModel(sortSnapshot())
+	copied := model
+	copied.SetSort(SortName, false)
+
+	if got := applicationNames(model); !slices.Equal(got, []string{"gamma", "alpha", "delta", "beta", "epsilon"}) {
+		t.Fatalf("the original Model changed order with its copy: %v", got)
+	}
+	if got := applicationNames(copied); !slices.Equal(got, []string{"alpha", "beta", "delta", "epsilon", "gamma"}) {
+		t.Fatalf("the copied Model was not sorted: %v", got)
+	}
+}

@@ -162,6 +162,24 @@ func StartViewCommands() []string {
 	return names
 }
 
+// ValidateStartView reports whether view names a command argoxd can open once
+// the first load arrives, and whether that command takes the project after it.
+func ValidateStartView(view string) error {
+	view = strings.TrimSpace(view)
+	if view == "" {
+		return nil
+	}
+	name, argument, hasArgument := strings.Cut(view, " ")
+	command, found := findCommand(name)
+	if !found {
+		return fmt.Errorf("start view %q must be one of %s, optionally followed by a project", view, strings.Join(StartViewCommands(), ", "))
+	}
+	if hasArgument && strings.TrimSpace(argument) != "" && !command.takesProject {
+		return fmt.Errorf("start view %q: %s does not take a project", view, name)
+	}
+	return nil
+}
+
 // WithReadOnly prevents actions that change Argo CD or live resources.
 func (m Model) WithReadOnly(readOnly bool) Model {
 	m.readOnly = readOnly

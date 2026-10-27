@@ -105,7 +105,7 @@ Flags beat environment variables, which beat the config file. The API token is n
 - **Runtime switching**: `:ctx` changes the kubeconfig context, `:ns` the Argo CD namespace, without restarting.
 - **Read-only mode** (`--read-only`): every mutating action is blocked and the header shows `[READ-ONLY]`.
 - **Themes** (`:theme` opens a picker that previews each one as you move; Enter keeps it, Esc brings back the old one): `default`, `light` (paints its own light background, so it reads on any terminal), `high-contrast`, `colorblind` (blue and vermillion instead of green and red), `nord`, `dracula`, and `terminal`, which uses your terminal's own colors. [Define your own](#custom-themes) in the config file.
-- **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
+- **Other programs**: `:k9s` opens k9s on the selected resource's namespace and kind, using argoxd's `--kubeconfig` file and `--context` where you gave one, and `x` in a diff opens it in the viewer you set with `diffViewer`. Both are blocked by `--read-only` where they could change something: k9s can, a diff viewer cannot.
 - **Clipboard and browser**: `y` copies, `v` selects lines in a viewer, `o` opens the Application in the Argo CD web UI.
 
 Some features need `--source api`: diffs, orphaned resources, and `o`.
@@ -152,7 +152,7 @@ Press `:` to open the command bar. It suggests as you type: Tab fills in the hig
 | `:ctx [name]` | Switch kubeconfig context (picker without a name) |
 | `:ns [name]` | Switch the Argo CD namespace (picker without a name) |
 | `:theme [name]` | Switch the colors; without a name a picker previews each theme as you move through them (Tab, arrows or typing), Enter keeps the one shown and Esc brings back the old one |
-| `:k9s` | Open k9s on the selected resource's namespace and kind (needs k9s in your PATH; not in `--read-only`) |
+| `:k9s` | Open k9s on the selected resource's namespace and kind, with argoxd's kubeconfig and context (needs k9s in your PATH; not in `--read-only`) |
 | `:sort [name\|health\|sync] [reverse]` | Order the Applications; health and sync put the worst first. Run it again with the same field to flip the direction, add `reverse` to force it, or use `:sort` alone to restore Argo CD's order |
 | `:health`, `:sync`, `:kind` `<value>` | Filter, same as `H`, `S`, `K` |
 | `:settings` | Connection settings |

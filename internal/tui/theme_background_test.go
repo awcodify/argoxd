@@ -95,7 +95,9 @@ func TestSwitchingBackFromALightThemeRemovesTheBackground(t *testing.T) {
 
 func TestNoColorTerminalsGetNoEscapeCodesFromTheBackground(t *testing.T) {
 	useTheme(t, "light")
+	previous := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.Ascii)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
 
 	if got := paintBackground("hello", 20, 2); strings.Contains(got, "\x1b") {
 		t.Fatalf("an Ascii terminal got escape codes: %q", got)

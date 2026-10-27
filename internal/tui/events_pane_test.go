@@ -114,6 +114,21 @@ func TestThePaneReloadsOnTheRefreshTickWithoutBlinking(t *testing.T) {
 	}
 }
 
+func TestThePaneSaysItIsLoadingInsteadOfNoEvents(t *testing.T) {
+	model, _ := paneModel(t)
+	model = keyed(model, "E") // the Application's events are on screen
+
+	moved := press(model, "j") // the Deployment; its events have not arrived yet
+
+	view := moved.View()
+	if strings.Contains(view, "No events") {
+		t.Fatalf("moving the cursor made the pane claim there are no events:\n%s", view)
+	}
+	if !strings.Contains(view, "Loading events…") {
+		t.Fatalf("the pane does not say it is loading the new selection's events:\n%s", view)
+	}
+}
+
 func TestThePaneIsLeftOutWhenThereIsNoRoomForIt(t *testing.T) {
 	model, _ := paneModel(t)
 	model = resize(keyed(model, "E"), 140, 22)

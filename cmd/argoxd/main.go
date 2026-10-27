@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
@@ -84,7 +83,7 @@ func main() {
 		WithStartView(options.startView).
 		WithEventsPane(options.eventsPane).
 		WithShowKeys(options.showKeys).
-		WithExternalTools(tui.ExternalTools{K9s: options.k9sCommand, KubeContext: options.context, DiffViewer: options.diffViewer})
+		WithExternalTools(tui.ExternalTools{K9s: options.k9sCommand, Kubeconfig: options.kubeconfig, KubeContext: options.context, DiffViewer: options.diffViewer})
 	if field, ok := explorer.ParseSortField(options.sort); ok {
 		model = model.WithSort(field, options.sortReverse)
 	}
@@ -142,11 +141,11 @@ func parseOptions(arguments []string) (options, error) {
 			return options, err
 		}
 	}
-	if options.startView != "" {
-		name, _, _ := strings.Cut(strings.TrimSpace(options.startView), " ")
-		if !slices.Contains(tui.StartViewCommands(), name) {
-			return options, fmt.Errorf("start view %q must be one of %s, optionally followed by a project", options.startView, strings.Join(tui.StartViewCommands(), ", "))
-		}
+	if err := tui.ValidateStartView(options.startView); err != nil {
+		return options, err
+	}
+	if options.sortReverse && options.sort == "" {
+		return options, errors.New("sortReverse needs sort: set sort to name, health or sync")
 	}
 	if options.resourceView != "cards" && options.resourceView != "table" {
 		return options, fmt.Errorf("resource view must be cards or table, got %q", options.resourceView)

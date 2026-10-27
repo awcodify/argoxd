@@ -68,7 +68,7 @@ func TestTheTableIndentsEachResourceUnderItsOwner(t *testing.T) {
 		return 0
 	}
 	deployment, replicaSet, pod := nameColumn("Deployment", "web"), nameColumn("ReplicaSet", "web-5d"), nameColumn("Pod", "web-5d-x")
-	if !(deployment < replicaSet && replicaSet < pod) {
+	if deployment >= replicaSet || replicaSet >= pod {
 		t.Fatalf("name columns %d, %d, %d are not growing with depth:\n%s", deployment, replicaSet, pod, view)
 	}
 }
@@ -272,5 +272,39 @@ func TestTheDependencyHintsNameTheViewTheyWillSwitchTo(t *testing.T) {
 	}
 	if view := model.View(); strings.Contains(view, "←→ z") {
 		t.Fatalf("the fold hint is still the wide ←→ z keycap:\n%s", view)
+	}
+}
+
+func TestASearchShowsMatchesUnderFoldedCards(t *testing.T) {
+	model, _ := openDeep(t)
+	folded := press(press(model, "j"), "left") // the Deployment hides its ReplicaSet and Pod
+	if got := strings.Join(visibleKinds(folded), ","); got != "Application,Deployment,Service" {
+		t.Fatalf("setup: folded cards = %s", got)
+	}
+
+	searched := typeKeys(folded, "/", "w", "e", "b", "-", "5", "d", "-", "x", "enter")
+
+	if got := strings.Join(visibleKinds(searched), ","); !strings.Contains(got, "Pod") {
+		t.Fatalf("searching for web-5d-x showed %s, want the Pod even though its owner is folded", got)
+	}
+	table := press(searched, "w")
+	if view := table.View(); !strings.Contains(view, "web-5d-x") {
+		t.Fatalf("the table hides a search match under a folded row:\n%s", view)
+	}
+}
+
+func TestAFilterShowsMatchesUnderFoldedCards(t *testing.T) {
+	model, _ := openDeep(t)
+	folded := press(press(model, "j"), "left") // fold the Deployment away
+
+	filtered := command(folded, ":health Progressing")
+
+	if got := strings.Join(visibleKinds(filtered), ","); !strings.Contains(got, "Pod") {
+		t.Fatalf("filtering for Progressing showed %s, want the Pod even though its owner is folded", got)
+	}
+	// The fold comes back once the filter does.
+	cleared := command(filtered, ":health")
+	if got := strings.Join(visibleKinds(cleared), ","); got != "Application,Deployment,Service" {
+		t.Fatalf("clearing the filter showed %s, want the fold back", got)
 	}
 }

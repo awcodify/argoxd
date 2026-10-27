@@ -331,8 +331,6 @@ func (s *APISource) request(ctx context.Context, method, path string, body *byte
 	return nil
 }
 
-// do sends a request and returns the response of a successful call. The
-// caller must close the response body.
 // withHint puts advice for this status in front of an error message, where a
 // narrow terminal still shows it.
 func (s *APISource) withHint(status int, message string) string {
@@ -342,6 +340,8 @@ func (s *APISource) withHint(status int, message string) string {
 	return message
 }
 
+// do sends a request and returns the response of a successful call. The
+// caller must close the response body.
 func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buffer) (*http.Response, error) {
 	return s.send(ctx, s.client, method, path, body)
 }

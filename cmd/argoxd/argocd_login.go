@@ -108,8 +108,13 @@ func withArgoCDLogin(options options) (options, error) {
 		path = argoCDConfigPath()
 	}
 	login, err := loadArgoCDLogin(path, options.argocdContext)
-	if errors.Is(err, fs.ErrNotExist) && options.argocdContext == "" {
-		return options, nil
+	if errors.Is(err, fs.ErrNotExist) {
+		if options.argocdContext == "" {
+			return options, nil
+		}
+		// The user asked for a context by name, so say why there is no file
+		// instead of passing on a bare "open …: no such file".
+		return options, fmt.Errorf("argocd config %s not found; run: argocd login", path)
 	}
 	if err != nil {
 		return options, err
@@ -122,13 +127,4 @@ func withArgoCDLogin(options options) (options, error) {
 		options.tokenFromCLI = true
 	}
 	return options, nil
-}
-
-// unwrapPathError returns the error inside a *fs.PathError, for os.IsNotExist.
-func unwrapPathError(err error) error {
-	var pathError *fs.PathError
-	if errors.As(err, &pathError) {
-		return pathError
-	}
-	return err
 }

@@ -132,16 +132,6 @@ func (m *Model) runThemeCommand(name string) {
 	m.status = "Theme " + currentTheme
 }
 
-func without(names []string, drop string) []string {
-	kept := make([]string, 0, len(names))
-	for _, name := range names {
-		if name != drop {
-			kept = append(kept, name)
-		}
-	}
-	return kept
-}
-
 // openThemePicker opens the theme bar on the theme in use. Every theme it moves
 // to is painted at once; Enter keeps it and Esc brings back the original.
 func (m *Model) openThemePicker() {

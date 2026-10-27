@@ -95,7 +95,7 @@ func (m Model) syncEventsPane(message tea.Msg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	if target != m.paneFollowing {
-		m.paneText, m.paneErr, m.paneOffset = "", nil, 0
+		m.paneText, m.paneErr, m.paneOffset, m.paneLoaded = "", nil, 0, false
 	}
 	m.paneFollowing = target
 	application := m.resourceTree.Application

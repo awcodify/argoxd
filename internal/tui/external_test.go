@@ -31,9 +31,24 @@ func TestK9sOpensOnTheSelectedCardsNamespaceAndKind(t *testing.T) {
 	model = press(model, "j") // Deployment web in store
 	model, recorded := withK9s(model, "/usr/bin/true")
 
-	model = command(model, ":k9s")
+	command(model, ":k9s")
 
 	want := "/usr/bin/true --context production -n store -c deployments"
+	if got := strings.Join(recorded.args, " "); got != want {
+		t.Fatalf("started %q, want %q", got, want)
+	}
+}
+
+func TestK9sUsesArgoxdsKubeconfigAndContext(t *testing.T) {
+	model, _ := openDeep(t)
+	model = press(model, "j")
+	recorded := &recordedLaunch{}
+	model = model.WithExternalTools(ExternalTools{K9s: "/usr/bin/true", Kubeconfig: "/etc/argoxd/prod.yaml", KubeContext: "production"})
+	model.launch = recorded.launch
+
+	command(model, ":k9s")
+
+	want := "/usr/bin/true --kubeconfig /etc/argoxd/prod.yaml --context production -n store -c deployments"
 	if got := strings.Join(recorded.args, " "); got != want {
 		t.Fatalf("started %q, want %q", got, want)
 	}
@@ -74,17 +89,19 @@ func TestK9sNotInstalledIsReportedAndNothingStarts(t *testing.T) {
 	}
 }
 
-func TestK9sIsSuggestedAndComesBackToArgoxd(t *testing.T) {
+func TestK9sIsSuggestedAndReturnsToArgoxd(t *testing.T) {
 	model, recorded := withK9s(resize(settle(New(&fakeSource{snapshot: storeSnapshot()}, "test", "argocd", explorer.Snapshot{}), nil), 140, 30), "/usr/bin/true")
 
 	if view := typeKeys(model, ":", "k", "9").View(); !strings.Contains(view, "k9s") {
 		t.Fatalf(":k9 did not suggest k9s:\n%s", view)
 	}
-	updated, next := model.Update(key("enter"))
-	_ = updated
-	_ = next
-	if recorded.args != nil {
-		t.Fatal("an empty command bar started k9s")
+	model = run(typeKeys(model, ":", "k", "9", "s"), "enter")
+
+	if recorded.args == nil {
+		t.Fatal("Enter on the k9s suggestion did not start k9s")
+	}
+	if model.status != "" {
+		t.Fatalf("status = %q after k9s returned, want it cleared", model.status)
 	}
 }
 

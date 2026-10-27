@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -17,10 +18,12 @@ func (m Model) WithResourceView(view string) Model {
 
 // collapsedRoot is the Application's card with its resources nested beneath
 // it, minus what the user folded away. hidden counts, for each folded card,
-// the resources under it that are not shown.
+// the resources under it that are not shown. A search or filter shows every
+// match, so folding is ignored while one is active: otherwise a match under a
+// folded card would be invisible.
 func (m Model) collapsedRoot() (root explorer.ResourceNode, hidden map[explorer.ResourceReference]int) {
 	root = m.filteredRoot()
-	if len(m.collapsed) == 0 {
+	if len(m.collapsed) == 0 || m.searching() {
 		return root, nil
 	}
 	hidden = make(map[explorer.ResourceReference]int)
@@ -77,24 +80,24 @@ func (m *Model) expandSelected() {
 // card, or on the nearest card that is still showing.
 func (m *Model) toggleFoldAll() {
 	full := flatten(m.filteredRoot(), "")
-	selected := full[min(m.treeCursor, len(full)-1)]
-	if before := flatten(m.dependencyRoot(), ""); m.treeCursor < len(before) {
-		selected = before[m.treeCursor]
-	}
 	foldable := make(map[explorer.ResourceReference]bool)
 	for _, candidate := range full[1:] {
 		if len(candidate.node.Children) > 0 {
 			foldable[candidate.node.Reference()] = true
 		}
 	}
-	allFolded := len(foldable) > 0
+	if len(foldable) == 0 {
+		return
+	}
+	// The card selected before folding, read from the cards showing now.
+	showing := flatten(m.dependencyRoot(), "")
+	selected := showing[max(0, min(m.treeCursor, len(showing)-1))]
+	allFolded := true
 	for reference := range foldable {
 		if !m.collapsed[reference] {
 			allFolded = false
+			break
 		}
-	}
-	if len(foldable) == 0 {
-		return
 	}
 	if allFolded {
 		m.collapsed = nil
@@ -108,25 +111,27 @@ func (m *Model) toggleFoldAll() {
 // still showing. full lists every card, so its owners can be found.
 func (m *Model) relocate(target card, full []card) {
 	showing := flatten(m.dependencyRoot(), "")
-	position := -1
-	for index, candidate := range full {
-		if candidate.node.Reference() == target.node.Reference() {
-			position = index
-			break
-		}
+	position := slices.IndexFunc(full, func(candidate card) bool {
+		return candidate.node.Reference() == target.node.Reference()
+	})
+	if position < 0 {
+		m.treeCursor = 0
+		return
 	}
+	// The target itself when it is still showing, else walk up its owners,
+	// which come before it in depth-first order at decreasing depths.
+	wanted := target.depth
 	for index := position; index >= 0; index-- {
-		if index != position && full[index].depth >= full[position].depth {
+		candidate := full[index]
+		if index != position && candidate.depth >= wanted {
 			continue
 		}
-		for shown, candidate := range showing {
-			if candidate.node.Reference() == full[index].node.Reference() {
-				m.treeCursor = shown
-				return
-			}
-		}
-		if position = index; position < 0 {
-			break
+		wanted = candidate.depth
+		if shown := slices.IndexFunc(showing, func(shown card) bool {
+			return shown.node.Reference() == candidate.node.Reference()
+		}); shown >= 0 {
+			m.treeCursor = shown
+			return
 		}
 	}
 	m.treeCursor = 0

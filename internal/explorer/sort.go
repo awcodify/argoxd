@@ -84,6 +84,7 @@ func sortApplications(applications []Application, field SortField, reverse bool)
 func (m *Model) SetSort(field SortField, reverse bool) {
 	selected := m.SelectedName()
 	m.sortField, m.sortReverse = field, reverse
+	m.refreshApplications()
 	for index, name := range m.rowNames() {
 		if name == selected {
 			m.cursor = index

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,7 +75,7 @@ func TestLoadArgoCDLoginExplainsWhatIsMissing(t *testing.T) {
 	if _, err := loadArgoCDLogin(path, "nope"); err == nil || !strings.Contains(err.Error(), `"nope"`) || !strings.Contains(err.Error(), "staging") {
 		t.Fatalf("an unknown context: error = %v, want it named and the real ones listed", err)
 	}
-	if _, err := loadArgoCDLogin(filepath.Join(t.TempDir(), "missing"), ""); !os.IsNotExist(unwrapPathError(err)) {
+	if _, err := loadArgoCDLogin(filepath.Join(t.TempDir(), "missing"), ""); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("a missing file: error = %v, want a not-exist error", err)
 	}
 	if _, err := loadArgoCDLogin(writeCLIConfig(t, "contexts: [unclosed"), ""); err == nil {
@@ -110,6 +112,9 @@ func TestTheCLILoginIsOnlyForTheAPISourceAndOnlyWhenNeeded(t *testing.T) {
 	}
 	if got, err := withArgoCDLogin(options{source: "api", argocdConfig: filepath.Join(t.TempDir(), "absent")}); err != nil || got.server != "" {
 		t.Fatalf("a missing CLI config must be skipped quietly: %+v, %v", got, err)
+	}
+	if _, err := withArgoCDLogin(options{source: "api", argocdConfig: filepath.Join(t.TempDir(), "absent"), argocdContext: "staging"}); err == nil || !strings.Contains(err.Error(), "argocd login") {
+		t.Fatalf("a named context with no config file: error = %v, want it to say to run argocd login", err)
 	}
 	if _, err := withArgoCDLogin(options{source: "api", argocdConfig: path, argocdContext: "nope"}); err == nil {
 		t.Fatal("a context that was asked for by name but does not exist must be an error")

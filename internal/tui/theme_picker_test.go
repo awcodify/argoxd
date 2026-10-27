@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/awcodify/argoxd/internal/explorer"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -171,5 +170,4 @@ func TestThePickerStaysOnScreenWhileThemesChange(t *testing.T) {
 	if !strings.Contains(view, "default") || !strings.Contains(view, "light") || !strings.Contains(view, "▾ ▏") {
 		t.Fatalf("the picker disappeared or lost its chips after a preview:\n%s", view)
 	}
-	_ = explorer.Snapshot{}
 }
