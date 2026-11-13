@@ -64,7 +64,9 @@ func applicationSetProblems(conditions []appSetCondition) []explorer.Condition {
 // httpStatusError is a response from Argo CD that is not a success.
 type httpStatusError struct {
 	message string
-	code    int
+	// detail is the message without advice.
+	detail string
+	code   int
 }
 
 func (e *httpStatusError) Error() string { return e.message }

@@ -18,6 +18,8 @@ type argoCDLogin struct {
 	Server string
 	// Token is empty when the context is logged out.
 	Token string
+	// Context is the name of the CLI context the login belongs to.
+	Context string
 	// Insecure records that the CLI skips certificate checks for this server.
 	// argoxd does not follow it on its own; -k is still needed.
 	Insecure bool
@@ -72,6 +74,7 @@ func loadArgoCDLogin(path, contextName string) (argoCDLogin, error) {
 		if context.Name != contextName {
 			continue
 		}
+		login.Context = context.Name
 		login.Server = "https://" + context.Server
 		for _, server := range config.Servers {
 			if server.Server == context.Server {
@@ -125,6 +128,9 @@ func withArgoCDLogin(options options) (options, error) {
 	if options.token == "" && login.Token != "" {
 		options.token = login.Token
 		options.tokenFromCLI = true
+		// An SSO login is renewed in the same file, and a token saved there
+		// later, by "argocd login", is picked up without a restart.
+		options.tokenStore = cliTokenStore{path: path, context: login.Context}
 	}
 	return options, nil
 }
