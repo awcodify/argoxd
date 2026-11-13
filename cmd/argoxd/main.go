@@ -55,6 +55,8 @@ type options struct {
 	argocdContext string
 	argocdConfig  string
 	tokenFromCLI  bool
+	// tokenStore renews a CLI SSO login; nil for a token the user gave.
+	tokenStore argocd.TokenStore
 }
 
 func main() {
@@ -235,7 +237,7 @@ func buildSource(options options) (argocd.Source, error) {
 		return argocd.NewConfiguredAPISource(options.server, options.token, argocd.APIOptions{
 			Insecure: options.insecure, CACertFile: options.caCert,
 			ClientCertFile: options.clientCert, ClientKeyFile: options.clientKey, Timeout: options.requestTimeout,
-			TokenFromCLI: options.tokenFromCLI,
+			TokenFromCLI: options.tokenFromCLI, TokenStore: options.tokenStore,
 		})
 	default:
 		return nil, fmt.Errorf("unsupported --source %q; use kubeconfig or api", options.source)

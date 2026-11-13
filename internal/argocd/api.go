@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/awcodify/argoxd/internal/explorer"
@@ -21,8 +22,15 @@ import (
 // APISource loads resources from the Argo CD API.
 type APISource struct {
 	baseURL string
-	token   string
 	client  *http.Client
+	// tokenMu guards token and stuckToken, which a renewal replaces.
+	tokenMu sync.Mutex
+	token   string
+	// tokenStore renews an expired SSO login; nil for a token that cannot be.
+	tokenStore TokenStore
+	// stuckToken is a token that renewing failed for, or that Argo CD refused
+	// as soon as it was issued; it is not renewed again.
+	stuckToken string
 	// loginHint is added to an authentication error.
 	loginHint string
 }
@@ -47,6 +55,9 @@ type APIOptions struct {
 	// TokenFromCLI marks a token read from the argocd CLI's saved login, so a
 	// refusal can suggest logging in again.
 	TokenFromCLI bool
+	// TokenStore, for an SSO login, renews an expired token with its refresh
+	// token and saves the new one.
+	TokenStore TokenStore
 }
 
 // NewAPISource creates an Argo CD API source with the default settings.
@@ -71,9 +82,10 @@ func NewConfiguredAPISource(server, token string, options APIOptions) (*APISourc
 	transport.ResponseHeaderTimeout = timeout
 
 	source := &APISource{
-		baseURL: strings.TrimRight(server, "/"),
-		token:   token,
-		client:  &http.Client{Transport: transport, Timeout: timeout},
+		baseURL:    strings.TrimRight(server, "/"),
+		token:      token,
+		tokenStore: options.TokenStore,
+		client:     &http.Client{Transport: transport, Timeout: timeout},
 	}
 	if options.TokenFromCLI {
 		source.loginHint = "token expired? run: argocd login"
@@ -346,15 +358,39 @@ func (s *APISource) do(ctx context.Context, method, path string, body *bytes.Buf
 	return s.send(ctx, s.client, method, path, body)
 }
 
-// send is do through the given client.
+// send is do through the given client. When Argo CD refuses an SSO token that
+// can be renewed, it renews it and sends the request once more.
 func (s *APISource) send(ctx context.Context, client *http.Client, method, path string, body *bytes.Buffer) (*http.Response, error) {
+	var payload []byte
+	if body != nil {
+		payload = body.Bytes()
+	}
+	token := s.currentToken()
+	response, err := s.sendWith(ctx, client, method, path, payload, token)
+	var status *httpStatusError
+	if !errors.As(err, &status) || status.code != http.StatusUnauthorized {
+		return response, err
+	}
+	renewed, renewErr := s.renew(ctx, token)
+	if renewErr != nil {
+		status.message = s.withHint(status.code, status.detail+"; renewing the login failed: "+renewErr.Error())
+		return nil, status
+	}
+	if !renewed {
+		return nil, err
+	}
+	return s.sendWith(ctx, client, method, path, payload, s.currentToken())
+}
+
+// sendWith sends one request with the given token.
+func (s *APISource) sendWith(ctx context.Context, client *http.Client, method, path string, payload []byte, token string) (*http.Response, error) {
 	endpoint, err := url.Parse(s.baseURL + path)
 	if err != nil {
 		return nil, fmt.Errorf("parse endpoint: %w", err)
 	}
 	var reader io.Reader
-	if body != nil {
-		reader = body
+	if payload != nil {
+		reader = bytes.NewReader(payload)
 	}
 	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), reader)
 	if err != nil {
@@ -362,11 +398,11 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	}
 	// Argo CD refuses any request that changes something without a JSON content
 	// type, even one with no body, such as a delete.
-	if body != nil || (method != http.MethodGet && method != http.MethodHead) {
+	if payload != nil || (method != http.MethodGet && method != http.MethodHead) {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	if s.token != "" {
-		request.Header.Set("Authorization", "Bearer "+s.token)
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	response, err := client.Do(request)
@@ -375,10 +411,8 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		defer response.Body.Close()
-		return nil, &httpStatusError{
-			message: s.withHint(response.StatusCode, fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))),
-			code:    response.StatusCode,
-		}
+		detail := fmt.Sprintf("%s returned %s%s", endpoint.Path, response.Status, errorMessage(response.Body))
+		return nil, &httpStatusError{message: s.withHint(response.StatusCode, detail), detail: detail, code: response.StatusCode}
 	}
 	return response, nil
 }

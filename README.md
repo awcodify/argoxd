@@ -26,7 +26,7 @@ argoxd --source api -s https://argocd.example.com --auth-token "$TOKEN"
 
 With `--source api`, `ARGOCD_SERVER` and `ARGOCD_AUTH_TOKEN` work in place of the flags.
 
-If you have already run `argocd login`, `--source api` needs no server or token: argoxd reads them from the CLI's login in `~/.config/argocd/config` (use `--argocd-context` for a context other than the current one, or `--argocd-config` for another file). Anything you pass yourself wins. A logged-in `--insecure` server still needs `-k`, and when the saved token has expired argoxd says to run `argocd login` again.
+If you have already run `argocd login`, `--source api` needs no server or token: argoxd reads them from the CLI's login in `~/.config/argocd/config` (use `--argocd-context` for a context other than the current one, or `--argocd-config` for another file). Anything you pass yourself wins. A logged-in `--insecure` server still needs `-k`. After `argocd login --sso`, an expired token is renewed with the saved refresh token, as `argocd` does, and the new one is written back to the CLI's config. When it cannot be renewed, argoxd says to run `argocd login` again, and picks up the new login without a restart.
 
 If your Argo CD uses a certificate from an internal CA, trust it with `--ca-cert corp-ca.pem` instead of `-k` (`--insecure`), which skips verification and is only for development. If the server asks for a client certificate, add `--client-cert client.crt --client-key client.key`. These three apply to `--source api`.
 
