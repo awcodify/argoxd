@@ -3,6 +3,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"slices"
@@ -36,11 +37,15 @@ type Model struct {
 	// started against the old source can be told apart and dropped.
 	sourceGeneration int
 	refreshing       bool
-	err              error
-	width            int
-	height           int
-	view             viewMode
-	tree             []treeItem
+	// refreshErr is the error the last load of the Applications showed. A
+	// background refresh that works again clears only that one, not the error
+	// of an action, which stays until something else replaces it.
+	refreshErr error
+	err        error
+	width      int
+	height     int
+	view       viewMode
+	tree       []treeItem
 	// origin is the Projects or ApplicationSets list the Applications list was
 	// opened from, which Esc returns to.
 	origin       listOrigin
@@ -252,9 +257,17 @@ func (m Model) update(message tea.Msg) (tea.Model, tea.Cmd) {
 		if message.generation != m.sourceGeneration {
 			return m, nil
 		}
+		background := m.refreshing && !m.loading
 		m.loading = false
 		m.refreshing = false
-		m.err = message.err
+		switch {
+		case message.err != nil:
+			m.err, m.refreshErr = message.err, message.err
+		case !background:
+			m.err, m.refreshErr = nil, nil
+		case m.refreshErr != nil && errors.Is(m.err, m.refreshErr):
+			m.err, m.refreshErr = nil, nil
+		}
 		if message.err == nil {
 			m.explorer.ReplaceSnapshot(message.snapshot)
 			m.pruneMarks()
