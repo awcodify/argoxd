@@ -2,6 +2,13 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.1] - 2026-11-13
+
+### Fixed
+
+- **SSO logins expired after an hour.** With `--source api` and a login from `argocd login --sso`, argoxd stopped working once the token expired, because unlike `argocd` it did not renew it. It now renews an expired token with the saved refresh token, through the OIDC provider or Argo CD's own Dex, retries the request, and writes the new token back to `~/.config/argocd/config`. When renewing fails, the error says why and to run `argocd login`; after you do, argoxd uses the new login without a restart. ([#11](https://github.com/awcodify/argoxd/issues/11))
+- **Errors vanished on the next refresh.** The error of a failed action, such as a sync that was not allowed, was cleared by the 5-second refresh before it could be read. It now stays until something replaces it. An error from loading the Applications still clears once a refresh works again.
+
 ## [0.5.0] - 2026-10-26
 
 ### Added
