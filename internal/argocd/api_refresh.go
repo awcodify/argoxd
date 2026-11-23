@@ -45,9 +45,10 @@ func (s *APISource) currentToken() string {
 // renew is called after Argo CD refused the token a request sent. It reports
 // whether there is a new token to retry with, and whether the IdP issued it
 // now (as opposed to one saved meanwhile by the argocd CLI or another request).
-// A failure to renew is returned to be shown with the refusal. A token that
-// could not be renewed is not renewed again, so the IdP is not asked on every
-// refresh.
+// A failure to renew is returned to be shown with the refusal, and is returned
+// again with every later refusal until a renewal works, so the reason stays on
+// screen. A token that could not be renewed is not renewed again, so the IdP is
+// not asked on every refresh.
 func (s *APISource) renew(ctx context.Context, refused string) (renewed, issued bool, err error) {
 	if s.tokenStore == nil {
 		return false, false, nil
@@ -55,25 +56,31 @@ func (s *APISource) renew(ctx context.Context, refused string) (renewed, issued 
 	s.tokenMu.Lock()
 	defer s.tokenMu.Unlock()
 	if s.token != refused {
+		s.stuckErr = nil
 		return true, false, nil
 	}
 	saved, refreshToken, err := s.tokenStore.Load()
 	if err == nil && saved != "" && saved != refused {
-		s.token, s.stuckToken = saved, ""
+		s.token, s.stuckToken, s.stuckErr = saved, "", nil
 		return true, false, nil
 	}
-	if refreshToken == "" || refused == s.stuckToken {
+	if refreshToken == "" {
 		return false, false, nil
 	}
-	// Until it works, this token is not renewed again.
-	s.stuckToken = refused
+	if refused == s.stuckToken {
+		return false, false, s.stuckErr
+	}
+	// Until it works, this token is not renewed again, and every refresh keeps
+	// saying why it could not be.
+	s.stuckToken, s.stuckErr = refused, nil
 	token, newRefreshToken, err := s.redeem(ctx, refreshToken)
 	if err != nil {
+		s.stuckErr = err
 		return false, false, err
 	}
 	// The new token is marked stuck only if Argo CD refuses it as well, so a
 	// later expiry of it is renewed too.
-	s.token, s.stuckToken = token, ""
+	s.token, s.stuckToken, s.stuckErr = token, "", nil
 	// A login that cannot be saved still works for this run.
 	_ = s.tokenStore.Save(token, newRefreshToken)
 	return true, true, nil
@@ -86,7 +93,7 @@ func (s *APISource) markStuck(token string) {
 	s.tokenMu.Lock()
 	defer s.tokenMu.Unlock()
 	if s.token == token {
-		s.stuckToken = token
+		s.stuckToken, s.stuckErr = token, nil
 	}
 }
 

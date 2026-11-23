@@ -2,6 +2,12 @@
 
 All notable changes to argoxd are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.2] - 2026-11-23
+
+### Fixed
+
+- **The reason a login could not be renewed disappeared.** When the IdP refused the refresh token, argoxd showed its reason, such as `refresh token is invalid or expired`, only until the next refresh, which replaced it with the bare refusal and the advice to run `argocd login`. The reason now stays on screen until the login works again.
+
 ## [0.5.1] - 2026-11-13
 
 ### Fixed
