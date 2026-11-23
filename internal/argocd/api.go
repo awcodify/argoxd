@@ -371,7 +371,7 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if !errors.As(err, &status) || status.code != http.StatusUnauthorized {
 		return response, err
 	}
-	renewed, renewErr := s.renew(ctx, token)
+	renewed, issued, renewErr := s.renew(ctx, token)
 	if renewErr != nil {
 		status.message = s.withHint(status.code, status.detail+"; renewing the login failed: "+renewErr.Error())
 		return nil, status
@@ -379,7 +379,13 @@ func (s *APISource) send(ctx context.Context, client *http.Client, method, path 
 	if !renewed {
 		return nil, err
 	}
-	return s.sendWith(ctx, client, method, path, payload, s.currentToken())
+	renewedToken := s.currentToken()
+	response, err = s.sendWith(ctx, client, method, path, payload, renewedToken)
+	var retried *httpStatusError
+	if issued && errors.As(err, &retried) && retried.code == http.StatusUnauthorized {
+		s.markStuck(renewedToken)
+	}
+	return response, err
 }
 
 // sendWith sends one request with the given token.
