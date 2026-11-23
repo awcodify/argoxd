@@ -257,12 +257,33 @@ func TestAFailedRenewalSaysWhyAndIsNotRepeatedOnEveryRequest(t *testing.T) {
 	if advice, reason := strings.Index(err.Error(), "argocd login"), strings.Index(err.Error(), "refresh token is invalid"); advice > reason {
 		t.Fatalf("error = %q, want the advice before the reason", err)
 	}
-	_, _ = source.Load(context.Background())
+	_, err = source.Load(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "refresh token is invalid or expired") {
+		t.Fatalf("second Load() error = %v, want the reason kept", err)
+	}
 	if got := server.redemptions.Load(); got != 1 {
 		t.Fatalf("token endpoint called %d times over two loads, want once", got)
 	}
 	if store.saves != 0 {
 		t.Fatalf("store saved %d times, want nothing saved after a failure", store.saves)
+	}
+}
+
+func TestANewLoginClearsAFailedRenewal(t *testing.T) {
+	server := newSSOServer(t)
+	store := &memoryStore{token: "expired-id-token", refreshToken: "revoked"}
+	source := ssoSource(t, server.URL, store)
+	if _, err := source.Load(context.Background()); err == nil {
+		t.Fatal("Load() = nil, want the failed renewal")
+	}
+	// argocd login saved a fresh login meanwhile.
+	store.token, store.refreshToken = "fresh-id-token", "refresh-1"
+
+	if _, err := source.Load(context.Background()); err != nil {
+		t.Fatalf("Load() after a new login error = %v, want the new token used", err)
+	}
+	if got := server.redemptions.Load(); got != 1 {
+		t.Fatalf("token endpoint called %d times, want only the failed one", got)
 	}
 }
 

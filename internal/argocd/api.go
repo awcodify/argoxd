@@ -23,7 +23,7 @@ import (
 type APISource struct {
 	baseURL string
 	client  *http.Client
-	// tokenMu guards token and stuckToken, which a renewal replaces.
+	// tokenMu guards token, stuckToken and stuckErr, which a renewal replaces.
 	tokenMu sync.Mutex
 	token   string
 	// tokenStore renews an expired SSO login; nil for a token that cannot be.
@@ -31,6 +31,9 @@ type APISource struct {
 	// stuckToken is a token that renewing failed for, or that Argo CD refused
 	// as soon as it was issued; it is not renewed again.
 	stuckToken string
+	// stuckErr is why stuckToken could not be renewed, so every refresh shows
+	// the reason instead of the bare refusal.
+	stuckErr error
 	// loginHint is added to an authentication error.
 	loginHint string
 }
