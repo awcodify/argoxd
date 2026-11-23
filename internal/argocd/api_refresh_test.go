@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -53,6 +54,10 @@ type ssoServer struct {
 	redemptions atomic.Int32
 	// bodies records the body of each POST to Argo CD.
 	bodies []string
+	// supportedScopes is the scopes_supported of the discovery document.
+	supportedScopes []string
+	// scopes records the scope form value of each token request.
+	scopes []string
 }
 
 func newSSOServer(t *testing.T) *ssoServer {
@@ -71,12 +76,19 @@ func newSSOServer(t *testing.T) *ssoServer {
 	})
 	discovery := func(w http.ResponseWriter, r *http.Request) {
 		issuer := server.URL + strings.TrimSuffix(r.URL.Path, "/.well-known/openid-configuration")
-		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": issuer, "token_endpoint": issuer + "/token"})
+		response := map[string]any{"issuer": issuer, "token_endpoint": issuer + "/token"}
+		if len(server.supportedScopes) > 0 {
+			response["scopes_supported"] = server.supportedScopes
+		}
+		_ = json.NewEncoder(w).Encode(response)
 	}
 	mux.HandleFunc("/idp/.well-known/openid-configuration", discovery)
 	mux.HandleFunc("/api/dex/.well-known/openid-configuration", discovery)
 	token := func(w http.ResponseWriter, r *http.Request) {
 		server.redemptions.Add(1)
+		server.mu.Lock()
+		server.scopes = append(server.scopes, r.FormValue("scope"))
+		server.mu.Unlock()
 		if r.Method != http.MethodPost || r.FormValue("grant_type") != "refresh_token" ||
 			r.FormValue("refresh_token") != server.refreshToken || r.FormValue("client_id") != server.clientID {
 			w.WriteHeader(http.StatusBadRequest)
@@ -120,6 +132,13 @@ func ssoSource(t *testing.T, url string, store *memoryStore) *APISource {
 	return source
 }
 
+// sentScopes returns the scope form value of each token request.
+func (s *ssoServer) sentScopes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.scopes)
+}
+
 func TestAnExpiredSSOTokenIsRenewedWithTheRefreshTokenAndSaved(t *testing.T) {
 	server := newSSOServer(t)
 	store := &memoryStore{token: "expired-id-token", refreshToken: "refresh-1"}
@@ -135,6 +154,9 @@ func TestAnExpiredSSOTokenIsRenewedWithTheRefreshTokenAndSaved(t *testing.T) {
 	if got := server.redemptions.Load(); got != 1 {
 		t.Fatalf("token endpoint called %d times, want once", got)
 	}
+	if scopes := server.sentScopes(); len(scopes) != 1 || scopes[0] != "openid profile email groups" {
+		t.Fatalf("scope sent = %q, want the default scopes", scopes)
+	}
 }
 
 func TestDexLoginsRenewThroughArgoCDsOwnDex(t *testing.T) {
@@ -148,6 +170,36 @@ func TestDexLoginsRenewThroughArgoCDsOwnDex(t *testing.T) {
 	}
 	if store.token != "fresh-id-token" {
 		t.Fatalf("saved token %q, want the one Dex issued", store.token)
+	}
+	if scopes := server.sentScopes(); len(scopes) != 1 || scopes[0] != "openid profile email groups federated:id" {
+		t.Fatalf("scope sent = %q, want Dex's scopes", scopes)
+	}
+}
+
+func TestTheConfiguredScopesAreSentOnRenewal(t *testing.T) {
+	server := newSSOServer(t)
+	server.settings = `{"url":"{url}","oidcConfig":{"issuer":"{url}/idp","clientID":"argo-cd","scopes":["openid","groups"]}}`
+	server.clientID = "argo-cd"
+	store := &memoryStore{token: "expired-id-token", refreshToken: "refresh-1"}
+
+	if _, err := ssoSource(t, server.URL, store).Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if scopes := server.sentScopes(); len(scopes) != 1 || scopes[0] != "openid groups" {
+		t.Fatalf("scope sent = %q, want the configured scopes", scopes)
+	}
+}
+
+func TestOfflineAccessIsAskedForWhenTheProviderSupportsIt(t *testing.T) {
+	server := newSSOServer(t)
+	server.supportedScopes = []string{"openid", "profile", "email", "groups", "offline_access"}
+	store := &memoryStore{token: "expired-id-token", refreshToken: "refresh-1"}
+
+	if _, err := ssoSource(t, server.URL, store).Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if scopes := server.sentScopes(); len(scopes) != 1 || scopes[0] != "openid profile email groups offline_access" {
+		t.Fatalf("scope sent = %q, want offline_access added", scopes)
 	}
 }
 
@@ -228,6 +280,32 @@ func TestARenewedTokenThatIsAlsoRefusedIsNotRenewedAgainAndAgain(t *testing.T) {
 	}
 	if got := server.redemptions.Load(); got != 1 {
 		t.Fatalf("token endpoint called %d times, want once", got)
+	}
+}
+
+func TestARepeatedExpiryIsRenewedAgain(t *testing.T) {
+	server := newSSOServer(t)
+	store := &memoryStore{token: "expired-id-token", refreshToken: "refresh-1"}
+	source := ssoSource(t, server.URL, store)
+
+	if _, err := source.Load(context.Background()); err != nil {
+		t.Fatalf("first renewal: %v", err)
+	}
+	// The token the first renewal got expires in its turn, as it does in a
+	// session that outlives it.
+	server.valid = "next-id-token"
+	server.issued = "next-id-token"
+	server.refreshToken = "refresh-2"
+	server.rotated = "refresh-3"
+
+	if _, err := source.Load(context.Background()); err != nil {
+		t.Fatalf("Load() after the second expiry error = %v, want it renewed again", err)
+	}
+	if got := server.redemptions.Load(); got != 2 {
+		t.Fatalf("token endpoint called %d times, want twice", got)
+	}
+	if store.token != "next-id-token" || store.refreshToken != "refresh-3" {
+		t.Fatalf("saved %q / %q, want the second renewal", store.token, store.refreshToken)
 	}
 }
 

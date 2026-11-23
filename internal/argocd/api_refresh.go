@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -22,8 +23,17 @@ type TokenStore interface {
 	Save(token, refreshToken string) error
 }
 
-// dexCLIClientID is the client the argocd CLI uses with Argo CD's own Dex.
-const dexCLIClientID = "argo-cd-cli"
+// The argocd CLI asks for these scopes when Argo CD does not configure them.
+var defaultOIDCScopes = []string{"openid", "profile", "email", "groups"}
+
+const (
+	// dexCLIClientID is the client the argocd CLI uses with Argo CD's own Dex.
+	dexCLIClientID = "argo-cd-cli"
+	// dexFederatedScope is the extra scope the argocd CLI asks of Argo CD's Dex.
+	dexFederatedScope = "federated:id"
+	// offlineAccessScope is what a login needs to be given a refresh token.
+	offlineAccessScope = "offline_access"
+)
 
 // currentToken returns the token to send.
 func (s *APISource) currentToken() string {
@@ -32,55 +42,73 @@ func (s *APISource) currentToken() string {
 	return s.token
 }
 
-// renew is called after Argo CD refused the token a request sent. It
-// reports whether there is a new token to retry with: one saved meanwhile, by
-// the argocd CLI or by another request, or one the IdP issued for the saved
-// refresh token. A failure to renew is returned to be shown with the refusal.
-// A token that could not be renewed, or that was refused right after being
-// issued, is not renewed again, so the IdP is not asked on every refresh.
-func (s *APISource) renew(ctx context.Context, refused string) (bool, error) {
+// renew is called after Argo CD refused the token a request sent. It reports
+// whether there is a new token to retry with, and whether the IdP issued it
+// now (as opposed to one saved meanwhile by the argocd CLI or another request).
+// A failure to renew is returned to be shown with the refusal. A token that
+// could not be renewed is not renewed again, so the IdP is not asked on every
+// refresh.
+func (s *APISource) renew(ctx context.Context, refused string) (renewed, issued bool, err error) {
 	if s.tokenStore == nil {
-		return false, nil
+		return false, false, nil
 	}
 	s.tokenMu.Lock()
 	defer s.tokenMu.Unlock()
 	if s.token != refused {
-		return true, nil
+		return true, false, nil
 	}
 	saved, refreshToken, err := s.tokenStore.Load()
 	if err == nil && saved != "" && saved != refused {
 		s.token, s.stuckToken = saved, ""
-		return true, nil
+		return true, false, nil
 	}
 	if refreshToken == "" || refused == s.stuckToken {
-		return false, nil
+		return false, false, nil
 	}
-	// Until it works, this token is not renewed again; nor is the new one, if
-	// Argo CD refuses it as well.
+	// Until it works, this token is not renewed again.
 	s.stuckToken = refused
 	token, newRefreshToken, err := s.redeem(ctx, refreshToken)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	s.token, s.stuckToken = token, token
+	// The new token is marked stuck only if Argo CD refuses it as well, so a
+	// later expiry of it is renewed too.
+	s.token, s.stuckToken = token, ""
 	// A login that cannot be saved still works for this run.
 	_ = s.tokenStore.Save(token, newRefreshToken)
-	return true, nil
+	return true, true, nil
+}
+
+// markStuck records that Argo CD refused a token the IdP had just issued, so
+// it is not renewed again on every request. A token the CLI saves later still
+// replaces it.
+func (s *APISource) markStuck(token string) {
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+	if s.token == token {
+		s.stuckToken = token
+	}
 }
 
 // redeem swaps a refresh token for a new ID token at the IdP Argo CD logs in
 // through, as "argocd" does. The refresh token is kept when the IdP does not
 // issue a new one.
 func (s *APISource) redeem(ctx context.Context, refreshToken string) (string, string, error) {
-	issuer, clientID, err := s.oidcClient(ctx)
+	issuer, clientID, scopes, err := s.oidcClient(ctx)
 	if err != nil {
 		return "", "", err
 	}
-	endpoint, err := s.tokenEndpoint(ctx, issuer)
+	endpoint, supportedScopes, err := s.tokenEndpoint(ctx, issuer)
 	if err != nil {
 		return "", "", err
 	}
+	// The argocd CLI asks for the configured scopes again. Some IdPs, such as
+	// Azure AD and Okta, only return an ID token when "openid" is asked for.
+	scopes = addScope(scopes, supportedScopes, offlineAccessScope)
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}}
+	if len(scopes) > 0 {
+		form.Set("scope", strings.Join(scopes, " "))
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", "", err
@@ -121,16 +149,17 @@ func (s *APISource) redeem(ctx context.Context, refreshToken string) (string, st
 	return token.IDToken, token.RefreshToken, nil
 }
 
-// oidcClient returns the issuer and client ID the argocd CLI logs in with,
-// from Argo CD's public settings: the configured OIDC provider, or else
+// oidcClient returns the issuer, client ID and scopes the argocd CLI logs in
+// with, from Argo CD's public settings: the configured OIDC provider, or else
 // Argo CD's own Dex.
-func (s *APISource) oidcClient(ctx context.Context) (string, string, error) {
+func (s *APISource) oidcClient(ctx context.Context) (string, string, []string, error) {
 	var settings struct {
 		URL        string `json:"url"`
 		OIDCConfig *struct {
-			Issuer      string `json:"issuer"`
-			ClientID    string `json:"clientID"`
-			CLIClientID string `json:"cliClientID"`
+			Issuer      string   `json:"issuer"`
+			ClientID    string   `json:"clientID"`
+			CLIClientID string   `json:"cliClientID"`
+			Scopes      []string `json:"scopes"`
 		} `json:"oidcConfig"`
 		DexConfig *struct {
 			Connectors []json.RawMessage `json:"connectors"`
@@ -139,11 +168,11 @@ func (s *APISource) oidcClient(ctx context.Context) (string, string, error) {
 	// The settings need no token, and sending the refused one would only fail.
 	response, err := s.sendWith(ctx, s.client, http.MethodGet, "/api/v1/settings", nil, "")
 	if err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	defer response.Body.Close()
 	if err := json.NewDecoder(response.Body).Decode(&settings); err != nil {
-		return "", "", fmt.Errorf("read Argo CD settings: %w", err)
+		return "", "", nil, fmt.Errorf("read Argo CD settings: %w", err)
 	}
 	switch {
 	case settings.OIDCConfig != nil && settings.OIDCConfig.Issuer != "":
@@ -151,37 +180,53 @@ func (s *APISource) oidcClient(ctx context.Context) (string, string, error) {
 		if clientID == "" {
 			clientID = settings.OIDCConfig.ClientID
 		}
-		return settings.OIDCConfig.Issuer, clientID, nil
+		scopes := settings.OIDCConfig.Scopes
+		if len(scopes) == 0 {
+			scopes = defaultOIDCScopes
+		}
+		return settings.OIDCConfig.Issuer, clientID, slices.Clone(scopes), nil
 	case settings.DexConfig != nil && len(settings.DexConfig.Connectors) > 0:
 		base := strings.TrimRight(settings.URL, "/")
 		if base == "" {
 			base = s.baseURL
 		}
-		return base + "/api/dex", dexCLIClientID, nil
+		scopes := append(slices.Clone(defaultOIDCScopes), dexFederatedScope)
+		return base + "/api/dex", dexCLIClientID, scopes, nil
 	}
-	return "", "", errors.New("no SSO is configured in Argo CD")
+	return "", "", nil, errors.New("no SSO is configured in Argo CD")
 }
 
-// tokenEndpoint finds the token endpoint of an OpenID Connect issuer.
-func (s *APISource) tokenEndpoint(ctx context.Context, issuer string) (string, error) {
+// addScope adds a scope to a request when the provider supports it and it is
+// not already asked for.
+func addScope(scopes, supported []string, scope string) []string {
+	if slices.Contains(scopes, scope) || !slices.Contains(supported, scope) {
+		return scopes
+	}
+	return append(scopes, scope)
+}
+
+// tokenEndpoint finds the token endpoint and supported scopes of an OpenID
+// Connect issuer.
+func (s *APISource) tokenEndpoint(ctx context.Context, issuer string) (string, []string, error) {
 	discovery := strings.TrimRight(issuer, "/") + "/.well-known/openid-configuration"
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery, nil)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	response, err := s.client.Do(request)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("%s returned %s", discovery, response.Status)
+		return "", nil, fmt.Errorf("%s returned %s", discovery, response.Status)
 	}
 	var configuration struct {
-		TokenEndpoint string `json:"token_endpoint"`
+		TokenEndpoint   string   `json:"token_endpoint"`
+		ScopesSupported []string `json:"scopes_supported"`
 	}
 	if err := json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&configuration); err != nil || configuration.TokenEndpoint == "" {
-		return "", fmt.Errorf("%s has no token endpoint", discovery)
+		return "", nil, fmt.Errorf("%s has no token endpoint", discovery)
 	}
-	return configuration.TokenEndpoint, nil
+	return configuration.TokenEndpoint, configuration.ScopesSupported, nil
 }
